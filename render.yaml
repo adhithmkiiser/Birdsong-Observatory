@@ -1,0 +1,21 @@
+# Render.com Infrastructure as Code (Blueprint)
+# Deploy your Birdsong Observatory platform to Render in 1 click
+
+services:
+  - type: web
+    name: birdsong-observatory
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://ktihcjfxxxazohimtiav.supabase.co
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
