@@ -1,0 +1,644 @@
+'use client';
+
+import React, { useState } from 'react';
+import { 
+  Database, 
+  Upload, 
+  FileSpreadsheet, 
+  FolderPlus, 
+  MapPin, 
+  CheckCircle2, 
+  AlertCircle, 
+  Search, 
+  Edit2, 
+  Layers, 
+  Trash2,
+  Bird
+} from 'lucide-react';
+import { PROJECTS_DATA, STATIONS_DATA, SPECIES_DATA } from '@/lib/mockData';
+import { useRole } from '@/components/layout/RoleContext';
+
+interface ProjectItem {
+  id: string;
+  title: string;
+  tag: string;
+  collaboration: string;
+  description: string;
+  image: string;
+}
+
+interface SiteItem {
+  id: string;
+  projectId: string;
+  name: string;
+  elevation: string;
+  status: string;
+  latitude?: number;
+  longitude?: number;
+  expectedFiles?: number;
+}
+
+export default function PamAdminPage() {
+  const { currentRole } = useRole();
+
+  // Active Tab: 'upload' | 'projects' | 'species'
+  const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'species'>('upload');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  // 1. Batch Upload States
+  const [selectedUploadProjId, setSelectedUploadProjId] = useState<string>('prj-01');
+  const [selectedUploadSiteId, setSelectedUploadSiteId] = useState<string>('stn-01');
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [parsedSiteCode, setParsedSiteCode] = useState<string>('');
+  const [csvSiteAction, setCsvSiteAction] = useState<'existing' | 'create'>('existing');
+  
+  // Inline CSV site creation states
+  const [csvNewSiteName, setCsvNewSiteName] = useState('');
+  const [csvNewSiteElev, setCsvNewSiteElev] = useState('1,200m');
+  const [csvNewSiteLat, setCsvNewSiteLat] = useState<number | ''>(13.58);
+  const [csvNewSiteLng, setCsvNewSiteLng] = useState<number | ''>(75.64);
+
+  // 2. Projects & Sites Management States
+  const [projectsList, setProjectsList] = useState<ProjectItem[]>([
+    {
+      id: 'prj-01',
+      title: 'Western Ghats Biodiversity Canopy Study',
+      tag: 'Canopy Bioacoustics',
+      collaboration: 'IISER Tirupati Bird Ecology Lab',
+      description: 'Multi-year passive acoustic transect monitoring across high-elevation rainforest canopy corridors.',
+      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+    },
+    {
+      id: 'prj-02',
+      title: 'Tirupati Bioacoustics Sanctuary Observatory',
+      tag: 'Sanctuary Observatory',
+      collaboration: 'Forest Department & IISER Tirupati',
+      description: 'Continuous soundscape recording network monitoring avian endemic species in Sheshachalam Biosphere Reserve.',
+      image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80'
+    }
+  ]);
+
+  const [sitesList, setSitesList] = useState<SiteItem[]>([
+    {
+      id: 'LC_01',
+      projectId: 'prj-01',
+      name: 'Canopy Transect Site LC_01',
+      elevation: '1,350m',
+      status: 'Active',
+      latitude: 13.582,
+      longitude: 75.641,
+      expectedFiles: 48
+    },
+    {
+      id: 'LC_02',
+      projectId: 'prj-01',
+      name: 'Ridge Canopy Site LC_02',
+      elevation: '1,420m',
+      status: 'Active',
+      latitude: 13.595,
+      longitude: 75.655,
+      expectedFiles: 48
+    }
+  ]);
+
+  // Form: Create New Project
+  const [newProjId, setNewProjId] = useState('');
+  const [newProjTitle, setNewProjTitle] = useState('');
+  const [newProjTag, setNewProjTag] = useState('');
+  const [newProjCollab, setNewProjCollab] = useState('');
+  const [newProjDesc, setNewProjDesc] = useState('');
+
+  // Form: Register New Site
+  const [newSiteProjId, setNewSiteProjId] = useState('prj-01');
+  const [newSiteId, setNewSiteId] = useState('');
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteElev, setNewSiteElev] = useState('1,100m');
+  const [newSiteLat, setNewSiteLat] = useState<number | ''>(13.58);
+  const [newSiteLng, setNewSiteLng] = useState<number | ''>(75.64);
+  const [newSiteFiles, setNewSiteFiles] = useState<number | ''>(48);
+
+  const showNotification = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(''), 4500);
+  };
+
+  // Helper: Normalize Site Code (e.g. TST-LC03 -> lc_03)
+  const normalizeSiteCode = (name: string): string => {
+    let clean = name.trim().toLowerCase();
+    const match = clean.match(/([a-z]+)[-_]?(\d+)/);
+    if (match) {
+      return `${match[1]}_${match[2].padStart(2, '0')}`;
+    }
+    return clean;
+  };
+
+  // Handler: Parse CSV Filename for Site Code
+  const handleCsvFilePicker = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const filesArr = Array.from(e.target.files);
+      setUploadFiles(filesArr);
+
+      const filename = filesArr[0].name;
+      let code = '';
+      const tstMatch = filename.match(/TST-([A-Za-z0-9]+)/);
+      if (tstMatch) {
+        code = normalizeSiteCode(tstMatch[1]);
+      } else {
+        const parts = filename.split('_');
+        code = parts.length > 1 ? normalizeSiteCode(parts[0]) : 'site_01';
+      }
+
+      setParsedSiteCode(code.toUpperCase());
+      setCsvNewSiteName(`Recorder Site ${code.toUpperCase()}`);
+
+      const exists = sitesList.some(s => s.id.toLowerCase() === code.toLowerCase());
+      if (exists) {
+        setCsvSiteAction('existing');
+      } else {
+        setCsvSiteAction('create');
+      }
+    }
+  };
+
+  const handleBatchUploadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (uploadFiles.length === 0) return;
+
+    // If inline site creation required
+    if (csvSiteAction === 'create' && parsedSiteCode) {
+      const createdSite: SiteItem = {
+        id: parsedSiteCode,
+        projectId: selectedUploadProjId,
+        name: csvNewSiteName,
+        elevation: csvNewSiteElev,
+        status: 'Active',
+        latitude: csvNewSiteLat !== '' ? Number(csvNewSiteLat) : 13.58,
+        longitude: csvNewSiteLng !== '' ? Number(csvNewSiteLng) : 75.64,
+        expectedFiles: 48
+      };
+      setSitesList(prev => [...prev, createdSite]);
+    }
+
+    showNotification(`Successfully processed ${uploadFiles.length} BirdNET CSV file(s) into database!`);
+    setUploadFiles([]);
+    setParsedSiteCode('');
+  };
+
+  // Handler: Create Project
+  const handleCreateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjId || !newProjTitle) return;
+
+    const newProj: ProjectItem = {
+      id: newProjId.trim().toLowerCase().replace(/\s+/g, '-'),
+      title: newProjTitle,
+      tag: newProjTag || 'Bioacoustic Survey',
+      collaboration: newProjCollab || 'IISER Tirupati Bird Lab',
+      description: newProjDesc || 'Project details pending data updates.',
+      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+    };
+
+    setProjectsList(prev => [...prev, newProj]);
+    setNewProjId('');
+    setNewProjTitle('');
+    setNewProjTag('');
+    setNewProjCollab('');
+    setNewProjDesc('');
+    showNotification(`New project "${newProjTitle}" created successfully!`);
+  };
+
+  // Handler: Register Site
+  const handleRegisterSite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSiteId || !newSiteName) return;
+
+    const newSite: SiteItem = {
+      id: normalizeSiteCode(newSiteId).toUpperCase(),
+      projectId: newSiteProjId,
+      name: newSiteName,
+      elevation: newSiteElev,
+      status: 'Active',
+      latitude: newSiteLat !== '' ? Number(newSiteLat) : 13.58,
+      longitude: newSiteLng !== '' ? Number(newSiteLng) : 75.64,
+      expectedFiles: newSiteFiles !== '' ? Number(newSiteFiles) : 48
+    };
+
+    setSitesList(prev => [...prev, newSite]);
+    setNewSiteId('');
+    setNewSiteName('');
+    showNotification(`Site "${newSiteName}" registered with coordinates (${newSiteLat}, ${newSiteLng}).`);
+  };
+
+  const handleDeleteSite = (siteId: string) => {
+    setSitesList(prev => prev.filter(s => s.id !== siteId));
+    showNotification(`Site ${siteId} removed.`);
+  };
+
+  return (
+    <div className="space-y-8 pb-12 font-sans">
+      {/* Header Banner */}
+      <div className="p-6 md:p-8 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-xl border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 font-black text-xs uppercase tracking-wider">
+            <Database className="w-3.5 h-3.5" />
+            <span>Admin Console Section 2</span>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
+            2. PAM Data & Historical File Admin Console
+          </h1>
+          <p className="text-slate-300 text-xs font-medium max-w-xl">
+            Ingest batch BirdNET CSV result sheets, parse SD card data, manage project transects, register site coordinates, and curate species traits.
+          </p>
+        </div>
+      </div>
+
+      {/* PAM Admin Navigation Tabs */}
+      <div className="flex border-b border-slate-200 gap-4 text-xs font-black">
+        <button
+          onClick={() => setActiveTab('upload')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'upload' 
+              ? 'border-indigo-600 text-indigo-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Upload className="w-4 h-4" /> 1. Files & Batch CSV Parser
+        </button>
+
+        <button
+          onClick={() => setActiveTab('projects')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'projects' 
+              ? 'border-indigo-600 text-indigo-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <FolderPlus className="w-4 h-4" /> 2. Projects & Site Coordinates
+        </button>
+
+        <button
+          onClick={() => setActiveTab('species')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'species' 
+              ? 'border-indigo-600 text-indigo-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Bird className="w-4 h-4" /> 3. Species Ecology Curator
+        </button>
+      </div>
+
+      {successMsg && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* TAB 1: Batch Files & Ingestion Engine */}
+      {activeTab === 'upload' && (
+        <div className="p-8 rounded-[28px] bg-white border border-slate-200 shadow-sm space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+              Batch BirdNET Acoustic Result Files & SD Card Ingestion Engine
+            </h2>
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700">Filename Code Parser</span>
+          </div>
+
+          <form onSubmit={handleBatchUploadSubmit} className="space-y-5 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1.5">Target Project Scope</label>
+                <select
+                  value={selectedUploadProjId}
+                  onChange={(e) => setSelectedUploadProjId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                >
+                  {projectsList.map(p => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1.5">Target Site Node</label>
+                <select
+                  value={selectedUploadSiteId}
+                  onChange={(e) => setSelectedUploadSiteId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                >
+                  {sitesList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="p-8 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 text-center space-y-3 transition cursor-pointer relative">
+              <Upload className="w-8 h-8 text-indigo-600 mx-auto" />
+              <div>
+                <div className="font-extrabold text-slate-900">Select or Drag BirdNET CSV / Audio Files Here</div>
+                <p className="text-[11px] text-slate-500 font-medium mt-1">
+                  Supports <code className="bg-slate-200 px-1 py-0.5 rounded font-mono">.BirdNET.results.csv</code>, <code className="bg-slate-200 px-1 py-0.5 rounded font-mono">.txt</code>, and raw audio files.
+                </p>
+              </div>
+              <input
+                type="file"
+                multiple
+                accept=".csv,.txt,.wav,.mp3"
+                onChange={handleCsvFilePicker}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+            </div>
+
+            {/* If Filename Code Parser detects a new unregistered site */}
+            {csvSiteAction === 'create' && parsedSiteCode && (
+              <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 space-y-3">
+                <div className="flex items-center gap-2 text-amber-900 font-extrabold">
+                  <AlertCircle className="w-4 h-4 text-amber-600" />
+                  <span>Unregistered Site Code Detected: &quot;{parsedSiteCode}&quot;</span>
+                </div>
+                <p className="text-slate-600 text-[11px] font-medium">
+                  The uploaded file filename contains site code <strong className="font-mono text-slate-900">{parsedSiteCode}</strong> which is not in the site directory. Please enter coordinates to register this site automatically during upload:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Site Name</label>
+                    <input
+                      type="text"
+                      value={csvNewSiteName}
+                      onChange={(e) => setCsvNewSiteName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={csvNewSiteLat}
+                      onChange={(e) => setCsvNewSiteLat(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono text-slate-900 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={csvNewSiteLng}
+                      onChange={(e) => setCsvNewSiteLng(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono text-slate-900 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
+                    <input
+                      type="text"
+                      value={csvNewSiteElev}
+                      onChange={(e) => setCsvNewSiteElev(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {uploadFiles.length > 0 && (
+              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
+                <div className="flex items-center justify-between font-bold text-slate-900">
+                  <span>Selected Files: {uploadFiles.length} file(s)</span>
+                  {parsedSiteCode && (
+                    <span className="text-[10px] font-mono bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-md">
+                      Parsed Site Code: {parsedSiteCode}
+                    </span>
+                  )}
+                </div>
+                <ul className="max-h-32 overflow-y-auto space-y-1 font-mono text-[11px] text-slate-600">
+                  {uploadFiles.map((f, i) => (
+                    <li key={i} className="truncate">• {f.name} ({(f.size / 1024).toFixed(1)} KB)</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end">
+              <button
+                type="submit"
+                disabled={uploadFiles.length === 0}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black shadow-md shadow-indigo-600/20"
+              >
+                Ingest & Process Batch PAM Dataset
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* TAB 2: Projects & Site Coordinates */}
+      {activeTab === 'projects' && (
+        <div className="space-y-6">
+          {/* Create Project Card */}
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <FolderPlus className="w-4 h-4 text-emerald-600" /> Create New Research Project
+            </h3>
+
+            <form onSubmit={handleCreateProject} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Project ID</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. prj-canopy-04"
+                    value={newProjId}
+                    onChange={(e) => setNewProjId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Project Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Shola Forest Bird Survey"
+                    value={newProjTitle}
+                    onChange={(e) => setNewProjTitle(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Lead Collaboration</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. IISER Tirupati Bird Lab"
+                    value={newProjCollab}
+                    onChange={(e) => setNewProjCollab(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Project monitoring objectives and landscape overview..."
+                  value={newProjDesc}
+                  onChange={(e) => setNewProjDesc(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-md shadow-emerald-600/20"
+                >
+                  Create Project Entry
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Register Site Coordinates Card */}
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <MapPin className="w-4 h-4 text-indigo-600" /> Register Site Coordinates under Project
+            </h3>
+
+            <form onSubmit={handleRegisterSite} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Project Scope</label>
+                  <select
+                    value={newSiteProjId}
+                    onChange={(e) => setNewSiteProjId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
+                  >
+                    {projectsList.map(p => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Site ID Code</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. LC_03"
+                    value={newSiteId}
+                    onChange={(e) => setNewSiteId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Site Description Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Stream Valley Corridor"
+                    value={newSiteName}
+                    onChange={(e) => setNewSiteName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={newSiteLat}
+                    onChange={(e) => setNewSiteLat(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-mono text-slate-900 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={newSiteLng}
+                    onChange={(e) => setNewSiteLng(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-mono text-slate-900 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
+                  <input
+                    type="text"
+                    value={newSiteElev}
+                    onChange={(e) => setNewSiteElev(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
+                >
+                  Register Site Coordinates
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Registered Sites List */}
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <MapPin className="w-4 h-4 text-slate-600" /> Registered Field Sites Directory ({sitesList.length})
+            </h3>
+
+            <div className="divide-y divide-slate-100">
+              {sitesList.map(s => (
+                <div key={s.id} className="py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-extrabold text-slate-900">{s.name} <span className="font-mono text-[10px] text-slate-400">({s.id})</span></div>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      GPS: {s.latitude}°N, {s.longitude}°E · Elev: {s.elevation}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteSite(s.id)}
+                    className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: Species Ecology Curator */}
+      {activeTab === 'species' && (
+        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Bird className="w-4 h-4 text-amber-600" /> Avian Species Ecological Traits Curator
+            </h3>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-slate-600">
+            Curate foraging guild, conservation IUCN status, foraging stratum, and vocal activity parameters for species in database.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

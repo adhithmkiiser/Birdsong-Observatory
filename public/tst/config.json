@@ -1,0 +1,47 @@
+{
+  "indicator_species": {
+    "recovery": [
+      "Crimson-backed Sunbird",
+      "Flame-throated Bulbul",
+      "Malabar Parakeet",
+      "Malabar Whistling-Thrush",
+      "Nilgiri Flowerpecker",
+      "White-cheeked Barbet",
+      "Yellow-browed Bulbul",
+      "Brown-cheeked Fulvetta",
+      "Indian Scimitar-Babbler",
+      "Puff-throated Babbler",
+      "Brown-breasted Flycatcher",
+      "Bronzed Drongo",
+      "Greater Racket-tailed Drongo",
+      "Orange Minivet",
+      "Small Minivet",
+      "Black-naped Monarch",
+      "Indian Paradise-Flycatcher",
+      "Velvet-fronted Nuthatch",
+      "Asian Emerald Dove",
+      "Changeable Hawk-Eagle",
+      "Crested Serpent-Eagle",
+      "Greater Flameback",
+      "Orange-headed Thrush",
+      "Red Spurfowl",
+      "Tickell's Blue Flycatcher"
+    ],
+    "lantana": [
+      "Common Tailorbird",
+      "Blyth's Reed Warbler",
+      "Greater Coucal",
+      "Gray-breasted Prinia",
+      "Jungle Prinia",
+      "White-browed Bulbul",
+      "Jungle Babbler",
+      "Red-vented Bulbul",
+      "Yellow-billed Babbler"
+    ]
+  },
+  "confidence_threshold_default": 0.70,
+  "display_labels": {
+    "LC": "Lantana-Cleared (LC)",
+    "LI": "Lantana-Infested (LI)"
+  }
+}
