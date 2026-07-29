@@ -113,6 +113,22 @@ export async function uploadPamBatchCsv(projectId: string, siteId: string, filen
   return data[0];
 }
 
+export async function deleteProjectRecord(projectId: string) {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId);
+  if (error) console.error('Error deleting project from Supabase:', error);
+}
+
+export async function deleteSiteRecord(siteId: string) {
+  const { error } = await supabase
+    .from('sites')
+    .delete()
+    .eq('id', siteId);
+  if (error) console.error('Error deleting site from Supabase:', error);
+}
+
 // ============================================================
 // 4. LIVE RECORDER DETECTIONS & AUDIO CLIPS
 // ============================================================

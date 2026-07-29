@@ -234,6 +234,13 @@ export default function PamAdminPage() {
     showNotification(`Site ${siteId} removed.`);
   };
 
+  const handleDeleteProject = (projectId: string) => {
+    if (confirm(`Are you sure you want to delete project "${projectId}"? This will remove all associated sites and detections.`)) {
+      setProjectsList(prev => prev.filter(p => p.id !== projectId));
+      showNotification(`Project ${projectId} deleted successfully.`);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-12 font-sans">
       {/* Header Banner */}
@@ -504,6 +511,39 @@ export default function PamAdminPage() {
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Active PAM Projects Directory */}
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-black text-slate-900 flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-indigo-600" /> Active PAM Research Projects Directory ({projectsList.length})
+              </span>
+            </h3>
+
+            <div className="space-y-3">
+              {projectsList.map(p => (
+                <div key={p.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">{p.id}</span>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{p.title}</h4>
+                    </div>
+                    <p className="text-slate-500 text-[11px] font-medium">{p.description}</p>
+                    <div className="text-[10px] text-slate-400 font-mono">Lead: {p.collaboration || 'IISER Tirupati Bird Lab'}</div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end md:self-center">
+                    <button
+                      onClick={() => handleDeleteProject(p.id)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200 hover:border-rose-600"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Project</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Register Site Coordinates Card */}
