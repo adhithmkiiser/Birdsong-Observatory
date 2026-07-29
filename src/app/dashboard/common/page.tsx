@@ -17,35 +17,40 @@ import {
   Filter,
   Layers
 } from 'lucide-react';
-import { STATIONS_DATA, DETECTIONS_DATA, PROJECTS_DATA } from '@/lib/mockData';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
+import { supabase } from '@/lib/supabase';
+import { useEffect } from 'react';
 
 export default function CommonDashboardPage() {
   const { currentRole } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
   // Scope filter state: Project & Site
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('prj-01');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
 
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [stationsList, setStationsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    supabase.from('projects').select('*').order('created_at').then(({ data }) => setProjectsList(data || []));
+    supabase.from('stations').select('*').order('station_name').then(({ data }) => setStationsList(data || []));
+  }, []);
+
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? STATIONS_DATA
-    : STATIONS_DATA.filter(s => s.project_id === selectedProjectId);
+    ? stationsList
+    : stationsList.filter(s => s.project_id === selectedProjectId);
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
     setSelectedStationId('ALL_SITES');
   };
 
-  const filteredDetections = DETECTIONS_DATA.filter(det => {
-    const matchesProject = selectedProjectId === 'ALL_PROJECTS' || det.project_name === PROJECTS_DATA.find(p => p.id === selectedProjectId)?.name;
-    const matchesStation = selectedStationId === 'ALL_SITES' || det.station_id === selectedStationId;
-    return matchesProject && matchesStation;
-  });
+  const filteredDetections: any[] = [];
 
   return (
     <div className="space-y-8 pb-12 font-sans">
@@ -92,7 +97,8 @@ export default function CommonDashboardPage() {
               onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none"
             >
-              {PROJECTS_DATA.map((p) => (
+              <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
+              {projectsList.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>

@@ -1,324 +1,946 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Database, 
-  MapPin, 
-  Filter, 
-  Bird, 
-  Activity, 
-  Clock, 
-  TrendingUp, 
-  Download, 
-  Layers, 
-  ShieldCheck, 
-  Sliders, 
-  FileSpreadsheet,
-  CheckCircle2,
-  Sparkles,
-  Search,
-  ChevronRight
-} from 'lucide-react';
-import { DiurnalChart } from '@/components/charts/DiurnalChart';
-import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
-import { AccumulationChart } from '@/components/charts/AccumulationChart';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 
-export default function TstDashboardPage() {
-  const [pamData, setPamData] = useState<any>(null);
-  const [pamConfig, setPamConfig] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [selectedSite, setSelectedSite] = useState<string>('All');
-  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0.70);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+// ─── ECharts (dynamic import to avoid SSR issues) ───────────────────────────
+const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
+
+// ─── Exact Audio Player replication from BirdSearch.tsx ──────────────────────
+const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, speciesName }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    async function loadTstData() {
-      try {
-        const [resData, resConfig] = await Promise.all([
-          fetch('/tst/data.json'),
-          fetch('/tst/config.json')
-        ]);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    if (audioRef.current) audioRef.current.load();
+  }, [src]);
 
-        if (resData.ok && resConfig.ok) {
-          const jsonD = await resData.json();
-          const jsonC = await resConfig.json();
-          setPamData(jsonD);
-          setPamConfig(jsonC);
-        }
-      } catch (err) {
-        console.error('Error loading TST dataset:', err);
-      } finally {
-        setLoading(false);
-      }
+  const togglePlay = () => {
+    if (!src) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play().then(() => setIsPlaying(true)).catch(err => console.error('Audio error:', err));
     }
-    loadTstData();
-  }, []);
+  };
 
-  const recordersList = pamData?.recorders || [];
-  const speciesSummaryList = pamData?.species_summary || [];
-  const indicatorConfig = pamConfig?.indicator_species || {};
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const t = parseFloat(e.target.value);
+    setCurrentTime(t);
+    if (audioRef.current) audioRef.current.currentTime = t;
+  };
 
-  const recoveryIndicators = indicatorConfig.recovery || [];
-  const lantanaIndicators = indicatorConfig.lantana || [];
+  const fmt = (s: number) => {
+    if (!s || isNaN(s)) return '0:00';
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  };
 
-  const totalAudioFiles = pamData?.summary?.total_files || 480;
-  const totalDetections = useMemo(() => {
-    return speciesSummaryList.reduce((acc: number, item: any) => acc + (item.detections || 0), 0);
-  }, [speciesSummaryList]);
-
-  const filteredSpeciesList = useMemo(() => {
-    return speciesSummaryList
-      .filter((sp: any) => {
-        const matchesSearch = sp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              (sp.scientific || '').toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesSearch;
-      })
-      .slice(0, 15);
-  }, [speciesSummaryList, searchQuery]);
+  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const sliderBg = `linear-gradient(to right, #4f46e5 ${pct}%, #e2e8f0 ${pct}%)`;
 
   return (
-    <div className="space-y-8 pb-16 font-sans">
-      
-      {/* TST Dashboard Hero Header */}
-      <div className="relative overflow-hidden p-8 md:p-10 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-2xl border border-slate-800/80">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 font-black text-[10px] uppercase tracking-wider flex items-center gap-2">
-                <Database className="w-3.5 h-3.5" /> Genuine TST PAM Dataset Active
-              </span>
-              <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> The Shola Trust & IISER Tirupati
-              </span>
+    <div className={`audio-player-card${!src ? ' disabled' : ''}`}>
+      <audio
+        ref={audioRef}
+        src={src}
+        onTimeUpdate={() => audioRef.current && setCurrentTime(audioRef.current.currentTime)}
+        onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)}
+        onEnded={() => { setIsPlaying(false); setCurrentTime(0); }}
+      />
+
+      <div className="player-controls-row">
+        <button onClick={togglePlay} disabled={!src} className={`play-btn${isPlaying ? ' playing' : ''}`}>
+          {isPlaying ? (
+            <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+          ) : (
+            <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16" style={{ marginLeft: '2px' }}>
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          )}
+        </button>
+
+        <div className="player-details">
+          <span className="player-subtitle">{src ? speciesName : 'From Xenocanto'}</span>
+          {isPlaying && (
+            <div className="soundwave-anim">
+              <div className="wave-bar" />
+              <div className="wave-bar" />
+              <div className="wave-bar" />
+              <div className="wave-bar" />
             </div>
+          )}
+        </div>
+      </div>
 
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
-              The Shola Trust (TST) PAM Bioacoustics Dashboard
-            </h1>
+      <div className="timeline-row">
+        <span className="time-lbl">{fmt(currentTime)}</span>
+        <input
+          type="range"
+          className="player-slider"
+          min="0"
+          max={duration || 0}
+          step="0.1"
+          value={currentTime}
+          onChange={handleSeek}
+          disabled={!src}
+          style={{ background: sliderBg }}
+        />
+        <span className="time-lbl">{fmt(duration)}</span>
+      </div>
+    </div>
+  );
+};
 
-            <p className="text-emerald-400 text-sm font-bold tracking-wide">
-              Habitat Recovery & Lantana-Clearance Acoustic Evaluation Format
-            </p>
 
-            <p className="text-slate-300 text-xs max-w-2xl leading-relaxed font-medium">
-              Acoustic guild indicator assessment evaluating habitat restoration success across 10 Shola forest recording transects (5 Lantana-Cleared vs 5 Lantana-Infested sites).
-            </p>
+// ─── Main TST Dashboard Page ──────────────────────────────────────────────────
+export default function TstDashboardPage() {
+  const [dataRaw, setDataRaw] = useState<any>(null);
+  const [configRaw, setConfigRaw] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Filter state – exact same as App.tsx
+  const [selectedSiteGroup, setSelectedSiteGroup] = useState('All');
+  const [selectedRecorder, setSelectedRecorder] = useState('All');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.70);
+
+  // BirdSearch state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Heatmap controls – exact same as HeatmapPanel.tsx
+  const [matrixSearch, setMatrixSearch] = useState('');
+  const [topN, setTopN] = useState('25');
+  const [sortBy, setSortBy] = useState('detections');
+  const [useLogScale, setUseLogScale] = useState(true);
+
+  // Indicator panel state – exact same as IndicatorPanel.tsx
+  const [indicatorClass, setIndicatorClass] = useState<'recovery' | 'lantana' | 'all'>('recovery');
+  const [indicatorLogScale, setIndicatorLogScale] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [d, c] = await Promise.all([fetch('/tst/data.json'), fetch('/tst/config.json')]);
+        if (d.ok && c.ok) {
+          setDataRaw(await d.json());
+          setConfigRaw(await c.json());
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    }
+    load();
+  }, []);
+
+  // Click outside dropdown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const recorders: any[] = useMemo(() => dataRaw?.recorders || [], [dataRaw]);
+  const speciesList: string[] = useMemo(() => dataRaw?.species_list || [], [dataRaw]);
+  const speciesMetadata: any = useMemo(() => dataRaw?.species_metadata || {}, [dataRaw]);
+  const detectionsRaw: any[] = useMemo(() => dataRaw?.detections || [], [dataRaw]);
+
+  const siteGroups: string[] = useMemo(() => {
+    const g = new Set<string>();
+    recorders.forEach((r: any) => g.add(r.site_group));
+    return Array.from(g).sort();
+  }, [recorders]);
+
+  const recordersList: string[] = useMemo(() => {
+    let list = recorders;
+    if (selectedSiteGroup !== 'All') list = list.filter((r: any) => r.site_group === selectedSiteGroup);
+    return Array.from(new Set(list.map((r: any) => String(r.recorder_id)))).sort();
+  }, [recorders, selectedSiteGroup]);
+
+  useEffect(() => {
+    if (selectedRecorder !== 'All' && !recordersList.includes(selectedRecorder)) setSelectedRecorder('All');
+  }, [selectedSiteGroup, recordersList, selectedRecorder]);
+
+  const filteredRecorders: any[] = useMemo(() => {
+    let list = recorders;
+    if (selectedSiteGroup !== 'All') list = list.filter((r: any) => r.site_group === selectedSiteGroup);
+    if (selectedRecorder !== 'All') list = list.filter((r: any) => r.recorder_id === selectedRecorder);
+    return list;
+  }, [recorders, selectedSiteGroup, selectedRecorder]);
+
+  const landscapeRecorders: any[] = useMemo(() => {
+    let list = recorders;
+    if (selectedSiteGroup !== 'All') list = list.filter((r: any) => r.site_group === selectedSiteGroup);
+    return list;
+  }, [recorders, selectedSiteGroup]);
+
+  const recorderKeyToIdx = useMemo(() => {
+    const m = new Map<string, number>();
+    recorders.forEach((r: any, i: number) => m.set(`${r.site_group}/${r.recorder_id}`, i));
+    return m;
+  }, [recorders]);
+
+  const validIndices = useMemo(() => {
+    const s = new Set<number>();
+    filteredRecorders.forEach((r: any) => {
+      const i = recorderKeyToIdx.get(`${r.site_group}/${r.recorder_id}`);
+      if (i !== undefined) s.add(i);
+    });
+    return s;
+  }, [filteredRecorders, recorderKeyToIdx]);
+
+  const landscapeIndices = useMemo(() => {
+    const s = new Set<number>();
+    landscapeRecorders.forEach((r: any) => {
+      const i = recorderKeyToIdx.get(`${r.site_group}/${r.recorder_id}`);
+      if (i !== undefined) s.add(i);
+    });
+    return s;
+  }, [landscapeRecorders, recorderKeyToIdx]);
+
+  const filteredDetections: any[] = useMemo(() => {
+    const thr = Math.round(confidenceThreshold * 100);
+    return detectionsRaw.filter((d: any) => d[4] >= thr && validIndices.has(d[0]));
+  }, [detectionsRaw, confidenceThreshold, validIndices]);
+
+  // Build aggregated stats
+  const stats = useMemo(() => {
+    const detectedSp = new Set<number>();
+    const activeRecs = new Set<number>();
+    const richnessMap: Record<string, Set<number>> = {};
+    const detectionsMap: Record<string, number> = {};
+    const spSiteMatrix: Record<string, Record<string, number>> = {};
+    const hourlyMap: Record<string, Record<number, number>> = {};
+
+    filteredDetections.forEach((d: any) => {
+      const [recIdx, spIdx, , hour] = d;
+      detectedSp.add(spIdx);
+      activeRecs.add(recIdx);
+      const rec = recorders[recIdx];
+      if (!rec) return;
+      const key = `${rec.site_group}/${rec.recorder_id}`;
+      const spName = speciesList[spIdx];
+      if (!richnessMap[key]) richnessMap[key] = new Set<number>();
+      richnessMap[key].add(spIdx);
+      detectionsMap[key] = (detectionsMap[key] || 0) + 1;
+      if (spName) {
+        if (!spSiteMatrix[spName]) spSiteMatrix[spName] = {};
+        spSiteMatrix[spName][key] = (spSiteMatrix[spName][key] || 0) + 1;
+        if (!hourlyMap[spName]) hourlyMap[spName] = {};
+        hourlyMap[spName][hour] = (hourlyMap[spName][hour] || 0) + 1;
+      }
+    });
+
+    const siteRichness: Record<string, number> = {};
+    Object.keys(richnessMap).forEach(k => siteRichness[k] = richnessMap[k].size);
+
+    const filesProcessed = filteredRecorders.reduce((s: number, r: any) => s + (r.actual_files || 0), 0);
+    const filesExpected = filteredRecorders.reduce((s: number, r: any) => s + (r.expected_files || 0), 0);
+
+    return {
+      uniqueSpecies: detectedSp.size,
+      totalDetections: filteredDetections.length,
+      activeRecorders: activeRecs.size,
+      filesProcessed,
+      filesExpected,
+      siteRichness,
+      siteDetections: detectionsMap,
+      spSiteMatrix,
+      hourlyMap,
+    };
+  }, [filteredDetections, recorders, filteredRecorders, speciesList]);
+
+  const recoveryIndicators: string[] = configRaw?.indicator_species?.recovery || [];
+  const lantanaIndicators: string[] = configRaw?.indicator_species?.lantana || [];
+
+  // Autocomplete suggestions
+  const suggestions = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return speciesList.filter(sp => {
+      const m = speciesMetadata[sp];
+      return sp.toLowerCase().includes(q) || (m?.scientific || '').toLowerCase().includes(q);
+    }).slice(0, 8);
+  }, [searchQuery, speciesList, speciesMetadata]);
+
+  // BirdSearch profile data (exact same as BirdSearch.tsx profileData)
+  const profileData = useMemo(() => {
+    if (!selectedSpecies) return null;
+    const meta = speciesMetadata[selectedSpecies] || {};
+    const detections = stats.spSiteMatrix[selectedSpecies] || {};
+
+    let total = 0, lcDet = 0, liDet = 0, lcCount = 0, liCount = 0;
+    filteredRecorders.forEach((rec: any) => {
+      const key = `${rec.site_group}/${rec.recorder_id}`;
+      const cnt = detections[key] || 0;
+      if (cnt > 0) {
+        total += cnt;
+        if (rec.habitat === 'LC') { lcDet += cnt; lcCount++; }
+        else { liDet += cnt; liCount++; }
+      }
+    });
+
+    const igRaw = meta.indicator_group;
+    const indicatorGroup = (!igRaw || igRaw === 'nan' || igRaw === 'None') ? 'Nil' : igRaw;
+
+    return {
+      name: selectedSpecies,
+      scientific: meta.scientific || 'N/A',
+      endemic: meta.endemic || 'No',
+      preferred_habitat: meta.preferred_habitat || 'Unknown',
+      guild: meta.guild || 'Unknown',
+      vocal_activity: meta.vocal_activity || 'Unknown',
+      iucn: meta.iucn || 'LC',
+      foraging_stratum: meta.foraging_stratum || 'Unknown',
+      indicator_group: indicatorGroup,
+      image: meta.image || '',
+      audio: meta.audio || '',
+      totalDetections: total, lcDetections: lcDet, liDetections: liDet,
+      lcRecordersCount: lcCount, liRecordersCount: liCount,
+    };
+  }, [selectedSpecies, speciesMetadata, stats.spSiteMatrix, filteredRecorders]);
+
+  // Diurnal chart option (ECharts – exact same as BirdSearch.tsx chartOption)
+  const diurnalOption = useMemo(() => {
+    if (!selectedSpecies) return {};
+    const hourlyData = stats.hourlyMap[selectedSpecies] || {};
+    const dataX = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+    const dataY = Array.from({ length: 24 }, (_, i) => hourlyData[i] || 0);
+
+    return {
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => `<div style="font-family:Inter,sans-serif;font-size:11px;padding:2px 4px">Hour: <strong>${params[0].name}</strong><br/>Detections: <strong>${params[0].value} calls</strong></div>`
+      },
+      grid: { top: '15%', left: '8%', right: '4%', bottom: '22%' },
+      xAxis: {
+        type: 'category', data: dataX,
+        axisLabel: { interval: 2, fontSize: 8, color: '#64748b' },
+        axisLine: { lineStyle: { color: '#e2e8f0' } }
+      },
+      yAxis: {
+        type: 'value', name: 'Calls',
+        nameTextStyle: { fontSize: 8, color: '#64748b' },
+        axisLabel: { fontSize: 8, color: '#64748b' },
+        splitLine: { lineStyle: { color: '#f1f5f9' } }
+      },
+      series: [{ data: dataY, type: 'bar', itemStyle: { color: '#4f46e5' }, barWidth: '70%' }]
+    };
+  }, [selectedSpecies, stats.hourlyMap]);
+
+  // Heatmap matrix species list (exact same as HeatmapPanel.tsx processedSpecies)
+  const matrixSpecies = useMemo(() => {
+    // Landscape recorders for Y axis (not fully filtered – same as original)
+    const recs = landscapeRecorders;
+
+    const totals = speciesList.map(sp => {
+      let t = 0;
+      recs.forEach((r: any) => { t += stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0; });
+      return { name: sp, total: t };
+    });
+
+    let filtered = totals.filter(item => item.name.toLowerCase().includes(matrixSearch.toLowerCase()));
+    if (sortBy === 'detections') filtered.sort((a, b) => b.total - a.total);
+    else filtered.sort((a, b) => a.name.localeCompare(b.name));
+    if (topN !== 'All') filtered = filtered.slice(0, parseInt(topN, 10));
+
+    return filtered;
+  }, [speciesList, landscapeRecorders, stats.spSiteMatrix, matrixSearch, sortBy, topN]);
+
+  const matrixRecs = useMemo(() => {
+    return landscapeRecorders.sort((a: any, b: any) =>
+      a.site_group.localeCompare(b.site_group) || a.recorder_id.localeCompare(b.recorder_id)
+    );
+  }, [landscapeRecorders]);
+
+  const xCategories = useMemo(() => matrixRecs.map((r: any) => `${r.site_group}\n${r.recorder_id}`), [matrixRecs]);
+  const yCategories = useMemo(() => matrixSpecies.map(s => s.name).reverse(), [matrixSpecies]);
+
+  // ECharts Heatmap option (exact same as HeatmapPanel.tsx chartOption)
+  const heatmapOption = useMemo(() => {
+    const data: [number, number, number, number][] = [];
+    let maxVal = 1;
+
+    yCategories.forEach((sp, yIdx) => {
+      matrixRecs.forEach((rec: any, xIdx: number) => {
+        const recKey = `${rec.site_group}/${rec.recorder_id}`;
+        const val = stats.spSiteMatrix[sp]?.[recKey] || 0;
+        const colorVal = useLogScale ? Math.log1p(val) : val;
+        data.push([xIdx, yIdx, colorVal, val]);
+        if (val > maxVal) maxVal = val;
+      });
+    });
+
+    const maxColorVal = useLogScale ? Math.log1p(maxVal) : Math.max(10, Math.ceil(maxVal * 0.4));
+
+    return {
+      tooltip: {
+        position: 'top',
+        formatter: (params: any) => {
+          const xIdx = params.value[0];
+          const yIdx = params.value[1];
+          const val = params.value[3];
+          const rec = matrixRecs[xIdx];
+          const spName = yCategories[yIdx];
+          return `<div style="font-family:Inter,sans-serif;padding:4px 8px"><div style="font-weight:700;font-size:13px">${spName}</div><div style="font-size:12px;color:#666;margin-top:4px">Site: <strong>${rec?.site_group} — ${rec?.recorder_id}</strong> (${rec?.habitat})</div><div style="font-size:12px;color:#666;margin-top:2px">Detections: <strong style="color:#4f46e5">${val} calls</strong></div></div>`;
+        }
+      },
+      grid: { top: '5%', left: '20%', right: '5%', bottom: 115, containLabel: false },
+      xAxis: {
+        type: 'category', data: xCategories,
+        axisLabel: { interval: 0, rotate: 45, fontSize: 9, color: '#475569' },
+        splitArea: { show: true }
+      },
+      yAxis: {
+        type: 'category', data: yCategories,
+        axisLabel: { fontSize: 9, color: '#475569' },
+        splitArea: { show: true }
+      },
+      visualMap: {
+        min: 0, max: maxColorVal, calculable: true, orient: 'horizontal', left: 'center', bottom: 5,
+        inRange: { color: ['#f8fafc', '#ccfbf1', '#2dd4bf', '#0d9488', '#0f766e', '#115e59', '#134e4a'] },
+        textStyle: { color: '#475569', fontSize: 10 },
+        formatter: (value: number) => useLogScale ? value.toFixed(1) : Math.round(value).toString(),
+        text: [useLogScale ? 'log(Detections + 1)' : 'Detections', '']
+      },
+      series: [{
+        name: 'Detections', type: 'heatmap', data,
+        label: {
+          show: selectedSiteGroup !== 'All' && yCategories.length <= 30,
+          fontSize: 8,
+          color: (params: any) => (params.value[3] || 0) <= 2 ? '#115e59' : '#ffffff',
+          formatter: (params: any) => params.value[3] || ''
+        },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+      }]
+    };
+  }, [matrixRecs, xCategories, yCategories, stats.spSiteMatrix, selectedSiteGroup, useLogScale]);
+
+  const heatmapHeight = useMemo(() => `${Math.max(300, yCategories.length * 20 + 100)}px`, [yCategories]);
+
+  // Indicator heatmap (exact same as IndicatorPanel.tsx)
+  const activeIndicators = useMemo(() => {
+    if (indicatorClass === 'recovery') return recoveryIndicators;
+    if (indicatorClass === 'lantana') return lantanaIndicators;
+    return [...recoveryIndicators, ...lantanaIndicators];
+  }, [indicatorClass, recoveryIndicators, lantanaIndicators]);
+
+  const indicatorRecs = useMemo(() => {
+    return landscapeRecorders.sort((a: any, b: any) =>
+      a.site_group.localeCompare(b.site_group) || a.recorder_id.localeCompare(b.recorder_id)
+    );
+  }, [landscapeRecorders]);
+
+  const indicatorSpecies = useMemo(() => {
+    return activeIndicators.map(sp => {
+      let total = 0;
+      indicatorRecs.forEach((r: any) => { total += stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0; });
+      return { name: sp, total };
+    }).sort((a, b) => b.total - a.total);
+  }, [activeIndicators, indicatorRecs, stats.spSiteMatrix]);
+
+  const indicatorTotals = useMemo(() => {
+    let lcTotal = 0, liTotal = 0;
+    indicatorSpecies.forEach(sp => {
+      indicatorRecs.forEach((r: any) => {
+        const val = stats.spSiteMatrix[sp.name]?.[`${r.site_group}/${r.recorder_id}`] || 0;
+        if (r.habitat === 'LC') lcTotal += val; else liTotal += val;
+      });
+    });
+    return { lcTotal, liTotal };
+  }, [indicatorSpecies, indicatorRecs, stats.spSiteMatrix]);
+
+  const indXCats = useMemo(() => indicatorRecs.map((r: any) => `${r.site_group}\n${r.recorder_id}`), [indicatorRecs]);
+  const indYCats = useMemo(() => indicatorSpecies.map(s => s.name).reverse(), [indicatorSpecies]);
+
+  const indicatorOption = useMemo(() => {
+    const data: [number, number, number, number][] = [];
+    let maxVal = 1;
+
+    indYCats.forEach((sp, yIdx) => {
+      indicatorRecs.forEach((rec: any, xIdx: number) => {
+        const recKey = `${rec.site_group}/${rec.recorder_id}`;
+        const val = stats.spSiteMatrix[sp]?.[recKey] || 0;
+        const colorVal = indicatorLogScale ? Math.log1p(val) : val;
+        data.push([xIdx, yIdx, colorVal, val]);
+        if (val > maxVal) maxVal = val;
+      });
+    });
+
+    const maxColorVal = indicatorLogScale ? Math.log1p(maxVal) : Math.max(10, Math.ceil(maxVal * 0.4));
+
+    return {
+      tooltip: {
+        position: 'top',
+        formatter: (params: any) => {
+          const val = params.value[3];
+          const rec = indicatorRecs[params.value[0]];
+          const sp = indYCats[params.value[1]];
+          return `<div style="font-family:Inter,sans-serif;padding:4px 8px"><div style="font-weight:700;font-size:13px">${sp}</div><div style="font-size:12px;color:#666;margin-top:4px">Site: <strong>${rec?.site_group} — ${rec?.recorder_id}</strong></div><div style="font-size:12px;color:#666;margin-top:2px">Detections: <strong style="color:#4f46e5">${val} calls</strong></div></div>`;
+        }
+      },
+      grid: { top: '5%', left: '22%', right: '5%', bottom: 115, containLabel: false },
+      xAxis: {
+        type: 'category', data: indXCats,
+        axisLabel: { interval: 0, rotate: 45, fontSize: 9, color: '#475569' },
+        splitArea: { show: true }
+      },
+      yAxis: {
+        type: 'category', data: indYCats,
+        axisLabel: { fontSize: 9, color: '#475569' },
+        splitArea: { show: true }
+      },
+      visualMap: {
+        min: 0, max: maxColorVal, calculable: true, orient: 'horizontal', left: 'center', bottom: 5,
+        inRange: { color: ['#f8fafc', '#ccfbf1', '#2dd4bf', '#0d9488', '#0f766e', '#115e59', '#134e4a'] },
+        textStyle: { color: '#475569', fontSize: 10 },
+        formatter: (value: number) => indicatorLogScale ? value.toFixed(1) : Math.round(value).toString(),
+        text: [indicatorLogScale ? 'log(Detections + 1)' : 'Detections', '']
+      },
+      series: [{
+        name: 'Detections', type: 'heatmap', data,
+        label: {
+          show: indYCats.length <= 30, fontSize: 8,
+          color: (params: any) => (params.value[3] || 0) <= 2 ? '#115e59' : '#ffffff',
+          formatter: (params: any) => params.value[3] || ''
+        },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+      }]
+    };
+  }, [indicatorRecs, indXCats, indYCats, stats.spSiteMatrix, indicatorLogScale]);
+
+  const indicatorChartHeight = useMemo(() => `${Math.max(300, indYCats.length * 20 + 100)}px`, [indYCats]);
+
+  // CSV Exporters
+  const triggerDownload = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  const downloadSummaryCSV = () => {
+    const hdr = ['Site Group', 'Recorder ID', 'Habitat', 'Files Processed', 'Species Richness', 'Total Detections'];
+    const rows = filteredRecorders.map((r: any) => {
+      const k = `${r.site_group}/${r.recorder_id}`;
+      return [r.site_group, r.recorder_id, r.habitat === 'LC' ? 'Lantana-Cleared' : 'Lantana-Infested', r.actual_files || 0, stats.siteRichness[k] || 0, stats.siteDetections[k] || 0];
+    });
+    triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `tst_summary_${selectedSiteGroup}.csv`);
+  };
+
+  const downloadMatrixCSV = () => {
+    const hdr = ['Species', 'Scientific Name', ...matrixRecs.map((r: any) => `${r.site_group}_${r.recorder_id}`)];
+    const rows = matrixSpecies.map(sp => {
+      const meta = speciesMetadata[sp.name];
+      const counts = matrixRecs.map((r: any) => stats.spSiteMatrix[sp.name]?.[`${r.site_group}/${r.recorder_id}`] || 0);
+      return [sp.name, meta?.scientific || '', ...counts];
+    });
+    triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `tst_matrix_${selectedSiteGroup}.csv`);
+  };
+
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="spinner" />
+        <p style={{ fontSize: '0.875rem', color: '#64748b', fontWeight: 600 }}>Loading TST Bioacoustics Dataset…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+
+      {/* ─── HERO SECTION (exact same as Hero.tsx) ─────────────────────────── */}
+      <div className="hero-section">
+        <div className="hero-content">
+          <div className="hero-grid">
+            <div className="hero-text">
+              <h1 className="hero-title">Bioacoustics for restoration monitoring.</h1>
+              <p className="hero-subtitle">
+                An interactive dashboard exploring how bird communities respond to lantana clearance across monitored sites using passive acoustic monitoring and BirdNET-based detections.
+              </p>
+              <p className="hero-description">
+                This project uses sound to assess ecological change in restored and lantana-infested habitats. By combining passive acoustic recorder deployments, automated species detections, and site-level comparisons, the dashboard helps reveal patterns in species richness, indicator species, and bird activity across the landscape. Passive Acoustic Monitoring (PAM) captures continuous soundscapes to track ecological recovery without disturbing wildlife.
+              </p>
+              <p className="hero-description">
+                By analyzing thousands of hours of audio recordings across diverse stations, this platform provides forest departments, conservationists, NGOs, and CSR partners with robust, evidence-based insights into ecosystem health to guide future restoration efforts.
+              </p>
+            </div>
+            <div className="hero-visual">
+              <div className="featured-image-card">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/tst/hero_bird.jpg" alt="Shola Forest Bird" className="featured-img" onError={(e) => (e.currentTarget.style.display = 'none')} />
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Scope Controls Bar */}
-      <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2 text-xs font-black text-slate-900">
-            <Filter className="w-4 h-4 text-indigo-600" />
-            <span>TST Dashboard Parameters:</span>
+      {/* ─── FILTER BAR (exact same as FilterBar.tsx) ──────────────────────── */}
+      <div className="filter-bar">
+        <div className="filter-grid">
+          <div className="filter-item">
+            <label className="filter-label">Landscape / Site Group</label>
+            <select className="select-input" value={selectedSiteGroup} onChange={e => setSelectedSiteGroup(e.target.value)}>
+              <option value="All">All Landscapes</option>
+              {siteGroups.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="filter-item">
+            <label className="filter-label">Recorder Site</label>
+            <select className="select-input" value={selectedRecorder} onChange={e => setSelectedRecorder(e.target.value)}>
+              <option value="All">All Recorders</option>
+              {recordersList.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-item">
+            <label className="filter-label">
+              BirdNet Confidence Cutoff
+              <span style={{ float: 'right', color: '#4f46e5', fontWeight: 700 }}>{confidenceThreshold.toFixed(2)}</span>
+            </label>
+            <div className="slider-wrapper">
               <input
-                type="text"
-                placeholder="Search species..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                type="range" min="0.50" max="0.95" step="0.05"
+                value={confidenceThreshold}
+                onChange={e => setConfidenceThreshold(Number(e.target.value))}
+                className="range-slider"
               />
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-          {/* Site Selector Dropdown */}
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">Select Field Recorder Site</label>
-            <select
-              value={selectedSite}
-              onChange={(e) => setSelectedSite(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none"
-            >
-              <option value="All">All 10 Recorder Transects (Combined Dataset)</option>
-              {recordersList.map((r: any) => (
-                <option key={r.site_group} value={r.site_group}>
-                  {r.name || r.site_group} ({r.site_group})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Confidence Slider */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="font-extrabold text-slate-700 flex items-center gap-1.5">
-                <Sliders className="w-4 h-4 text-emerald-600" /> BirdNET Min Confidence Threshold
-              </label>
-              <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                {(confidenceThreshold * 100).toFixed(0)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0.50"
-              max="0.95"
-              step="0.05"
-              value={confidenceThreshold}
-              onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-              className="w-full accent-emerald-600 cursor-pointer"
-            />
-          </div>
+      {/* ─── SUMMARY KPI CARDS (exact same as SummaryCards.tsx) ─────────────── */}
+      <div className="summary-cards">
+        <div className="kpi-card">
+          <span className="kpi-label">Species Richness</span>
+          <span className="kpi-value">{stats.uniqueSpecies}</span>
+          <span className="kpi-subtext">Unique avian species detected</span>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Total Detections</span>
+          <span className="kpi-value">{stats.totalDetections.toLocaleString()}</span>
+          <span className="kpi-subtext">BirdNET classification triggers</span>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Active Recorders</span>
+          <span className="kpi-value">{filteredRecorders.length}</span>
+          <span className="kpi-subtext">Stations monitored (~275 site-days)</span>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Acoustic Survey Effort</span>
+          <span className="kpi-value">{stats.filesProcessed.toLocaleString()}</span>
+          <span className="kpi-subtext">{stats.filesProcessed} of {stats.filesExpected} clips parsed</span>
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-black uppercase text-slate-400">Total Calls</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{totalDetections.toLocaleString()}</div>
-            <p className="text-[11px] text-emerald-700 font-bold mt-0.5">Analyzed detections</p>
-          </div>
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <Activity className="w-5 h-5" />
-          </div>
-        </div>
+      {/* ─── DASHBOARD GRID SECTIONS ────────────────────────────────────────── */}
+      <div className="dashboard-grid">
 
-        <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-black uppercase text-slate-400">Species Richness</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{speciesSummaryList.length} species</div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">TST Shola Taxa</p>
-          </div>
-          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Bird className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-black uppercase text-slate-400">Recording Transects</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">10 Sites</div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">5 LC vs 5 LI Sites</p>
-          </div>
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-            <MapPin className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-black uppercase text-slate-400">Audio Records</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{totalAudioFiles} Files</div>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">24/7 continuous PAM</p>
-          </div>
-          <div className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Indicator Species Tracking Section (Lantana-Cleared vs Lantana-Infested) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 rounded-[24px] bg-emerald-50/70 border border-emerald-200 space-y-3">
-          <h3 className="text-sm font-black text-emerald-950 flex items-center gap-2 border-b border-emerald-200/80 pb-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            Lantana-Cleared (LC) Habitat Recovery Indicator Species ({recoveryIndicators.length})
-          </h3>
-          <ul className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-800">
-            {recoveryIndicators.slice(0, 12).map((sp: string) => (
-              <li key={sp} className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                <span className="truncate">{sp}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="p-6 rounded-[24px] bg-amber-50/70 border border-amber-200 space-y-3">
-          <h3 className="text-sm font-black text-amber-950 flex items-center gap-2 border-b border-amber-200/80 pb-2.5">
-            <Sparkles className="w-4 h-4 text-amber-600" />
-            Lantana-Infested (LI) Disturbance Indicator Species ({lantanaIndicators.length})
-          </h3>
-          <ul className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-800">
-            {lantanaIndicators.slice(0, 10).map((sp: string) => (
-              <li key={sp} className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
-                <span className="truncate">{sp}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* Stacked TST Charts */}
-      <div className="space-y-6">
-        <div className="premium-card p-6 rounded-[24px] space-y-4">
-          <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
+        {/* ─── AVIAN SPECIES EXPLORER (exact same as BirdSearch.tsx) ───────── */}
+        <div className="dashboard-section" id="explorer-section">
+          <div className="section-header">
             <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-indigo-600" /> TST Diurnal Call Frequency Distribution (24-Hour)
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 font-medium">Diurnal vocalization density across Shola forest transects.</p>
+              <h2>Avian Species Explorer</h2>
+              <p>Search for any detected bird species to view its ecological profile, IUCN status, and habitat associations.</p>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700">TST Format</span>
           </div>
-          <DiurnalChart />
-        </div>
-      </div>
 
-      {/* TST Species Detections Matrix Table */}
-      <div className="premium-card p-6 rounded-[24px] space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Bird className="w-4 h-4 text-emerald-600" /> TST Species Classification Matrix
-            </h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Avian species detections aggregated across TST recording sites.</p>
+          {/* Search Box with Autocomplete */}
+          <div className="search-box" ref={dropdownRef} style={{ maxWidth: '500px' }}>
+            <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search by Common or Scientific name..."
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setShowDropdown(true); }}
+              onFocus={() => searchQuery.trim() !== '' && setShowDropdown(true)}
+            />
+            {showDropdown && suggestions.length > 0 && (
+              <div className="autocomplete-suggestions">
+                {suggestions.map(sp => (
+                  <div key={sp} className="suggestion-item" onClick={() => {
+                    setSelectedSpecies(sp); setSearchQuery(''); setShowDropdown(false);
+                  }}>
+                    <span className="common">{sp}</span>
+                    <span className="scientific">{speciesMetadata[sp]?.scientific}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Species Profile Card */}
+          {profileData ? (
+            <div className="profile-card">
+              <div className="profile-left-col">
+                <div className="profile-image-container">
+                  {profileData.image && !profileData.image.includes('nan') && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profileData.image}
+                      alt={profileData.name}
+                      className="profile-img"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                  )}
+                  <div className="profile-placeholder">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '48px', height: '48px' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Avian Species Profile</span>
+                  </div>
+                </div>
+                <AudioPlayer 
+                  src={profileData.audio ? `/${profileData.audio.replace(/^\/?audio\//, '')}` : ''} 
+                  speciesName={profileData.name} 
+                />
+              </div>
+
+              <div className="profile-details">
+                <div className="profile-header">
+                  <h3>{profileData.name}</h3>
+                  <div className="scientific">{profileData.scientific}</div>
+                </div>
+
+                <div className="profile-meta-grid">
+                  <div className="meta-item">
+                    <span className="meta-label">Conservation Status</span>
+                    <span className="meta-value" style={{ color: profileData.iucn !== 'LC' ? '#ea580c' : 'inherit' }}>
+                      {profileData.iucn === 'LC' ? 'Least Concern (LC)' : profileData.iucn}
+                    </span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-label">Foraging Guild</span>
+                    <span className="meta-value">{profileData.guild}</span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-label">Endemic Status</span>
+                    <span className="meta-value">{profileData.endemic}</span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-label">Vocal Activity</span>
+                    <span className="meta-value">{profileData.vocal_activity}</span>
+                  </div>
+                </div>
+
+                <div className="profile-meta-grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: '-0.5rem' }}>
+                  <div className="meta-item">
+                    <span className="meta-label">Preferred Habitat / Foraging Stratum</span>
+                    <span className="meta-value" style={{ fontWeight: 500, fontSize: '0.8rem' }}>
+                      {profileData.preferred_habitat} ({profileData.foraging_stratum})
+                    </span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-label">Indicator Class</span>
+                    <span className="meta-value" style={{ color: profileData.indicator_group !== 'Nil' ? '#4f46e5' : 'inherit' }}>
+                      {profileData.indicator_group}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="profile-compare-block">
+                  <span className="profile-compare-title">Habitat Distribution &amp; Relative Abundance</span>
+                  <div className="profile-compare-grid">
+                    <div className="compare-col lc">
+                      <span className="compare-header lc">Lantana-Cleared (LC)</span>
+                      <div className="compare-stats">
+                        <span className="compare-large">{profileData.lcDetections.toLocaleString()}</span>
+                        <span className="compare-label lc">detections</span>
+                      </div>
+                      <span className="kpi-subtext" style={{ color: '#14532d' }}>Present in {profileData.lcRecordersCount} LC stations</span>
+                    </div>
+                    <div className="compare-col li">
+                      <span className="compare-header li">Lantana-Infested (LI)</span>
+                      <div className="compare-stats">
+                        <span className="compare-large">{profileData.liDetections.toLocaleString()}</span>
+                        <span className="compare-label li">detections</span>
+                      </div>
+                      <span className="kpi-subtext" style={{ color: '#991b1b' }}>Present in {profileData.liRecordersCount} LI stations</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '1rem', borderTop: '1px solid #e2e8f0', paddingTop: '1.5rem' }}>
+                  <span className="profile-compare-title">Diurnal Detections Pattern (Detections by Hour of Day)</span>
+                  <div style={{ height: '180px', width: '100%', marginTop: '0.5rem' }}>
+                    <ReactECharts option={diurnalOption} style={{ height: '100%', width: '100%' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <span>Search or select a species from the auto-suggest list.</span>
+            </div>
+          )}
+        </div>
+
+        {/* ─── SPECIES DETECTION HEATMAP (exact same as HeatmapPanel.tsx) ───── */}
+        <div className="dashboard-section" id="heatmap-section">
+          <div className="section-header">
+            <div>
+              <h2>Species Detection Heatmap</h2>
+              <p>Distribution and relative abundance (call counts) of species across physical recorders.</p>
+            </div>
+            <button className="btn-primary" onClick={downloadMatrixCSV}>
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Matrix CSV
+            </button>
+          </div>
+
+          {/* Heatmap Controls – exact same layout as HeatmapPanel.tsx */}
+          <div className="heatmap-controls">
+            <div className="search-box">
+              <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text" className="search-input"
+                placeholder="Search species common name..."
+                value={matrixSearch} onChange={e => setMatrixSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="filter-item" style={{ minWidth: '150px' }}>
+              <select className="select-input" value={topN} onChange={e => setTopN(e.target.value)}>
+                <option value="15">Top 15 Species</option>
+                <option value="25">Top 25 Species</option>
+                <option value="50">Top 50 Species</option>
+                <option value="All">All Species</option>
+              </select>
+            </div>
+
+            <div className="filter-item" style={{ minWidth: '150px' }}>
+              <select className="select-input" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                <option value="detections">Sort by Detections</option>
+                <option value="alphabetical">Sort Alphabetically</option>
+              </select>
+            </div>
+
+            <div className="filter-item">
+              <div className="scale-toggle-group">
+                <button type="button" className={`scale-toggle-btn${!useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(false)}>
+                  Linear
+                </button>
+                <button type="button" className={`scale-toggle-btn${useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(true)}>
+                  Log Scale ln(x+1)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {yCategories.length === 0 ? (
+            <div className="empty-state"><span>No species match your query.</span></div>
+          ) : (
+            <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <div style={{ minWidth: '800px', padding: '1rem 0' }}>
+                <ReactECharts option={heatmapOption} style={{ height: heatmapHeight, width: '100%' }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ─── RESTORATION INDICATOR SPECIES ANALYSIS (exact same as IndicatorPanel.tsx) */}
+        <div className="dashboard-section" id="indicator-section">
+          <div className="section-header">
+            <div>
+              <h2>Restoration Indicator Species Analysis</h2>
+              <p>Detections of ecologically significant indicator species across Lantana-Cleared (LC) vs Lantana-Infested (LI) habitats.</p>
+            </div>
+          </div>
+
+          <div className="heatmap-controls">
+            <div className="filter-item" style={{ minWidth: '200px' }}>
+              <select className="select-input" value={indicatorClass} onChange={e => setIndicatorClass(e.target.value as any)}>
+                <option value="recovery">Recovery-associated Species</option>
+                <option value="lantana">Lantana-associated Species</option>
+                <option value="all">All Indicator Species</option>
+              </select>
+            </div>
+
+            <div className="filter-item">
+              <div className="scale-toggle-group">
+                <button type="button" className={`scale-toggle-btn${!indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(false)}>
+                  Linear
+                </button>
+                <button type="button" className={`scale-toggle-btn${indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(true)}>
+                  Log Scale ln(x+1)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '3.5rem' }}>
+            <div>
+              {indYCats.length === 0 ? (
+                <div className="empty-state"><span>No indicator species detected in current filter.</span></div>
+              ) : (
+                <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <div style={{ minWidth: '800px', padding: '1rem 0' }}>
+                    <ReactECharts option={indicatorOption} style={{ height: indicatorChartHeight, width: '100%' }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Indicator Summary Side Panel */}
+            <div className="stats-summary-panel">
+              <span className="stats-summary-title">Indicator Detections Summary</span>
+              <div>
+                <div className="stat-item" style={{ marginBottom: '0.5rem' }}>
+                  <span className="stat-item-label">Recovery Category Choice</span>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#4f46e5' }}>
+                    {indicatorClass === 'recovery' ? 'Restoration-Associated' : indicatorClass === 'lantana' ? 'Lantana-Associated' : 'All Indicators'}
+                  </span>
+                </div>
+                <div className="stats-grid">
+                  <div style={{ background: '#dcfce7', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(22,163,74,0.15)' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#14532d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detections in LC</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#14532d', marginTop: '0.25rem' }}>{indicatorTotals.lcTotal.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#15803d' }}>Restored Habitats</div>
+                  </div>
+                  <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(239,68,68,0.15)' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detections in LI</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#991b1b', marginTop: '0.25rem' }}>{indicatorTotals.liTotal.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#dc2626' }}>Infested Habitats</div>
+                  </div>
+                </div>
+                {indicatorTotals.liTotal > 0 && (
+                  <div className="stat-diff-callout" style={{ marginTop: '1rem' }}>
+                    <span className="stat-diff-label">Detections Ratio (LC / LI)</span>
+                    <span className="stat-diff-val">{(indicatorTotals.lcTotal / Math.max(1, indicatorTotals.liTotal)).toFixed(2)}x</span>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      Detected predominantly in {indicatorTotals.lcTotal > indicatorTotals.liTotal ? 'Lantana-Cleared (LC)' : 'Lantana-Infested (LI)'} sites.
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
-                <th className="pb-3 pl-2">Species Name</th>
-                <th className="pb-3">Scientific Name</th>
-                <th className="pb-3">Indicator Status</th>
-                <th className="pb-3 pr-2 text-right">Detections</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredSpeciesList.map((sp: any) => {
-                const isRecovery = recoveryIndicators.includes(sp.name);
-                const isLantana = lantanaIndicators.includes(sp.name);
-                return (
-                  <tr key={sp.name} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3.5 pl-2 font-extrabold text-slate-900">{sp.name}</td>
-                    <td className="py-3.5 font-mono text-[11px] text-slate-500 italic">{sp.scientific || 'Aves sp.'}</td>
-                    <td className="py-3.5">
-                      {isRecovery ? (
-                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          Recovery Indicator (LC)
-                        </span>
-                      ) : isLantana ? (
-                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
-                          Disturbance Indicator (LI)
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-400">General Avian</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 pr-2 text-right font-mono font-extrabold text-slate-900">
-                      {(sp.detections || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
       </div>
-
     </div>
   );
 }

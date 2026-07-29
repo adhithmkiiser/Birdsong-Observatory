@@ -13,7 +13,6 @@ import {
   Calendar,
   Sparkles
 } from 'lucide-react';
-import { DETECTIONS_DATA, STATIONS_DATA } from '@/lib/mockData';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
@@ -26,7 +25,10 @@ export default function LiveDetectionsPage() {
   const [minConfidence, setMinConfidence] = useState(0.5);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
-  const filteredDetections = DETECTIONS_DATA.filter((det) => {
+  const detections: Detection[] = []; // will be populated by Supabase realtime
+  const stationsList: any[] = []; // will be populated by Supabase
+
+  const filteredDetections = detections.filter((det) => {
     const matchesSearch = det.common_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           det.scientific_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStation = selectedStation === 'ALL' || det.station_name === selectedStation;
@@ -78,7 +80,7 @@ export default function LiveDetectionsPage() {
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
           >
             <option value="ALL">All Field Stations</option>
-            {STATIONS_DATA.map((s) => (
+            {stationsList.map((s) => (
               <option key={s.id} value={s.station_name}>{s.station_name}</option>
             ))}
           </select>

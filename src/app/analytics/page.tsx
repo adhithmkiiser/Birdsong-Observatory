@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -16,39 +16,34 @@ import {
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
-import { PROJECTS_DATA, STATIONS_DATA, DETECTIONS_DATA } from '@/lib/mockData';
+import { supabase } from '@/lib/supabase';
 
 export default function AnalyticsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
 
-  // Filter available stations based on selected project
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [stationsList, setStationsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    supabase.from('projects').select('*').order('created_at').then(({ data }) => setProjectsList(data || []));
+    supabase.from('stations').select('*').order('station_name').then(({ data }) => setStationsList(data || []));
+  }, []);
+
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? STATIONS_DATA
-    : STATIONS_DATA.filter(s => s.project_id === selectedProjectId);
+    ? stationsList
+    : stationsList.filter(s => s.project_id === selectedProjectId);
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
     setSelectedStationId('ALL_SITES');
   };
 
-  // Filter detections based on selected project and site scope
-  const filteredDetections = DETECTIONS_DATA.filter(det => {
-    const matchesProject = selectedProjectId === 'ALL_PROJECTS' || det.project_name === PROJECTS_DATA.find(p => p.id === selectedProjectId)?.name;
-    const matchesStation = selectedStationId === 'ALL_SITES' || det.station_id === selectedStationId;
-    return matchesProject && matchesStation;
-  });
-
-  // Calculate dynamic metrics from real uploaded datasets
-  const activeStationsCount = selectedStationId !== 'ALL_SITES'
-    ? (STATIONS_DATA.find(s => s.id === selectedStationId)?.status === 'online' ? 1 : 0)
-    : availableStations.filter(s => s.status === 'online').length;
-
-  const totalDetectionsCount = filteredDetections.length;
-
-  // Unique species count calculated dynamically
-  const uniqueSpeciesSet = new Set(filteredDetections.map(d => d.scientific_name));
-  const speciesRichness = uniqueSpeciesSet.size;
+  const filteredDetections: any[] = [];
+  const activeStationsCount = availableStations.filter(s => s.status === 'online').length;
+  const totalDetectionsCount = 0;
+  const uniqueSpeciesSet = new Set<string>();
+  const speciesRichness = 0;
 
   // Calculate dynamic Shannon Diversity Index H' = - sum(p_i * ln(p_i))
   let shannonDiversity = 0;
@@ -113,8 +108,8 @@ export default function AnalyticsPage() {
               onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_PROJECTS">All Projects ({PROJECTS_DATA.length} Active)</option>
-              {PROJECTS_DATA.map((p) => (
+              <option value="ALL_PROJECTS">All Projects ({projectsList.length} Active)</option>
+              {projectsList.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>

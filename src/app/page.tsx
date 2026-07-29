@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Radio, 
   Cpu, 
@@ -9,51 +9,91 @@ import {
   Database, 
   Clock, 
   Play, 
-  ChevronRight,
-  ShieldCheck,
   Activity, 
   Volume2,
   Sparkles,
   TrendingUp,
   Filter,
-  Plus
+  Plus,
+  ShieldCheck
 } from 'lucide-react';
-import { STATIONS_DATA, DETECTIONS_DATA, PROJECTS_DATA } from '@/lib/mockData';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  organization: string;
+  project_type: string;
+  species_count: number;
+  total_detections: number;
+  stations_count: number;
+  public_visible: boolean;
+  created_at: string;
+  manager_name?: string;
+}
+
+interface Station {
+  id: string;
+  station_name: string;
+  description: string;
+  project_id: string;
+  project_name: string;
+  status: string;
+  last_seen?: string;
+  latitude?: number;
+  longitude?: number;
+}
 
 export default function DashboardPage() {
   const { currentRole, visibilitySettings } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
-  // Scope filter state: Project & Site
+  // Scope filter state
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
 
-  // Filter available stations based on selected project
+  // Real data from Supabase
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [stations, setStations] = useState<Station[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const [{ data: projs }, { data: stats }] = await Promise.all([
+          supabase.from('projects').select('*').order('created_at', { ascending: false }),
+          supabase.from('stations').select('*').order('station_name'),
+        ]);
+        setProjects(projs || []);
+        setStations(stats || []);
+      } catch (e) {
+        console.error('Failed to fetch data:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? STATIONS_DATA
-    : STATIONS_DATA.filter(s => s.project_id === selectedProjectId);
+    ? stations
+    : stations.filter(s => s.project_id === selectedProjectId);
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
     setSelectedStationId('ALL_SITES');
   };
 
-  // Filter detections based on selected project and site
-  const filteredDetections = DETECTIONS_DATA.filter(det => {
-    const matchesProject = selectedProjectId === 'ALL_PROJECTS' || det.project_name === PROJECTS_DATA.find(p => p.id === selectedProjectId)?.name;
-    const matchesStation = selectedStationId === 'ALL_SITES' || det.station_id === selectedStationId;
-    return matchesProject && matchesStation;
-  });
-
   const activeStations = availableStations.filter(s => s.status === 'online').length;
   const totalStationsCount = availableStations.length;
-  const totalDetectionsCount = filteredDetections.length;
 
   return (
     <div className="space-y-8 pb-8">
@@ -78,7 +118,7 @@ export default function DashboardPage() {
             </h1>
 
             <p className="text-emerald-400 text-sm font-bold tracking-wide">
-              Realtime Species Vocalization Ingestion & Automated Telemetry
+              Realtime Species Vocalization Ingestion &amp; Automated Telemetry
             </p>
 
             <p className="text-slate-300 text-xs max-w-2xl leading-relaxed font-medium">
@@ -89,7 +129,7 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row md:flex-col gap-3 flex-shrink-0">
             <a
               href="/projects"
-              className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-2 group/btn"
+              className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4" />
               <span>Create New Project</span>
@@ -106,7 +146,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Project & Site Scope Selection Controls Panel */}
+      {/* Project & Site Scope Filter */}
       <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-3">
         <div className="flex items-center gap-2 text-xs font-black text-slate-900 border-b border-slate-100 pb-2.5">
           <Filter className="w-4 h-4 text-indigo-600" />
@@ -114,7 +154,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          {/* Dropdown 1: Select Project */}
           <div>
             <label className="font-extrabold text-slate-700 block mb-1.5">Select Project</label>
             <select
@@ -122,14 +161,13 @@ export default function DashboardPage() {
               onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_PROJECTS">All Projects ({PROJECTS_DATA.length} Projects)</option>
-              {PROJECTS_DATA.map((p) => (
+              <option value="ALL_PROJECTS">All Projects ({projects.length} Projects)</option>
+              {projects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Dropdown 2: Select Site / Station */}
           <div>
             <label className="font-extrabold text-slate-700 block mb-1.5">Select Site / Recorder Node</label>
             <select
@@ -137,7 +175,7 @@ export default function DashboardPage() {
               onChange={(e) => setSelectedStationId(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_SITES">All Sites & Recorders ({availableStations.length} Sites)</option>
+              <option value="ALL_SITES">All Sites &amp; Recorders ({availableStations.length} Sites)</option>
               {availableStations.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.station_name} ({s.description})
@@ -148,110 +186,110 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Dynamic KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-        {/* Card 1: Active Stations */}
-        <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Nodes</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs">
-              <Radio className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{activeStations}</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Online field nodes</p>
+      {/* KPI Cards Grid */}
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="premium-card p-4 rounded-[20px] min-h-[140px] animate-pulse bg-slate-100" />
+          ))}
         </div>
-
-        {/* Card 2: Total Recorders */}
-        <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Nodes</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-2xs">
-              <Cpu className="w-4 h-4" />
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+          <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Nodes</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <Radio className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{totalStationsCount}</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Deployed scope</p>
-        </div>
-
-        {/* Card 3: Total Detections */}
-        <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Detections</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-2xs">
-              <Activity className="w-4 h-4" />
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{activeStations}</p>
             </div>
+            <p className="text-[11px] font-bold text-slate-400">Online field nodes</p>
           </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{totalDetectionsCount.toLocaleString()}</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Ingested call events</p>
-        </div>
 
-        {/* Card 4: Species Count */}
-        <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Species</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-2xs">
-              <Bird className="w-4 h-4" />
+          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Nodes</span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Cpu className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Identified taxa</p>
-        </div>
-
-        {/* Card 5: Avg Confidence */}
-        <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Avg Conf.</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs">
-              <ShieldCheck className="w-4 h-4" />
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{totalStationsCount}</p>
             </div>
+            <p className="text-[11px] font-bold text-slate-400">Deployed scope</p>
           </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">--</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Model threshold 85%</p>
-        </div>
 
-        {/* Card 6: Storage Used */}
-        <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Storage</span>
-            <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center shadow-2xs">
-              <Database className="w-4 h-4" />
+          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Detections</span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Activity className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0.0 GB</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Supabase Bucket</p>
-        </div>
-
-        {/* Card 7: Projects */}
-        <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Projects</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shadow-2xs">
-              <FolderKanban className="w-4 h-4" />
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0</p>
             </div>
+            <p className="text-[11px] font-bold text-slate-400">Ingested call events</p>
           </div>
-          <div className="my-1">
-            <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{PROJECTS_DATA.length}</p>
-          </div>
-          <p className="text-[11px] font-bold text-slate-400">Active research</p>
-        </div>
-      </div>
 
-      {/* Main Stacked Charts Section: Detections by Time of Day & Relative Species Abundance stacked ONE BELOW ANOTHER */}
+          <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Species</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Bird className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0</p>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400">Identified taxa</p>
+          </div>
+
+          <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Avg Conf.</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">--</p>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400">Model threshold 85%</p>
+          </div>
+
+          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Storage</span>
+              <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
+                <Database className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0.0 GB</p>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400">Supabase Bucket</p>
+          </div>
+
+          <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Projects</span>
+              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <FolderKanban className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="my-1">
+              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{projects.length}</p>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400">Active research</p>
+          </div>
+        </div>
+      )}
+
+      {/* Charts */}
       <div className="space-y-6">
-        {/* 1. Detections by Time of Day (24-Hour Diurnal) Chart (Full Width) */}
         <div className="premium-card p-6 rounded-[24px] space-y-4">
           <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
             <div>
@@ -265,7 +303,6 @@ export default function DashboardPage() {
           <DiurnalChart />
         </div>
 
-        {/* 2. Relative Species Abundance Ranking Chart */}
         <div className="premium-card p-6 rounded-[24px] space-y-4">
           <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
             <div>
@@ -280,7 +317,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent Live Audio Detections Feed Table */}
+      {/* Recent Detections Feed */}
       <div className="premium-card p-6 rounded-[24px] space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
           <div>
@@ -291,59 +328,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {filteredDetections.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-              <Volume2 className="w-8 h-8 text-slate-400 mx-auto" />
-              <div className="font-black text-xs text-slate-900">No Audio Detections Ingested Yet</div>
-              <p className="text-[11px] text-slate-500 max-w-md mx-auto font-medium">
-                Run <code className="bg-slate-200 px-1.5 py-0.5 rounded font-mono text-[10px]">python-sync/birdnet_sync.py</code> or connect a live Raspberry Pi node to stream detections into the platform.
-              </p>
-            </div>
-          ) : (
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
-                  <th className="pb-3 pl-2">Time</th>
-                  <th className="pb-3">Species</th>
-                  <th className="pb-3">Station Node</th>
-                  <th className="pb-3">Confidence</th>
-                  <th className="pb-3 pr-2 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredDetections.map((det) => (
-                  <tr key={det.id} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3.5 pl-2 font-mono text-[11px] text-slate-500">{det.time}</td>
-                    <td className="py-3.5">
-                      <div className="font-extrabold text-slate-900">{det.common_name}</div>
-                      <div className="text-[10px] text-slate-500 italic">{det.scientific_name}</div>
-                    </td>
-                    <td className="py-3.5 font-bold text-slate-700">{det.station_name}</td>
-                    <td className="py-3.5">
-                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl border ${
-                        det.confidence >= 0.9 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {formatPercent(det.confidence)}
-                      </span>
-                    </td>
-                    <td className="py-3.5 pr-2 text-right">
-                      <button
-                        onClick={() => setSelectedDetection(det)}
-                        className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-xs transition inline-flex items-center gap-1.5 shadow-2xs"
-                      >
-                        <Play className="w-3 h-3 fill-current" /> Listen Clip
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+          <Volume2 className="w-8 h-8 text-slate-400 mx-auto" />
+          <div className="font-black text-xs text-slate-900">No Audio Detections Ingested Yet</div>
+          <p className="text-[11px] text-slate-500 max-w-md mx-auto font-medium">
+            Run <code className="bg-slate-200 px-1.5 py-0.5 rounded font-mono text-[10px]">python-sync/birdnet_sync.py</code> or connect a live Raspberry Pi node to stream detections into the platform.
+          </p>
         </div>
       </div>
 
-      {/* Audio Modal */}
       {selectedDetection && (
         <AudioPlayerModal
           detection={selectedDetection}

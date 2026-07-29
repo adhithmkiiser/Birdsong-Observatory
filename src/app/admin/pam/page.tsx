@@ -15,7 +15,6 @@ import {
   Trash2,
   Bird
 } from 'lucide-react';
-import { PROJECTS_DATA, STATIONS_DATA, SPECIES_DATA } from '@/lib/mockData';
 import { useRole } from '@/components/layout/RoleContext';
 
 interface ProjectItem {
@@ -58,48 +57,10 @@ export default function PamAdminPage() {
   const [csvNewSiteLat, setCsvNewSiteLat] = useState<number | ''>(13.58);
   const [csvNewSiteLng, setCsvNewSiteLng] = useState<number | ''>(75.64);
 
-  // 2. Projects & Sites Management States
-  const [projectsList, setProjectsList] = useState<ProjectItem[]>([
-    {
-      id: 'prj-01',
-      title: 'Western Ghats Biodiversity Canopy Study',
-      tag: 'Canopy Bioacoustics',
-      collaboration: 'IISER Tirupati Bird Ecology Lab',
-      description: 'Multi-year passive acoustic transect monitoring across high-elevation rainforest canopy corridors.',
-      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
-    },
-    {
-      id: 'prj-02',
-      title: 'Tirupati Bioacoustics Sanctuary Observatory',
-      tag: 'Sanctuary Observatory',
-      collaboration: 'Forest Department & IISER Tirupati',
-      description: 'Continuous soundscape recording network monitoring avian endemic species in Sheshachalam Biosphere Reserve.',
-      image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80'
-    }
-  ]);
+  // 2. Projects & Sites Management States (starts empty — real projects added via form / Supabase)
+  const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
 
-  const [sitesList, setSitesList] = useState<SiteItem[]>([
-    {
-      id: 'LC_01',
-      projectId: 'prj-01',
-      name: 'Canopy Transect Site LC_01',
-      elevation: '1,350m',
-      status: 'Active',
-      latitude: 13.582,
-      longitude: 75.641,
-      expectedFiles: 48
-    },
-    {
-      id: 'LC_02',
-      projectId: 'prj-01',
-      name: 'Ridge Canopy Site LC_02',
-      elevation: '1,420m',
-      status: 'Active',
-      latitude: 13.595,
-      longitude: 75.655,
-      expectedFiles: 48
-    }
-  ]);
+  const [sitesList, setSitesList] = useState<SiteItem[]>([]);
 
   // Form: Create New Project
   const [newProjId, setNewProjId] = useState('');

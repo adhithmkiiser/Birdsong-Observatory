@@ -1,11 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, Plus } from 'lucide-react';
-import { STATIONS_DATA } from '@/lib/mockData';
+import { supabase } from '@/lib/supabase';
 
 // Fix Leaflet default marker icons in Next.js
 const createCustomIcon = (status?: string) => {
@@ -48,9 +48,14 @@ interface StationMapDetail {
 export default function SatelliteMap() {
   const centerLat = 13.58;
   const centerLng = 75.64;
+  const [rawStations, setRawStations] = useState<any[]>([]);
+
+  useEffect(() => {
+    supabase.from('stations').select('*').then(({ data }) => setRawStations(data || []));
+  }, []);
 
   // Safely map deployed stations dataset
-  const extendedStations: StationMapDetail[] = STATIONS_DATA.map(stn => ({
+  const extendedStations: StationMapDetail[] = rawStations.map(stn => ({
     id: stn.id || 'stn-unknown',
     station_name: stn.station_name || 'Station Node',
     description: stn.description || 'Bioacoustic Field Node',

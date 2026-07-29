@@ -74,33 +74,8 @@ export default function LiveAdminPage() {
   const [formOrg, setFormOrg] = useState('IISER Tirupati Bird Lab');
   const [formProjectType, setFormProjectType] = useState<'PAM' | 'Live' | 'Both'>('Live');
 
-  // 1. Live Pi Field Nodes Status & Queue Telemetry
-  const [nodesList, setNodesList] = useState<LiveNodeItem[]>([
-    {
-      id: 'NODE-01',
-      stationName: 'WesternGhats_Canopy_Node_01',
-      projectName: 'Western Ghats Live Stream Observatory',
-      ipAddress: '192.168.1.104',
-      lastUploadedId: 1256,
-      pendingQueue: 0,
-      lastSyncTime: '15 seconds ago',
-      status: 'online',
-      sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
-      audioDir: '/home/pi/BirdNET-Pi/clips/'
-    },
-    {
-      id: 'NODE-02',
-      stationName: 'Tirupati_Sanctuary_Node_02',
-      projectName: 'Tirupati Bioacoustics Sanctuary Observatory',
-      ipAddress: '192.168.1.108',
-      lastUploadedId: 842,
-      pendingQueue: 2,
-      lastSyncTime: '1 min ago',
-      status: 'syncing',
-      sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
-      audioDir: '/home/pi/BirdNET-Pi/clips/'
-    }
-  ]);
+  // 1. Live Pi Field Nodes Status & Queue Telemetry (starts empty — populated by real connected nodes)
+  const [nodesList, setNodesList] = useState<LiveNodeItem[]>([]);
 
   // 2. Python Daemon Script Config Generator State
   const [genStationName, setGenStationName] = useState('WesternGhats_Node_01');
@@ -109,16 +84,8 @@ export default function LiveAdminPage() {
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
   const [genInterval, setGenInterval] = useState('15');
 
-  // 3. Projects Management State
-  const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([
-    {
-      id: 'prj-live-01',
-      name: 'Western Ghats Live Canopy Stream Observatory',
-      description: 'Real-time 24/7 continuous audio streaming nodes deployed in high canopy corridors.',
-      organization: 'IISER Tirupati Bird Lab',
-      stationsCount: 2
-    }
-  ]);
+  // 3. Projects Management State (starts empty — add real projects via the form)
+  const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
 
   // Forms
   const [newProjId, setNewProjId] = useState('');
@@ -331,61 +298,65 @@ WantedBy=multi-user.target`;
             </div>
 
             <div className="divide-y divide-slate-100">
-              {nodesList.map(node => (
-                <div key={node.id} className="py-4 space-y-3">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <strong className="text-sm font-black text-slate-900">{node.stationName}</strong>
-                        <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold">
-                          {node.id}
-                        </span>
-                        <span className="font-mono text-[10px] text-slate-400">({node.ipAddress})</span>
-                      </div>
-                      <p className="text-slate-500 font-medium text-[11px] mt-0.5">{node.projectName}</p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase border ${
-                        node.status === 'online' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                        node.status === 'syncing' ? 'bg-indigo-50 text-indigo-800 border-indigo-200 animate-pulse' :
-                        'bg-rose-50 text-rose-800 border-rose-200'
-                      }`}>
-                        {node.status === 'online' ? '● SYNC DAEMON ACTIVE' : node.status === 'syncing' ? '⚡ UPLOADING DELTA' : 'OFFLINE'}
-                      </span>
-
-                      <button
-                        onClick={() => handleTriggerSyncNow(node.id)}
-                        className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] transition flex items-center gap-1.5"
-                      >
-                        <RefreshCw className="w-3 h-3" /> Sync Now
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Telemetry Metrics Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 font-mono text-[11px]">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase">Last Uploaded Row ID</span>
-                      <strong className="text-slate-900 font-black">#{node.lastUploadedId}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase">Pending Queue</span>
-                      <strong className={node.pendingQueue > 0 ? "text-amber-600 font-black" : "text-emerald-700 font-black"}>
-                        {node.pendingQueue} files
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase">Last Daemon Ping</span>
-                      <strong className="text-slate-700">{node.lastSyncTime}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase">SQLite Source Path</span>
-                      <strong className="text-slate-500 truncate block">{node.sqlitePath}</strong>
-                    </div>
-                  </div>
+              {nodesList.length === 0 ? (
+                <div className="py-10 text-center space-y-2">
+                  <Cpu className="w-8 h-8 text-slate-300 mx-auto" />
+                  <div className="font-black text-xs text-slate-900">No Pi Field Nodes Connected</div>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto font-medium">
+                    Deploy the <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-[10px]">birdnet_sync.py</code> daemon on a Raspberry Pi field node and connect it to this Supabase project to see live telemetry here.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                nodesList.map(node => (
+                  <div key={node.id} className="py-4 space-y-3">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-sm font-black text-slate-900">{node.stationName}</strong>
+                          <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold">{node.id}</span>
+                          <span className="font-mono text-[10px] text-slate-400">({node.ipAddress})</span>
+                        </div>
+                        <p className="text-slate-500 font-medium text-[11px] mt-0.5">{node.projectName}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase border ${
+                          node.status === 'online' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                          node.status === 'syncing' ? 'bg-indigo-50 text-indigo-800 border-indigo-200 animate-pulse' :
+                          'bg-rose-50 text-rose-800 border-rose-200'
+                        }`}>
+                          {node.status === 'online' ? '● SYNC DAEMON ACTIVE' : node.status === 'syncing' ? '⚡ UPLOADING DELTA' : 'OFFLINE'}
+                        </span>
+                        <button
+                          onClick={() => handleTriggerSyncNow(node.id)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] transition flex items-center gap-1.5"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Sync Now
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 font-mono text-[11px]">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Last Uploaded Row ID</span>
+                        <strong className="text-slate-900 font-black">#{node.lastUploadedId}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Pending Queue</span>
+                        <strong className={node.pendingQueue > 0 ? "text-amber-600 font-black" : "text-emerald-700 font-black"}>
+                          {node.pendingQueue} files
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Last Daemon Ping</span>
+                        <strong className="text-slate-700">{node.lastSyncTime}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">SQLite Source Path</span>
+                        <strong className="text-slate-500 truncate block">{node.sqlitePath}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

@@ -6,12 +6,11 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { RoleProvider, useRole } from '@/components/layout/RoleContext';
-import { STATIONS_DATA } from '@/lib/mockData';
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { currentRole } = useRole();
-  const onlineStations = STATIONS_DATA.filter(s => s.status === 'online').length;
+  const onlineStations = 0; // will be wired to Supabase realtime
 
   // Determine if current route is part of the Dashboard section where Sidebar should appear
   const dashboardRoutes = [

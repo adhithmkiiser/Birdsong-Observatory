@@ -1,17 +1,27 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Cpu, Battery, HardDrive, Thermometer, MapPin, Clock, ShieldCheck, Activity } from 'lucide-react';
-import { STATIONS_DATA } from '@/lib/mockData';
+import { supabase } from '@/lib/supabase';
 
 export default function StationsPage() {
+  const [stations, setStations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('stations').select('*').order('station_name').then(({ data }) => {
+      setStations(data || []);
+      setLoading(false);
+    });
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-emerald-400" /> Field Recorder Telemetry & Node Management
+            <Cpu className="w-5 h-5 text-emerald-400" /> Field Recorder Telemetry &amp; Node Management
           </h1>
           <p className="text-xs text-slate-400 mt-1">Monitor deployed BirdNET-Pi hardware nodes, battery levels, disk space, and firmware health.</p>
         </div>
@@ -22,7 +32,17 @@ export default function StationsPage() {
 
       {/* Station Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {STATIONS_DATA.map((station) => (
+        {loading ? (
+          [...Array(3)].map((_, i) => (
+            <div key={i} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 h-48 animate-pulse" />
+          ))
+        ) : stations.length === 0 ? (
+          <div className="col-span-3 py-16 flex flex-col items-center gap-3 text-slate-500">
+            <Cpu className="w-10 h-10 text-slate-700" />
+            <div className="font-black text-sm text-slate-300">No Stations Deployed Yet</div>
+            <p className="text-xs text-slate-500 max-w-sm text-center">Deploy a BirdNET-Pi field node and register it via the Admin console to see telemetry here.</p>
+          </div>
+        ) : stations.map((station) => (
           <div key={station.id} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-4 relative overflow-hidden">
             {/* Status Header */}
             <div className="flex items-start justify-between border-b border-slate-800 pb-3">
