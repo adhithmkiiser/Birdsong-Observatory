@@ -188,7 +188,7 @@ export default function PamAdminPage() {
       }
 
       setParsedSiteCode(code.toUpperCase());
-      setCsvNewSiteName(`Recorder Site ${code.toUpperCase()}`);
+      // Don't auto-set site name from filename — use the dropdown-selected site name instead
 
       const exists = sitesList.some(s => s.id.toLowerCase() === code.toLowerCase());
       if (exists) {

@@ -120,21 +120,31 @@ export default function CommonDashboardPage() {
     setSelectedStationId('ALL_SITES');
   };
 
+  // Build a fast lookup map: station_id → project_id
+  const stationProjectMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    stationsList.forEach(s => {
+      map[s.id.toLowerCase()] = s.project_id;
+    });
+    return map;
+  }, [stationsList]);
+
   // Filter detections by project and station
   const filteredDetections = detectionsList.filter(d => {
-    // Determine if station is in the selected project scope
-    const siteObj = stationsList.find(s => s.id.toLowerCase() === d.station_id?.toLowerCase() || s.station_name.toLowerCase() === d.station_name?.toLowerCase());
-    
+    const sid = d.station_id?.toLowerCase();
+    if (!sid) return false; // skip rows with no station_id
+
     // Project filter
     if (selectedProjectId !== 'ALL_PROJECTS') {
-      if (!siteObj || siteObj.project_id !== selectedProjectId) return false;
+      const projId = stationProjectMap[sid];
+      if (!projId || projId !== selectedProjectId) return false;
     }
-    
+
     // Site filter
     if (selectedStationId !== 'ALL_SITES') {
-      if (!siteObj || siteObj.id !== selectedStationId) return false;
+      if (sid !== selectedStationId.toLowerCase()) return false;
     }
-    
+
     return true;
   });
 
