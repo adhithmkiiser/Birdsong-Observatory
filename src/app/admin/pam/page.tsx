@@ -192,31 +192,14 @@ export default function PamAdminPage() {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
+    // Use the dropdown-selected site (not the filename-parsed code)
+    const selectedSite = sitesList.find(s => s.id === selectedUploadSiteId);
+    const effectiveSiteId = selectedSite?.id || parsedSiteCode || 'unknown';
+    const effectiveSiteName = selectedSite?.name || csvNewSiteName || effectiveSiteId;
+
     setIsUploading(true);
     setUploadProgress(0);
     try {
-      // 1. If inline site creation required, register the site
-      if (csvSiteAction === 'create' && parsedSiteCode) {
-        setUploadingFileName(`Registering Site: ${parsedSiteCode}...`);
-        const createdSite = {
-          id: parsedSiteCode,
-          project_id: selectedUploadProjId,
-          name: csvNewSiteName,
-          elevation: csvNewSiteElev,
-          status: 'Active',
-          latitude: csvNewSiteLat !== '' ? Number(csvNewSiteLat) : 13.58,
-          longitude: csvNewSiteLng !== '' ? Number(csvNewSiteLng) : 75.64,
-          expected_files: 48
-        };
-        
-        const { error } = await supabase.from('sites').insert([createdSite]);
-        if (error) {
-          alert(`Error auto-registering site "${parsedSiteCode}": ` + error.message);
-          setIsUploading(false);
-          return;
-        }
-        setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
-      }
 
       // 2. Parse the uploaded Raven Selection Table files (.txt) and save detections to Supabase!
       let totalInserted = 0;
@@ -269,8 +252,8 @@ export default function PamAdminPage() {
             }
 
             detectionsToInsert.push({
-              station_id: parsedSiteCode,
-              station_name: csvNewSiteName || parsedSiteCode,
+              station_id: effectiveSiteId,
+              station_name: effectiveSiteName,
               common_name: commonName,
               confidence: confidenceVal,
               timestamp: timestamp.toISOString(),
