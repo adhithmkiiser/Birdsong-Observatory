@@ -30,6 +30,8 @@ export default function HomePage() {
   const [scrollY, setScrollY] = useState(0);
   const [activeStep, setActiveStep] = useState<number>(0);
   const [projects, setProjects] = useState<any[]>([]);
+  const [sitesList, setSitesList] = useState<any[]>([]);
+  const [detectionsList, setDetectionsList] = useState<any[]>([]);
   const [tstStats, setTstStats] = useState({ recorders: 25, species: 128, detections: 58679 });
 
   useEffect(() => {
@@ -38,9 +40,24 @@ export default function HomePage() {
     };
     window.addEventListener('scroll', handleScroll);
 
-    supabase.from('projects').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-      setProjects(data || []);
-    });
+    // Fetch projects, sites, and basic detections metadata for dynamic landing page counters
+    async function loadStats() {
+      try {
+        const [projRes, sitesRes, detRes] = await Promise.all([
+          supabase.from('projects').select('*').order('created_at', { ascending: false }),
+          supabase.from('sites').select('id, project_id'),
+          supabase.from('live_detections').select('station_id, common_name')
+        ]);
+        
+        if (projRes.data) setProjects(projRes.data);
+        if (sitesRes.data) setSitesList(sitesRes.data);
+        if (detRes.data) setDetectionsList(detRes.data);
+      } catch (err) {
+        console.error('Failed to load dynamic landing page counters:', err);
+      }
+    }
+    
+    loadStats();
 
     fetch('/tst/data.json')
       .then(res => res.json())
@@ -72,6 +89,22 @@ export default function HomePage() {
   const liveProjects = projects.filter(p => p.project_type === 'Live');
 
   const tstProject = projects.find(p => p.id === 'tst');
+  
+  // Helper to compute live project stats dynamically
+  const getProjectStats = (projectId: string) => {
+    const projSites = sitesList.filter(s => s.project_id === projectId);
+    const siteIds = new Set(projSites.map(s => s.id.toLowerCase()));
+    
+    const projDetections = detectionsList.filter(d => d.station_id && siteIds.has(d.station_id.toLowerCase()));
+    const uniqueSp = new Set(projDetections.map(d => d.common_name)).size;
+    
+    return {
+      recorders: projSites.length,
+      species: uniqueSp,
+      detections: projDetections.length
+    };
+  };
+
   const otherPamProjects = projects.filter(p => p.id !== 'tst' && p.project_type === 'PAM');
 
   const workflowSteps = [
@@ -290,15 +323,15 @@ export default function HomePage() {
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs font-mono">
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-bold block">Recorders</span>
-                      <strong className="text-slate-900 font-black text-sm">{p.stations_count || 0} Sites</strong>
+                      <strong className="text-slate-900 font-black text-sm">{getProjectStats(p.id).recorders} Sites</strong>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-bold block">Species</span>
-                      <strong className="text-indigo-600 font-black text-sm">{p.species_count || 0} Species</strong>
+                      <strong className="text-indigo-600 font-black text-sm">{getProjectStats(p.id).species} Species</strong>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-bold block">Detections</span>
-                      <strong className="text-slate-900 font-black text-sm">{p.total_detections || 0}</strong>
+                      <strong className="text-slate-900 font-black text-sm">{getProjectStats(p.id).detections}</strong>
                     </div>
                   </div>
                 </div>

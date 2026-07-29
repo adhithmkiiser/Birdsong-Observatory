@@ -35,10 +35,80 @@ export default function CommonDashboardPage() {
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [detectionsList, setDetectionsList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Load projects and combine stations/sites
   useEffect(() => {
-    supabase.from('projects').select('*').order('created_at').then(({ data }) => setProjectsList(data || []));
-    supabase.from('stations').select('*').order('station_name').then(({ data }) => setStationsList(data || []));
+    async function initData() {
+      setLoading(true);
+      try {
+        const [projectsRes, stationsRes, sitesRes] = await Promise.all([
+          supabase.from('projects').select('*').order('created_at', { ascending: false }),
+          supabase.from('stations').select('*').order('station_name'),
+          supabase.from('sites').select('*').order('name')
+        ]);
+
+        const projects = projectsRes.data || [];
+        setProjectsList(projects);
+
+        // Combine stations (Live) and sites (PAM)
+        const combined: any[] = [];
+        if (sitesRes.data) {
+          sitesRes.data.forEach(s => {
+            combined.push({
+              id: s.id,
+              station_name: s.name,
+              project_id: s.project_id,
+              description: s.elevation ? `PAM Elevation: ${s.elevation}` : 'PAM Site',
+              type: 'PAM'
+            });
+          });
+        }
+        if (stationsRes.data) {
+          stationsRes.data.forEach(s => {
+            combined.push({
+              id: s.id,
+              station_name: s.station_name,
+              project_id: s.project_id,
+              description: s.description || 'Live Recorder Node',
+              type: 'Live'
+            });
+          });
+        }
+        setStationsList(combined);
+
+        // Fetch all detections
+        const { data: detectionsData } = await supabase
+          .from('live_detections')
+          .select('*')
+          .order('timestamp', { ascending: false });
+        
+        setDetectionsList(detectionsData || []);
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    initData();
+
+    // Subscribe to realtime live_detections insertions to update dashboard dynamically
+    const channel = supabase
+      .channel('live-dashboard-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'live_detections' },
+        (payload) => {
+          setDetectionsList((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
@@ -50,7 +120,52 @@ export default function CommonDashboardPage() {
     setSelectedStationId('ALL_SITES');
   };
 
-  const filteredDetections: any[] = [];
+  // Filter detections by project and station
+  const filteredDetections = detectionsList.filter(d => {
+    // Determine if station is in the selected project scope
+    const siteObj = stationsList.find(s => s.id.toLowerCase() === d.station_id?.toLowerCase() || s.station_name.toLowerCase() === d.station_name?.toLowerCase());
+    
+    // Project filter
+    if (selectedProjectId !== 'ALL_PROJECTS') {
+      if (!siteObj || siteObj.project_id !== selectedProjectId) return false;
+    }
+    
+    // Site filter
+    if (selectedStationId !== 'ALL_SITES') {
+      if (!siteObj || siteObj.id !== selectedStationId) return false;
+    }
+    
+    return true;
+  });
+
+  // Calculate stats
+  const totalDetections = filteredDetections.length;
+  const uniqueSpecies = Array.from(new Set(filteredDetections.map(d => d.common_name))).length;
+
+  // Group detections for 24H Diurnal Chart
+  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+    hour: `${i.toString().padStart(2, '0')}:00`,
+    detections: 0
+  }));
+  filteredDetections.forEach(d => {
+    if (!d.timestamp) return;
+    const hour = new Date(d.timestamp).getHours();
+    if (hour >= 0 && hour < 24) {
+      hourlyData[hour].detections += 1;
+    }
+  });
+
+  // Group detections for Top Species Chart
+  const speciesMap: { [key: string]: number } = {};
+  filteredDetections.forEach(d => {
+    if (d.common_name) {
+      speciesMap[d.common_name] = (speciesMap[d.common_name] || 0) + 1;
+    }
+  });
+  const topSpeciesData = Object.keys(speciesMap)
+    .map(name => ({ species: name, detections: speciesMap[name] }))
+    .sort((a, b) => b.detections - a.detections)
+    .slice(0, 10);
 
   return (
     <div className="space-y-8 pb-12 font-sans">
@@ -149,7 +264,7 @@ export default function CommonDashboardPage() {
         <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-400">Species Count</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">0 species</div>
+            <div className="text-2xl font-black text-slate-900 mt-1">{uniqueSpecies} species</div>
             <p className="text-[11px] text-slate-500 font-medium mt-0.5">Identified taxa</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -180,7 +295,7 @@ export default function CommonDashboardPage() {
               <p className="text-xs text-slate-500 mt-1 font-medium">Diurnal vocalization activity pattern for selected project.</p>
             </div>
           </div>
-          <DiurnalChart />
+          <DiurnalChart data={hourlyData} />
         </div>
 
         <div className="premium-card p-6 rounded-[24px] space-y-4">
@@ -192,7 +307,7 @@ export default function CommonDashboardPage() {
               <p className="text-xs text-slate-500 mt-1 font-medium">Ranked species call frequencies.</p>
             </div>
           </div>
-          <TopSpeciesChart />
+          <TopSpeciesChart data={topSpeciesData} />
         </div>
       </div>
 
