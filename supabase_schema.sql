@@ -86,6 +86,29 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Stations / Hardware Telemetry Table
+CREATE TABLE IF NOT EXISTS public.stations (
+  id TEXT PRIMARY KEY,
+  station_name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  project_id TEXT REFERENCES public.projects(id) ON DELETE SET NULL,
+  project_name TEXT,
+  country TEXT DEFAULT 'India',
+  state TEXT DEFAULT 'Karnataka',
+  latitude NUMERIC(10, 8),
+  longitude NUMERIC(11, 8),
+  elevation INT DEFAULT 0,
+  installation_date DATE DEFAULT CURRENT_DATE,
+  firmware_version TEXT DEFAULT 'v2.4.1',
+  birdnet_version TEXT DEFAULT 'BirdNET V2.4',
+  status TEXT DEFAULT 'online',
+  last_seen TEXT DEFAULT 'Just now',
+  battery_level INT DEFAULT 100,
+  cpu_temperature NUMERIC(5,2) DEFAULT 42.5,
+  storage_used_percent INT DEFAULT 18,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Safely Add Realtime Publication (Prevents duplicate relation error)
 DO $$
 BEGIN
@@ -105,6 +128,7 @@ ALTER TABLE public.sites DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.live_detections DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.species DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stations DISABLE ROW LEVEL SECURITY;
 
 -- Storage Buckets & Policies
 INSERT INTO storage.buckets (id, name, public) 

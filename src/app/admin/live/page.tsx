@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Radio, 
   Cpu, 
@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
+import { supabase } from '@/lib/supabase';
 
 interface LiveNodeItem {
   id: string;
@@ -87,6 +88,43 @@ export default function LiveAdminPage() {
   // 3. Projects Management State (starts empty — add real projects via the form)
   const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
 
+  useEffect(() => {
+    async function loadLiveAdminData() {
+      try {
+        const [{ data: projs }, { data: stats }] = await Promise.all([
+          supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('stations').select('*').order('created_at', { ascending: false })
+        ]);
+        if (projs) {
+          setLiveProjects(projs.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description || '',
+            organization: p.organization || 'IISER Tirupati Bird Lab',
+            stationsCount: p.stations_count || 0
+          })));
+        }
+        if (stats) {
+          setNodesList(stats.map((s: any) => ({
+            id: s.id,
+            stationName: s.station_name,
+            projectName: s.project_name || 'Western Ghats Live Observatory',
+            ipAddress: '192.168.1.100',
+            lastUploadedId: 0,
+            pendingQueue: 0,
+            lastSyncTime: s.last_seen || 'Just now',
+            status: s.status as any || 'online',
+            sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
+            audioDir: '/home/pi/BirdNET-Pi/clips/'
+          })));
+        }
+      } catch (e) {
+        console.error('Failed to load Live admin data from database:', e);
+      }
+    }
+    loadLiveAdminData();
+  }, []);
+
   // Forms
   const [newProjId, setNewProjId] = useState('');
   const [newProjName, setNewProjName] = useState('');
@@ -133,27 +171,48 @@ WantedBy=multi-user.target`;
     showNotification(`Sync command dispatched to Raspberry Pi field node ${nodeId}`);
   };
 
-  const handleCreateLiveProject = (e: React.FormEvent) => {
+  const handleCreateLiveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjName) return;
 
-    const newProj: LiveProjectItem = {
-      id: newProjId ? newProjId.toLowerCase().replace(/\s+/g, '-') : `prj-live-${Date.now().toString().slice(-4)}`,
+    const projectId = newProjId ? newProjId.trim().toLowerCase().replace(/\s+/g, '-') : `prj-live-${Math.random().toString(36).substr(2, 5)}`;
+    const newProj = {
+      id: projectId,
       name: newProjName,
       description: newProjDesc || 'Real-time live streaming bioacoustics project.',
       organization: newProjOrg || 'IISER Tirupati Bird Lab',
-      stationsCount: 0
+      project_type: 'Live',
+      stations_count: 0,
+      species_count: 0,
+      total_detections: 0
     };
 
-    setLiveProjects(prev => [...prev, newProj]);
+    const { error } = await supabase.from('projects').insert([newProj]);
+    if (error) {
+      alert('Error creating project: ' + error.message);
+      return;
+    }
+
+    setLiveProjects(prev => [...prev, {
+      id: newProj.id,
+      name: newProj.name,
+      description: newProj.description,
+      organization: newProj.organization,
+      stationsCount: 0
+    }]);
     setNewProjId('');
     setNewProjName('');
     setNewProjDesc('');
     showNotification(`New Live Stream Project "${newProjName}" created!`);
   };
 
-  const handleDeleteLiveProject = (projectId: string) => {
+  const handleDeleteLiveProject = async (projectId: string) => {
     if (confirm(`Are you sure you want to delete live project "${projectId}"? This will remove all streaming station node configurations.`)) {
+      const { error } = await supabase.from('projects').delete().eq('id', projectId);
+      if (error) {
+        alert('Error deleting project: ' + error.message);
+        return;
+      }
       setLiveProjects(prev => prev.filter(p => p.id !== projectId));
       showNotification(`Live project ${projectId} deleted successfully.`);
     }

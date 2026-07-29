@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, 
   Upload, 
@@ -16,6 +16,7 @@ import {
   Bird
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
+import { supabase } from '@/lib/supabase';
 
 interface ProjectItem {
   id: string;
@@ -36,6 +37,26 @@ interface SiteItem {
   longitude?: number;
   expectedFiles?: number;
 }
+
+const mapDbProjectToItem = (p: any): ProjectItem => ({
+  id: p.id,
+  title: p.name,
+  tag: 'Bioacoustic Survey',
+  collaboration: p.organization || 'IISER Tirupati Bird Lab',
+  description: p.description || '',
+  image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+});
+
+const mapDbSiteToItem = (s: any): SiteItem => ({
+  id: s.id,
+  projectId: s.project_id,
+  name: s.name,
+  elevation: s.elevation || '1,200m',
+  status: s.status || 'Active',
+  latitude: s.latitude ? Number(s.latitude) : 13.58,
+  longitude: s.longitude ? Number(s.longitude) : 75.64,
+  expectedFiles: s.expected_files || 48
+});
 
 export default function PamAdminPage() {
   const { currentRole } = useRole();
@@ -59,8 +80,23 @@ export default function PamAdminPage() {
 
   // 2. Projects & Sites Management States (starts empty — real projects added via form / Supabase)
   const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
-
   const [sitesList, setSitesList] = useState<SiteItem[]>([]);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [{ data: projs }, { data: sitesData }] = await Promise.all([
+          supabase.from('projects').select('*').order('created_at', { ascending: false }),
+          supabase.from('sites').select('*').order('created_at', { ascending: false })
+        ]);
+        if (projs) setProjectsList(projs.map(mapDbProjectToItem));
+        if (sitesData) setSitesList(sitesData.map(mapDbSiteToItem));
+      } catch (e) {
+        console.error('Failed to fetch projects or sites from Supabase:', e);
+      }
+    }
+    loadData();
+  }, []);
 
   // Form: Create New Project
   const [newProjId, setNewProjId] = useState('');
@@ -121,23 +157,27 @@ export default function PamAdminPage() {
     }
   };
 
-  const handleBatchUploadSubmit = (e: React.FormEvent) => {
+  const handleBatchUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
     // If inline site creation required
     if (csvSiteAction === 'create' && parsedSiteCode) {
-      const createdSite: SiteItem = {
+      const createdSite = {
         id: parsedSiteCode,
-        projectId: selectedUploadProjId,
+        project_id: selectedUploadProjId,
         name: csvNewSiteName,
         elevation: csvNewSiteElev,
         status: 'Active',
         latitude: csvNewSiteLat !== '' ? Number(csvNewSiteLat) : 13.58,
         longitude: csvNewSiteLng !== '' ? Number(csvNewSiteLng) : 75.64,
-        expectedFiles: 48
+        expected_files: 48
       };
-      setSitesList(prev => [...prev, createdSite]);
+      
+      const { error } = await supabase.from('sites').insert([createdSite]);
+      if (!error) {
+        setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
+      }
     }
 
     showNotification(`Successfully processed ${uploadFiles.length} BirdNET CSV file(s) into database!`);
@@ -146,20 +186,29 @@ export default function PamAdminPage() {
   };
 
   // Handler: Create Project
-  const handleCreateProject = (e: React.FormEvent) => {
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjId || !newProjTitle) return;
 
-    const newProj: ProjectItem = {
-      id: newProjId.trim().toLowerCase().replace(/\s+/g, '-'),
-      title: newProjTitle,
-      tag: newProjTag || 'Bioacoustic Survey',
-      collaboration: newProjCollab || 'IISER Tirupati Bird Lab',
+    const projectId = newProjId.trim().toLowerCase().replace(/\s+/g, '-');
+    const newProj = {
+      id: projectId,
+      name: newProjTitle,
       description: newProjDesc || 'Project details pending data updates.',
-      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+      organization: newProjCollab || 'IISER Tirupati Bird Lab',
+      project_type: 'PAM',
+      stations_count: 0,
+      species_count: 0,
+      total_detections: 0
     };
 
-    setProjectsList(prev => [...prev, newProj]);
+    const { error } = await supabase.from('projects').insert([newProj]);
+    if (error) {
+      alert('Error creating project: ' + error.message);
+      return;
+    }
+
+    setProjectsList(prev => [...prev, mapDbProjectToItem(newProj)]);
     setNewProjId('');
     setNewProjTitle('');
     setNewProjTag('');
@@ -169,34 +218,51 @@ export default function PamAdminPage() {
   };
 
   // Handler: Register Site
-  const handleRegisterSite = (e: React.FormEvent) => {
+  const handleRegisterSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSiteId || !newSiteName) return;
 
-    const newSite: SiteItem = {
-      id: normalizeSiteCode(newSiteId).toUpperCase(),
-      projectId: newSiteProjId,
+    const siteId = normalizeSiteCode(newSiteId).toUpperCase();
+    const newSite = {
+      id: siteId,
+      project_id: newSiteProjId,
       name: newSiteName,
       elevation: newSiteElev,
       status: 'Active',
       latitude: newSiteLat !== '' ? Number(newSiteLat) : 13.58,
       longitude: newSiteLng !== '' ? Number(newSiteLng) : 75.64,
-      expectedFiles: newSiteFiles !== '' ? Number(newSiteFiles) : 48
+      expected_files: newSiteFiles !== '' ? Number(newSiteFiles) : 48
     };
 
-    setSitesList(prev => [...prev, newSite]);
+    const { error } = await supabase.from('sites').insert([newSite]);
+    if (error) {
+      alert('Error registering site: ' + error.message);
+      return;
+    }
+
+    setSitesList(prev => [...prev, mapDbSiteToItem(newSite)]);
     setNewSiteId('');
     setNewSiteName('');
     showNotification(`Site "${newSiteName}" registered with coordinates (${newSiteLat}, ${newSiteLng}).`);
   };
 
-  const handleDeleteSite = (siteId: string) => {
+  const handleDeleteSite = async (siteId: string) => {
+    const { error } = await supabase.from('sites').delete().eq('id', siteId);
+    if (error) {
+      alert('Error deleting site: ' + error.message);
+      return;
+    }
     setSitesList(prev => prev.filter(s => s.id !== siteId));
     showNotification(`Site ${siteId} removed.`);
   };
 
-  const handleDeleteProject = (projectId: string) => {
+  const handleDeleteProject = async (projectId: string) => {
     if (confirm(`Are you sure you want to delete project "${projectId}"? This will remove all associated sites and detections.`)) {
+      const { error } = await supabase.from('projects').delete().eq('id', projectId);
+      if (error) {
+        alert('Error deleting project: ' + error.message);
+        return;
+      }
       setProjectsList(prev => prev.filter(p => p.id !== projectId));
       showNotification(`Project ${projectId} deleted successfully.`);
     }

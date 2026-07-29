@@ -1,8 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, PublicVisibilitySettings, User } from '@/types/database';
 import { MOCK_USERS } from '@/lib/mockData';
+import { supabase } from '@/lib/supabase';
 
 interface RoleContextType {
   currentRole: UserRole;
@@ -27,6 +28,32 @@ const defaultVisibilitySettings: PublicVisibilitySettings = {
   allowPublicReports: false,
 };
 
+const mapDbUserToUser = (dbUser: any): User => ({
+  id: dbUser.id,
+  name: dbUser.name,
+  email: dbUser.email,
+  password: dbUser.password_hash || 'pass123',
+  role: dbUser.role as any,
+  organization: dbUser.organization || 'IISER Tirupati Bird Lab',
+  assignedProjectType: dbUser.assigned_project_type as any || 'Both',
+  status: dbUser.status as any || 'active',
+  createdAt: dbUser.created_at ? dbUser.created_at.split('T')[0] : '2026-01-15',
+  lastLogin: dbUser.last_login || 'Never'
+});
+
+const mapUserToDbUser = (user: User) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  password_hash: user.password || 'pass123',
+  role: user.role,
+  organization: user.organization,
+  assigned_project_type: user.assignedProjectType || 'Both',
+  status: user.status || 'active',
+  last_login: user.lastLogin === 'Never' ? null : user.lastLogin,
+  created_at: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString()
+});
+
 const RoleContext = createContext<RoleContextType>({
   currentRole: 'Admin',
   setCurrentRole: () => {},
@@ -47,6 +74,27 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
   const [currentRole, setCurrentRoleState] = useState<UserRole>(MOCK_USERS[0].role);
   const [visibilitySettings, setVisibilitySettings] = useState<PublicVisibilitySettings>(defaultVisibilitySettings);
+
+  useEffect(() => {
+    async function loadUsers() {
+      try {
+        const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true });
+        if (!error && data && data.length > 0) {
+          const mappedUsers = data.map(mapDbUserToUser);
+          setUsersList(mappedUsers);
+          // Sync current session role with loaded db user if match exists
+          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+          if (match) {
+            setCurrentUser(match);
+            setCurrentRoleState(match.role);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load users from database:', e);
+      }
+    }
+    loadUsers();
+  }, []);
 
   const setCurrentRole = (role: UserRole) => {
     setCurrentRoleState(role);
@@ -72,16 +120,28 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
     // Update in user list
     setUsersList(prev => prev.map(u => u.id === found.id ? updated : u));
+    
+    // Save last login time to DB
+    supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', found.id).then();
+    
     return { success: true, message: `Welcome back, ${found.name}!` };
   };
 
   const logoutUser = () => {
-    const publicUser = usersList.find(u => u.role === 'Public') || MOCK_USERS[3];
+    const publicUser = usersList.find(u => u.role === 'Public') || MOCK_USERS[3] || {
+      id: 'usr-public',
+      name: 'Public Guest',
+      email: 'public@birdlab.in',
+      role: 'Public',
+      organization: 'Public Network',
+      status: 'active',
+      createdAt: '2026-01-15'
+    };
     setCurrentUser(publicUser);
     setCurrentRoleState('Public');
   };
 
-  const updateUserCredentials = (userId: string, updates: Partial<User>) => {
+  const updateUserCredentials = async (userId: string, updates: Partial<User>) => {
     setUsersList(prev => prev.map(u => {
       if (u.id === userId) {
         const updated = { ...u, ...updates };
@@ -94,14 +154,44 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       }
       return u;
     }));
+
+    // Update in Supabase
+    const dbUpdates: any = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.email !== undefined) dbUpdates.email = updates.email;
+    if (updates.password !== undefined) dbUpdates.password_hash = updates.password;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+    if (updates.organization !== undefined) dbUpdates.organization = updates.organization;
+    if (updates.assignedProjectType !== undefined) dbUpdates.assigned_project_type = updates.assignedProjectType;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.lastLogin !== undefined && updates.lastLogin !== 'Never') {
+      dbUpdates.last_login = updates.lastLogin;
+    }
+
+    try {
+      await supabase.from('users').update(dbUpdates).eq('id', userId);
+    } catch (e) {
+      console.error('Supabase error updating user:', e);
+    }
   };
 
-  const deleteUser = (userId: string) => {
+  const deleteUser = async (userId: string) => {
     setUsersList(prev => prev.filter(u => u.id !== userId));
+    try {
+      await supabase.from('users').delete().eq('id', userId);
+    } catch (e) {
+      console.error('Supabase error deleting user:', e);
+    }
   };
 
-  const addUser = (newUser: User) => {
+  const addUser = async (newUser: User) => {
     setUsersList(prev => [newUser, ...prev]);
+    try {
+      const dbUser = mapUserToDbUser(newUser);
+      await supabase.from('users').insert([dbUser]);
+    } catch (e) {
+      console.error('Supabase error adding user:', e);
+    }
   };
 
   const updateVisibilitySetting = (key: keyof PublicVisibilitySettings, val: boolean) => {

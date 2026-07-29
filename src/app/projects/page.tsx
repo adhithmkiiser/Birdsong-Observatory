@@ -48,6 +48,7 @@ export default function ProjectsPage() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     const newProj = {
+      id: `prj-${Math.random().toString(36).substr(2, 9)}`,
       name,
       description,
       organization,
@@ -57,11 +58,17 @@ export default function ProjectsPage() {
       species_count: 0,
       total_detections: 0,
       stations_count: 0,
-      created_at: new Date().toISOString().split('T')[0]
+      created_at: new Date().toISOString()
     };
 
     const { data, error } = await supabase.from('projects').insert([newProj]).select().single();
-    if (!error && data) {
+    if (error) {
+      console.error('Supabase error inserting project:', error);
+      alert('Error creating project: ' + error.message);
+      return;
+    }
+
+    if (data) {
       setProjectsList(prev => [data, ...prev]);
       setCreatedSuccessMsg('Project created successfully!');
       setTimeout(() => {
