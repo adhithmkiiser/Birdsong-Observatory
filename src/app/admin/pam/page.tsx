@@ -13,7 +13,8 @@ import {
   Edit2, 
   Layers, 
   Trash2,
-  Bird
+  Bird,
+  X
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -44,7 +45,7 @@ const mapDbProjectToItem = (p: any): ProjectItem => ({
   tag: 'Bioacoustic Survey',
   collaboration: p.organization || 'IISER Tirupati Bird Lab',
   description: p.description || '',
-  image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+  image: p.image_url || 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
 });
 
 const mapDbSiteToItem = (s: any): SiteItem => ({
@@ -104,6 +105,14 @@ export default function PamAdminPage() {
   const [newProjTag, setNewProjTag] = useState('');
   const [newProjCollab, setNewProjCollab] = useState('');
   const [newProjDesc, setNewProjDesc] = useState('');
+  const [newProjImage, setNewProjImage] = useState('');
+
+  // Edit Project Modal States
+  const [editingProj, setEditingProj] = useState<ProjectItem | null>(null);
+  const [editProjTitle, setEditProjTitle] = useState('');
+  const [editProjDesc, setEditProjDesc] = useState('');
+  const [editProjCollab, setEditProjCollab] = useState('');
+  const [editProjImage, setEditProjImage] = useState('');
 
   // Form: Register New Site
   const [newSiteProjId, setNewSiteProjId] = useState('prj-01');
@@ -199,7 +208,8 @@ export default function PamAdminPage() {
       project_type: 'PAM',
       stations_count: 0,
       species_count: 0,
-      total_detections: 0
+      total_detections: 0,
+      image_url: newProjImage || null
     };
 
     const { error } = await supabase.from('projects').insert([newProj]);
@@ -214,7 +224,36 @@ export default function PamAdminPage() {
     setNewProjTag('');
     setNewProjCollab('');
     setNewProjDesc('');
+    setNewProjImage('');
     showNotification(`New project "${newProjTitle}" created successfully!`);
+  };
+
+  const handleEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProj) return;
+
+    const { error } = await supabase.from('projects').update({
+      name: editProjTitle,
+      description: editProjDesc,
+      organization: editProjCollab,
+      image_url: editProjImage || null
+    }).eq('id', editingProj.id);
+
+    if (error) {
+      alert('Error updating project: ' + error.message);
+      return;
+    }
+
+    setProjectsList(prev => prev.map(p => p.id === editingProj.id ? {
+      ...p,
+      title: editProjTitle,
+      description: editProjDesc,
+      collaboration: editProjCollab,
+      image: editProjImage || 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+    } : p));
+
+    setEditingProj(null);
+    showNotification('Project updated successfully!');
   };
 
   // Handler: Register Site
@@ -529,6 +568,17 @@ export default function PamAdminPage() {
                 />
               </div>
 
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
+                  value={newProjImage}
+                  onChange={(e) => setNewProjImage(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
               <div className="flex justify-end">
                 <button
                   type="submit"
@@ -560,6 +610,19 @@ export default function PamAdminPage() {
                     <div className="text-[10px] text-slate-400 font-mono">Lead: {p.collaboration || 'IISER Tirupati Bird Lab'}</div>
                   </div>
                   <div className="flex items-center gap-2 self-end md:self-center">
+                    <button
+                      onClick={() => {
+                        setEditingProj(p);
+                        setEditProjTitle(p.title);
+                        setEditProjDesc(p.description || '');
+                        setEditProjCollab(p.collaboration || '');
+                        setEditProjImage(p.image || '');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold flex items-center gap-1.5 transition"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit Project</span>
+                    </button>
                     <button
                       onClick={() => handleDeleteProject(p.id)}
                       className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200 hover:border-rose-600"
@@ -703,6 +766,86 @@ export default function PamAdminPage() {
 
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-slate-600">
             Curate foraging guild, conservation IUCN status, foraging stratum, and vocal activity parameters for species in database.
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {editingProj && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col justify-between text-xs">
+            <div className="p-6 bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white relative">
+              <button
+                onClick={() => setEditingProj(null)}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <h2 className="text-sm font-black tracking-tight">Edit Project: {editingProj.title}</h2>
+              <p className="text-[10px] text-slate-300 font-medium">Modify existing project details and images.</p>
+            </div>
+
+            <form onSubmit={handleEditProject} className="p-6 space-y-4">
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editProjTitle}
+                  onChange={(e) => setEditProjTitle(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Description</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={editProjDesc}
+                  onChange={(e) => setEditProjDesc(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Organization / Collaboration</label>
+                <input
+                  type="text"
+                  required
+                  value={editProjCollab}
+                  onChange={(e) => setEditProjCollab(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
+                  value={editProjImage}
+                  onChange={(e) => setEditProjImage(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingProj(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
