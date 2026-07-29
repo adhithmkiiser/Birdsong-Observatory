@@ -26,7 +26,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     '/users'
   ];
 
-  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`));
+  const isTstOrPamDashboard = pathname.startsWith('/dashboard/tst') || pathname.startsWith('/dashboard/common');
+  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isTstOrPamDashboard;
 
   return (
     <div className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">
