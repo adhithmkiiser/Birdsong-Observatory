@@ -218,6 +218,12 @@ export default function HomePage() {
                     <span className="text-[10px] font-mono text-emerald-400 font-bold">Standard Theme</span>
                   </div>
 
+                  {(tstProject.image_url || '/Shola_Trust.png') && (
+                    <div className="w-full h-40 rounded-2xl overflow-hidden my-3 border border-slate-800 shadow-inner">
+                      <img src={tstProject.image_url || '/Shola_Trust.png'} alt={tstProject.name} className="w-full h-full object-cover" />
+                    </div>
+                  )}
+
                   <h4 className="text-2xl font-black tracking-tight text-white leading-tight">
                     {tstProject.name}
                   </h4>
@@ -265,6 +271,12 @@ export default function HomePage() {
                     </span>
                     <span className="text-[10px] font-mono text-slate-400 font-bold">Common Format</span>
                   </div>
+
+                  {p.image_url && (
+                    <div className="w-full h-40 rounded-2xl overflow-hidden my-3 border border-slate-100 shadow-inner">
+                      <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                    </div>
+                  )}
 
                   <h4 className="text-2xl font-black text-slate-900 leading-tight">
                     {p.name}
@@ -328,6 +340,12 @@ export default function HomePage() {
                     </span>
                     <span className="text-[10px] font-mono text-emerald-600 font-bold">{p.stations_count || 0} Nodes Active</span>
                   </div>
+
+                  {p.image_url && (
+                    <div className="w-full h-40 rounded-2xl overflow-hidden my-3 border border-slate-100 shadow-inner">
+                      <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                    </div>
+                  )}
 
                   <h4 className="text-2xl font-black text-slate-900 leading-tight">
                     {p.name}

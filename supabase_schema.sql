@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
   species_count INT DEFAULT 0,
   total_detections INT DEFAULT 0,
   public_visible BOOLEAN DEFAULT TRUE,
+  image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

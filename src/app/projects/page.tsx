@@ -16,7 +16,8 @@ import {
   Activity, 
   Globe, 
   Lock,
-  Trash2
+  Trash2,
+  Edit2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRole } from '@/components/layout/RoleContext';
@@ -45,6 +46,16 @@ export default function ProjectsPage() {
     });
   }, []);
 
+  const [editingProj, setEditingProj] = useState<any | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editOrg, setEditOrg] = useState('');
+  const [editManager, setEditManager] = useState('');
+  const [editPublic, setEditPublic] = useState(true);
+  const [editImage, setEditImage] = useState('');
+
+  const [imageUrl, setImageUrl] = useState('');
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     const newProj = {
@@ -58,6 +69,7 @@ export default function ProjectsPage() {
       species_count: 0,
       total_detections: 0,
       stations_count: 0,
+      image_url: imageUrl,
       created_at: new Date().toISOString()
     };
 
@@ -76,8 +88,41 @@ export default function ProjectsPage() {
         setCreatedSuccessMsg('');
         setName('');
         setDescription('');
+        setImageUrl('');
       }, 800);
     }
+  };
+
+  const handleEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProj) return;
+
+    const { error } = await supabase.from('projects').update({
+      name: editName,
+      description: editDesc,
+      organization: editOrg,
+      manager_name: editManager,
+      public_visible: editPublic,
+      image_url: editImage
+    }).eq('id', editingProj.id);
+
+    if (error) {
+      alert('Error updating project: ' + error.message);
+      return;
+    }
+
+    setProjectsList(prev => prev.map(p => p.id === editingProj.id ? {
+      ...p,
+      name: editName,
+      description: editDesc,
+      organization: editOrg,
+      manager_name: editManager,
+      public_visible: editPublic,
+      image_url: editImage
+    } : p));
+
+    setEditingProj(null);
+    alert('Project updated successfully!');
   };
 
   const handleDeleteProject = async (id: string) => {
@@ -165,21 +210,37 @@ export default function ProjectsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1.5 pt-1">
                 <button
                   onClick={() => setSelectedProject(proj)}
-                  className="py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center gap-1.5 transition"
+                  className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center gap-1.5 transition"
                 >
                   <Eye className="w-3.5 h-3.5" /> View Details
                 </button>
 
                 {canCreate && (
-                  <button
-                    onClick={() => handleDeleteProject(proj.id)}
-                    className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition border border-rose-100 hover:border-rose-600"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingProj(proj);
+                        setEditName(proj.name);
+                        setEditDesc(proj.description || '');
+                        setEditOrg(proj.organization || '');
+                        setEditManager(proj.manager_name || '');
+                        setEditPublic(proj.public_visible);
+                        setEditImage(proj.image_url || '');
+                      }}
+                      className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProject(proj.id)}
+                      className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition border border-rose-100 hover:border-rose-600"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -298,6 +359,17 @@ export default function ProjectsPage() {
                 />
               </div>
 
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <div>
                   <div className="font-extrabold text-slate-900">Public Visibility</div>
@@ -324,6 +396,110 @@ export default function ProjectsPage() {
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
                 >
                   Save Project
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {editingProj && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col justify-between">
+            <div className="p-6 bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white relative">
+              <button
+                onClick={() => setEditingProj(null)}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <h2 className="text-lg font-black tracking-tight">Edit Project: {editingProj.name}</h2>
+              <p className="text-xs text-slate-300 font-medium">Modify existing project details and images.</p>
+            </div>
+
+            <form onSubmit={handleEditProject} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Description</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Organization / Collaboration</label>
+                <input
+                  type="text"
+                  required
+                  value={editOrg}
+                  onChange={(e) => setEditOrg(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Lead Manager Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editManager}
+                  onChange={(e) => setEditManager(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
+                  value={editImage}
+                  onChange={(e) => setEditImage(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div>
+                  <div className="font-extrabold text-slate-900">Public Visibility</div>
+                  <div className="text-[10px] text-slate-500">Allow public visitors to view project data</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editPublic}
+                  onChange={(e) => setEditPublic(e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingProj(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
