@@ -187,107 +187,111 @@ export default function PamAdminPage() {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
-    // 1. If inline site creation required, register the site
-    if (csvSiteAction === 'create' && parsedSiteCode) {
-      const createdSite = {
-        id: parsedSiteCode,
-        project_id: selectedUploadProjId,
-        name: csvNewSiteName,
-        elevation: csvNewSiteElev,
-        status: 'Active',
-        latitude: csvNewSiteLat !== '' ? Number(csvNewSiteLat) : 13.58,
-        longitude: csvNewSiteLng !== '' ? Number(csvNewSiteLng) : 75.64,
-        expected_files: 48
-      };
-      
-      const { error } = await supabase.from('sites').insert([createdSite]);
-      if (error) {
-        alert(`Error auto-registering site "${parsedSiteCode}": ` + error.message);
-        return;
+    try {
+      // 1. If inline site creation required, register the site
+      if (csvSiteAction === 'create' && parsedSiteCode) {
+        const createdSite = {
+          id: parsedSiteCode,
+          project_id: selectedUploadProjId,
+          name: csvNewSiteName,
+          elevation: csvNewSiteElev,
+          status: 'Active',
+          latitude: csvNewSiteLat !== '' ? Number(csvNewSiteLat) : 13.58,
+          longitude: csvNewSiteLng !== '' ? Number(csvNewSiteLng) : 75.64,
+          expected_files: 48
+        };
+        
+        const { error } = await supabase.from('sites').insert([createdSite]);
+        if (error) {
+          alert(`Error auto-registering site "${parsedSiteCode}": ` + error.message);
+          return;
+        }
+        setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
       }
-      setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
-    }
 
-    // 2. Parse the uploaded Raven Selection Table files (.txt) and save detections to Supabase!
-    let totalInserted = 0;
-    for (const file of uploadFiles) {
-      try {
-        const text = await file.text();
-        const lines = text.split(/\r?\n/);
-        if (lines.length < 2) {
-          alert(`File ${file.name} is empty or has only one line.`);
-          continue;
-        }
-
-        // Parse tab-separated headers
-        const header = lines[0].split('\t');
-        const commonNameIdx = header.indexOf('Common Name');
-        const confidenceIdx = header.indexOf('Confidence');
-        const beginPathIdx = header.indexOf('Begin Path');
-
-        if (commonNameIdx === -1 || confidenceIdx === -1) {
-          alert(`File ${file.name} is missing 'Common Name' or 'Confidence' column. Columns found: ${header.join(', ')}`);
-          continue;
-        }
-
-        const detectionsToInsert: any[] = [];
-
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-
-          const cols = line.split('\t');
-          if (cols.length <= Math.max(commonNameIdx, confidenceIdx)) continue;
-
-          const commonName = cols[commonNameIdx]?.trim();
-          const confidenceVal = parseFloat(cols[confidenceIdx]);
-          if (!commonName || isNaN(confidenceVal)) continue;
-
-          // Attempt to extract timestamp from filename (e.g. TST-LC03_20260315_073000.wav)
-          let timestamp = new Date();
-          const beginPath = beginPathIdx !== -1 ? cols[beginPathIdx] : '';
-          const filename = beginPath.split(/[\\/]/).pop() || '';
-          
-          // Match YYYYMMDD_HHMMSS patterns in filename
-          const dateMatch = filename.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
-          if (dateMatch) {
-            const [_, y, m, d, hh, mm, ss] = dateMatch;
-            timestamp = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
+      // 2. Parse the uploaded Raven Selection Table files (.txt) and save detections to Supabase!
+      let totalInserted = 0;
+      for (const file of uploadFiles) {
+        try {
+          const text = await file.text();
+          const lines = text.split(/\r?\n/);
+          if (lines.length < 2) {
+            alert(`File ${file.name} is empty or has only one line.`);
+            continue;
           }
 
-          detectionsToInsert.push({
-            station_id: parsedSiteCode,
-            station_name: csvNewSiteName || parsedSiteCode,
-            common_name: commonName,
-            confidence: confidenceVal,
-            timestamp: timestamp.toISOString(),
-            date_str: timestamp.toISOString().split('T')[0],
-            time_str: timestamp.toISOString().split('T')[1].slice(0, 8),
-            duration: 3.0
-          });
-        }
+          // Parse tab-separated headers
+          const header = lines[0].split('\t');
+          const commonNameIdx = header.indexOf('Common Name');
+          const confidenceIdx = header.indexOf('Confidence');
+          const beginPathIdx = header.indexOf('Begin Path');
 
-        if (detectionsToInsert.length > 0) {
-          // Bulk insert in chunks of 500 rows to prevent payload limits
-          const chunkSize = 500;
-          for (let offset = 0; offset < detectionsToInsert.length; offset += chunkSize) {
-            const chunk = detectionsToInsert.slice(offset, offset + chunkSize);
-            const { error } = await supabase.from('live_detections').insert(chunk);
-            if (error) {
-              console.error('Error inserting detections chunk:', error);
-            } else {
-              totalInserted += chunk.length;
+          if (commonNameIdx === -1 || confidenceIdx === -1) {
+            alert(`File ${file.name} is missing 'Common Name' or 'Confidence' column. Columns found: ${header.join(', ')}`);
+            continue;
+          }
+
+          const detectionsToInsert: any[] = [];
+
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = line.split('\t');
+            if (cols.length <= Math.max(commonNameIdx, confidenceIdx)) continue;
+
+            const commonName = cols[commonNameIdx]?.trim();
+            const confidenceVal = parseFloat(cols[confidenceIdx]);
+            if (!commonName || isNaN(confidenceVal)) continue;
+
+            // Attempt to extract timestamp from filename (e.g. TST-LC03_20260315_073000.wav)
+            let timestamp = new Date();
+            const beginPath = beginPathIdx !== -1 ? cols[beginPathIdx] : '';
+            const filename = beginPath.split(/[\\/]/).pop() || '';
+            
+            // Match YYYYMMDD_HHMMSS patterns in filename
+            const dateMatch = filename.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+            if (dateMatch) {
+              const [_, y, m, d, hh, mm, ss] = dateMatch;
+              timestamp = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
+            }
+
+            detectionsToInsert.push({
+              station_id: parsedSiteCode,
+              station_name: csvNewSiteName || parsedSiteCode,
+              common_name: commonName,
+              confidence: confidenceVal,
+              timestamp: timestamp.toISOString(),
+              date_str: timestamp.toISOString().split('T')[0],
+              time_str: timestamp.toISOString().split('T')[1].slice(0, 8),
+              duration: 3.0
+            });
+          }
+
+          if (detectionsToInsert.length > 0) {
+            // Bulk insert in chunks of 500 rows to prevent payload limits
+            const chunkSize = 500;
+            for (let offset = 0; offset < detectionsToInsert.length; offset += chunkSize) {
+              const chunk = detectionsToInsert.slice(offset, offset + chunkSize);
+              const { error } = await supabase.from('live_detections').insert(chunk);
+              if (error) {
+                alert(`Error inserting detections for ${file.name}: ` + error.message);
+              } else {
+                totalInserted += chunk.length;
+              }
             }
           }
+        } catch (err: any) {
+          alert(`Error reading file ${file.name}: ` + err.message);
         }
-      } catch (err) {
-        console.error(`Error parsing file ${file.name}:`, err);
       }
-    }
 
-    showNotification(`Processed ${uploadFiles.length} file(s). Successfully saved ${totalInserted} detections to the database!`);
-    setUploadFiles([]);
-    setParsedSiteCode('');
+      alert(`Processed ${uploadFiles.length} file(s). Successfully saved ${totalInserted} detections to the database!`);
+      setUploadFiles([]);
+      setParsedSiteCode('');
+    } catch (globalErr: any) {
+      alert('Global upload error: ' + globalErr.message);
+    }
   };
 
   // Handler: Create Project
