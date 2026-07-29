@@ -65,6 +65,11 @@ export default function PamAdminPage() {
   // Active Tab: 'upload' | 'projects' | 'species'
   const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'species'>('upload');
   const [successMsg, setSuccessMsg] = useState('');
+  
+  // Loading states for data ingestion
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState('');
 
   // 1. Batch Upload States
   const [selectedUploadProjId, setSelectedUploadProjId] = useState<string>('prj-01');
@@ -187,9 +192,12 @@ export default function PamAdminPage() {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
+    setIsUploading(true);
+    setUploadProgress(0);
     try {
       // 1. If inline site creation required, register the site
       if (csvSiteAction === 'create' && parsedSiteCode) {
+        setUploadingFileName(`Registering Site: ${parsedSiteCode}...`);
         const createdSite = {
           id: parsedSiteCode,
           project_id: selectedUploadProjId,
@@ -204,6 +212,7 @@ export default function PamAdminPage() {
         const { error } = await supabase.from('sites').insert([createdSite]);
         if (error) {
           alert(`Error auto-registering site "${parsedSiteCode}": ` + error.message);
+          setIsUploading(false);
           return;
         }
         setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
@@ -211,7 +220,10 @@ export default function PamAdminPage() {
 
       // 2. Parse the uploaded Raven Selection Table files (.txt) and save detections to Supabase!
       let totalInserted = 0;
-      for (const file of uploadFiles) {
+      for (let idx = 0; idx < uploadFiles.length; idx++) {
+        const file = uploadFiles[idx];
+        setUploadingFileName(`Ingesting: ${file.name}...`);
+        setUploadProgress(Math.round((idx / uploadFiles.length) * 100));
         try {
           const text = await file.text();
           const lines = text.split(/\r?\n/);
@@ -291,6 +303,10 @@ export default function PamAdminPage() {
       setParsedSiteCode('');
     } catch (globalErr: any) {
       alert('Global upload error: ' + globalErr.message);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName('');
     }
   };
 
@@ -500,7 +516,32 @@ export default function PamAdminPage() {
 
       {/* TAB 1: Batch Files & Ingestion Engine */}
       {activeTab === 'upload' && (
-        <div className="p-8 rounded-[28px] bg-white border border-slate-200 shadow-sm space-y-6">
+        <div className="p-8 rounded-[28px] bg-white border border-slate-200 shadow-sm space-y-6 relative overflow-hidden">
+          {/* Loading Progress Indicator Overlay */}
+          {isUploading && (
+            <div className="absolute inset-0 z-40 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 space-y-4 animate-in fade-in duration-200">
+              <div className="relative w-20 h-20 flex items-center justify-center">
+                {/* Pulsating outer ring */}
+                <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20 animate-pulse"></div>
+                {/* Spinning loader */}
+                <div className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
+                <FileSpreadsheet className="w-8 h-8 text-indigo-600 animate-bounce" />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-sm font-black text-slate-900">Ingesting Bioacoustic Detections...</h3>
+                <p className="text-[10px] text-slate-500 font-mono font-bold max-w-xs truncate">{uploadingFileName}</p>
+              </div>
+              {/* Progress Bar Container */}
+              <div className="w-full max-w-xs bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200/60">
+                <div 
+                  className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-300 shadow-sm"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              <div className="text-[10px] font-black text-indigo-600 font-mono">{uploadProgress}% Complete</div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
               <FileSpreadsheet className="w-4 h-4 text-indigo-600" />

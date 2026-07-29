@@ -147,4 +147,21 @@ A continuous, landscape-scale bioacoustic monitoring platform for biodiversity, 
 
 ---
 
+## 🖥️ PAM Offline Data Compiler & Ingest Tool
+For large bioacoustic campaigns (hundreds of `.txt` Raven Selection Tables), use the offline python compiler script located in [pam_data_compiler.py](file:///d:/Live_Recorder/python-sync/pam_data_compiler.py) to parse and ingest files directly into the Supabase database.
+
+### Installation
+Ensure you have python installed, then run:
+```bash
+pip install supabase
+```
+
+### Usage
+Run the script passing the folder path containing your `.txt` files and your targeted `project_id`:
+```bash
+python python-sync/pam_data_compiler.py "C:\Path\To\Your\Recordings" "nilgiri"
+```
+
+---
+
 © 2026 IISER Tirupati Bird Ecology Lab & The Shola Trust. All Rights Reserved.
