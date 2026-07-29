@@ -114,6 +114,14 @@ export default function PamAdminPage() {
   const [editProjCollab, setEditProjCollab] = useState('');
   const [editProjImage, setEditProjImage] = useState('');
 
+  // Edit Site Modal States
+  const [editingSite, setEditingSite] = useState<SiteItem | null>(null);
+  const [editSiteName, setEditSiteName] = useState('');
+  const [editSiteElev, setEditSiteElev] = useState('');
+  const [editSiteLat, setEditSiteLat] = useState<number | ''>(13.58);
+  const [editSiteLng, setEditSiteLng] = useState<number | ''>(75.64);
+  const [editSiteProjId, setEditSiteProjId] = useState('');
+
   // Form: Register New Site
   const [newSiteProjId, setNewSiteProjId] = useState('prj-01');
   const [newSiteId, setNewSiteId] = useState('');
@@ -288,6 +296,36 @@ export default function PamAdminPage() {
     }
     setSitesList(prev => prev.filter(s => s.id !== siteId));
     showNotification(`Site ${siteId} removed.`);
+  };
+
+  const handleEditSite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSite) return;
+
+    const { error } = await supabase.from('sites').update({
+      name: editSiteName,
+      elevation: editSiteElev,
+      latitude: editSiteLat !== '' ? Number(editSiteLat) : null,
+      longitude: editSiteLng !== '' ? Number(editSiteLng) : null,
+      project_id: editSiteProjId
+    }).eq('id', editingSite.id);
+
+    if (error) {
+      alert('Error updating site: ' + error.message);
+      return;
+    }
+
+    setSitesList(prev => prev.map(s => s.id === editingSite.id ? {
+      ...s,
+      name: editSiteName,
+      elevation: editSiteElev,
+      latitude: editSiteLat !== '' ? Number(editSiteLat) : 13.58,
+      longitude: editSiteLng !== '' ? Number(editSiteLng) : 75.64,
+      projectId: editSiteProjId
+    } : s));
+
+    setEditingSite(null);
+    showNotification('Site details updated successfully!');
   };
 
   const handleDeleteProject = async (projectId: string) => {
@@ -737,12 +775,29 @@ export default function PamAdminPage() {
                       GPS: {s.latitude}°N, {s.longitude}°E · Elev: {s.elevation}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDeleteSite(s.id)}
-                    className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setEditingSite(s);
+                        setEditSiteName(s.name);
+                        setEditSiteElev(s.elevation || '');
+                        setEditSiteLat(s.latitude || 13.58);
+                        setEditSiteLng(s.longitude || 75.64);
+                        setEditSiteProjId(s.projectId);
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                      title="Edit Site"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSite(s.id)}
+                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white transition"
+                      title="Delete Site"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -829,6 +884,102 @@ export default function PamAdminPage() {
                 <button
                   type="button"
                   onClick={() => setEditingProj(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Site Modal */}
+      {editingSite && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col justify-between text-xs">
+            <div className="p-6 bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white relative">
+              <button
+                onClick={() => setEditingSite(null)}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <h2 className="text-sm font-black tracking-tight">Edit Site: {editingSite.id}</h2>
+              <p className="text-[10px] text-slate-300 font-medium">Modify site description name, coordinates, and project scope.</p>
+            </div>
+
+            <form onSubmit={handleEditSite} className="p-6 space-y-4">
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Scope</label>
+                <select
+                  value={editSiteProjId}
+                  onChange={(e) => setEditSiteProjId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
+                >
+                  {projectsList.map(p => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Site Description Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editSiteName}
+                  onChange={(e) => setEditSiteName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    required
+                    value={editSiteLat}
+                    onChange={(e) => setEditSiteLat(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-mono text-slate-900 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    required
+                    value={editSiteLng}
+                    onChange={(e) => setEditSiteLng(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-mono text-slate-900 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
+                <input
+                  type="text"
+                  required
+                  value={editSiteElev}
+                  onChange={(e) => setEditSiteElev(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSite(null)}
                   className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
                 >
                   Cancel
