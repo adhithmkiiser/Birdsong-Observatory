@@ -1,349 +1,430 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
-  Radio, 
-  Cpu, 
-  Bird, 
-  FolderKanban, 
-  Database, 
-  Clock, 
-  Play, 
   Activity, 
+  Bird, 
+  ChevronRight, 
+  Clock, 
+  Cpu, 
+  Database, 
+  FileText, 
+  Globe, 
+  Layers, 
+  Radio, 
+  ShieldCheck, 
+  Sparkles, 
+  TrendingUp, 
+  Users,
+  CheckCircle2,
+  HardDrive,
   Volume2,
-  Sparkles,
-  TrendingUp,
-  Filter,
-  Plus,
-  ShieldCheck
+  Zap,
+  ArrowRight,
+  ChevronDown
 } from 'lucide-react';
-import { DiurnalChart } from '@/components/charts/DiurnalChart';
-import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
-import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
-import { Detection } from '@/types/database';
-import { useRole } from '@/components/layout/RoleContext';
-import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  organization: string;
-  project_type: string;
-  species_count: number;
-  total_detections: number;
-  stations_count: number;
-  public_visible: boolean;
-  created_at: string;
-  manager_name?: string;
-}
-
-interface Station {
-  id: string;
-  station_name: string;
-  description: string;
-  project_id: string;
-  project_name: string;
-  status: string;
-  last_seen?: string;
-  latitude?: number;
-  longitude?: number;
-}
-
-export default function DashboardPage() {
-  const { currentRole, visibilitySettings } = useRole();
-  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
-
-  // Scope filter state
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
-  const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
-
-  // Real data from Supabase
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [stations, setStations] = useState<Station[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function HomePage() {
+  const [scrollY, setScrollY] = useState(0);
+  const [activeStep, setActiveStep] = useState<number>(0);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [tstStats, setTstStats] = useState({ recorders: 25, species: 128, detections: 58679 });
 
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      try {
-        const [{ data: projs }, { data: stats }] = await Promise.all([
-          supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('stations').select('*').order('station_name'),
-        ]);
-        setProjects(projs || []);
-        setStations(stats || []);
-      } catch (e) {
-        console.error('Failed to fetch data:', e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+    window.addEventListener('scroll', handleScroll);
+
+    supabase.from('projects').select('*').order('created_at', { ascending: false }).then(({ data }) => {
+      setProjects(data || []);
+    });
+
+    fetch('/tst/data.json')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          const recordersCount = data.recorders?.length || 25;
+          const detectionsRaw = data.detections || [];
+          const filtered = detectionsRaw.filter((d: any) => d[4] >= 70);
+          const totalDetections = filtered.length;
+          
+          const uniqueSpecies = new Set(filtered.map((d: any) => d[1]));
+          const speciesCount = uniqueSpecies.size;
+          
+          setTstStats({
+            recorders: recordersCount,
+            species: speciesCount,
+            detections: totalDetections
+          });
+        }
+      })
+      .catch(e => console.error("Failed to load TST stats dynamically:", e));
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
-  const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? stations
-    : stations.filter(s => s.project_id === selectedProjectId);
+  const pamProjects = projects.filter(p => p.project_type === 'PAM');
+  const liveProjects = projects.filter(p => p.project_type === 'Live');
 
-  const handleProjectChange = (projId: string) => {
-    setSelectedProjectId(projId);
-    setSelectedStationId('ALL_SITES');
-  };
+  const tstProject = projects.find(p => p.id === 'tst');
+  const otherPamProjects = projects.filter(p => p.id !== 'tst' && p.project_type === 'PAM');
 
-  const activeStations = availableStations.filter(s => s.status === 'online').length;
-  const totalStationsCount = availableStations.length;
+  const workflowSteps = [
+    {
+      title: '1. Field Recorders',
+      icon: Cpu,
+      color: 'from-emerald-500 to-teal-500',
+      bgColor: 'bg-emerald-50 text-emerald-600',
+      short: 'Autonomous Recording Nodes Deployed in Forest Canopies',
+      desc: 'Smart acoustic recorders (like Raspberry Pi 4 nodes running BirdNET-Pi) are installed directly in forest canopies and remote Shola forest transects. They record high-quality soundscapes 24/7 without disturbing local wildlife.'
+    },
+    {
+      title: '2. Real-Time Detection',
+      icon: Volume2,
+      color: 'from-teal-500 to-cyan-500',
+      bgColor: 'bg-teal-50 text-teal-600',
+      short: 'On-device Bioacoustic Artificial Intelligence Analysis',
+      desc: 'Using the integrated artificial intelligence models, audio clips are analyzed on-device in real-time. Bird species vocalizations are classified instantly with confidence scoring thresholds exceeding 85% accuracy.'
+    },
+    {
+      title: '3. Cloud Database Sync',
+      icon: Database,
+      color: 'from-cyan-500 to-indigo-500',
+      bgColor: 'bg-cyan-50 text-cyan-600',
+      short: 'Secure Supabase Real-Time Delta Transmission',
+      desc: 'Automatic sync daemons transfer delta SQLite rows, audio recordings, and telemetry metrics from local recorders up to our centralized cloud database (Supabase) via secure REST API channels.'
+    },
+    {
+      title: '4. Research Insights',
+      icon: Activity,
+      color: 'from-indigo-500 to-purple-500',
+      bgColor: 'bg-indigo-50 text-indigo-600',
+      short: 'Interactive Visualizations & Environmental Indicators',
+      desc: 'Ecologists, stakeholders, and CSR partners access interactive dashboards. They explore Shannon diversity index mappings, species abundance charts, diurnal vocal patterns, and indicator group statistics.'
+    }
+  ];
 
   return (
-    <div className="space-y-8 pb-8">
-      {/* Hero Banner */}
-      <div className="relative overflow-hidden p-8 md:p-10 rounded-[24px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-2xl border border-slate-800/80 group">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition duration-700 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl group-hover:bg-indigo-500/20 transition duration-700 pointer-events-none"></div>
+    <div className="space-y-16 pb-20 font-sans overflow-hidden">
+      
+      {/* Hero Section */}
+      <section className="relative min-h-[80vh] flex items-center rounded-[40px] overflow-hidden bg-gradient-to-br from-[#022c22] via-[#091e17] to-[#0f172a] text-white p-8 md:p-16 border border-slate-800 shadow-2xl group">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/15 transition-all duration-1000"></div>
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-500/15 transition-all duration-1000"></div>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 font-black text-[10px] uppercase tracking-wider flex items-center gap-2 shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Live Cloud Backend Ready
-              </span>
-              <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> IISER Tirupati Bird Lab
-              </span>
-            </div>
+        <div className="relative z-10 max-w-4xl space-y-8">
+          <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black text-xs uppercase tracking-wider shadow-inner">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>Platform Core Active</span>
+          </div>
 
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
-              Bioacoustics Monitoring Platform
+          <div className="space-y-4">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] text-white">
+              Birdsong <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400">Observatory</span>
             </h1>
-
-            <p className="text-emerald-400 text-sm font-bold tracking-wide">
-              Realtime Species Vocalization Ingestion &amp; Automated Telemetry
+            <p className="text-lg md:text-xl font-bold text-emerald-400 tracking-wide">
+              IISER Tirupati Bird Ecology &amp; Bioacoustics Lab
             </p>
-
-            <p className="text-slate-300 text-xs max-w-2xl leading-relaxed font-medium">
-              Autonomous continuous bioacoustic monitoring across Western Ghats rainforest canopy and Sheshachalam biosphere reserve corridors.
+            <p className="text-slate-300 text-sm md:text-base max-w-2xl leading-relaxed font-medium">
+              A unified cloud analytics platform for landscape-scale avian acoustics. Integrating automated Raspberry Pi field recording nodes with offline passive monitoring (PAM) survey pipelines.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row md:flex-col gap-3 flex-shrink-0">
-            <a
-              href="/projects"
-              className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-2"
+          <div className="flex flex-wrap gap-4 pt-2">
+            <Link 
+              href="#projects"
+              className="px-8 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/20 hover:shadow-emerald-500/35 transition duration-300 flex items-center gap-2 group/btn"
             >
-              <Plus className="w-4 h-4" />
-              <span>Create New Project</span>
-            </a>
-
-            <a
-              href="/stations"
-              className="px-6 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white border border-white/20 font-bold text-xs backdrop-blur-md transition flex items-center justify-center gap-2"
-            >
-              <Cpu className="w-4 h-4 text-indigo-300" />
-              <span>Deploy Recording Node</span>
-            </a>
+              <span>1. Projects</span>
+              <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
+            </Link>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Project & Site Scope Filter */}
-      <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-3">
-        <div className="flex items-center gap-2 text-xs font-black text-slate-900 border-b border-slate-100 pb-2.5">
-          <Filter className="w-4 h-4 text-indigo-600" />
-          <span>Dashboard Scope Filter:</span>
+      {/* platform overview grid */}
+      <section className="space-y-6">
+        <div className="space-y-1">
+          <h3 className="text-2xl font-black text-slate-900 tracking-tight">Platform Framework Features</h3>
+          <p className="text-xs text-slate-500 font-medium">Realtime continuous bioacoustic telemetry &amp; parsed spreadsheet metadata ingest.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">Select Project</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => handleProjectChange(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL_PROJECTS">All Projects ({projects.length} Projects)</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <Cpu className="w-5 h-5" />
+            </div>
+            <h4 className="text-lg font-black text-slate-900">Raspberry Pi Ingestion</h4>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              Sync daemon scripts pull detections directly from BirdNET-Pi hardware nodes deployed in high-canopy corridors.
+            </p>
           </div>
 
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">Select Site / Recorder Node</label>
-            <select
-              value={selectedStationId}
-              onChange={(e) => setSelectedStationId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL_SITES">All Sites &amp; Recorders ({availableStations.length} Sites)</option>
-              {availableStations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.station_name} ({s.description})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="premium-card p-4 rounded-[20px] min-h-[140px] animate-pulse bg-slate-100" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-          <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Nodes</span>
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Radio className="w-4 h-4" />
-              </div>
+          <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <Database className="w-5 h-5" />
             </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{activeStations}</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Online field nodes</p>
+            <h4 className="text-lg font-black text-slate-900">Passive Acoustic Ingest</h4>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              CSV parser automatically ingests batch detections, registers new site coordinate profiles, and calculates Shannon diversity.
+            </p>
           </div>
 
-          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Nodes</span>
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Cpu className="w-4 h-4" />
-              </div>
+          <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <Bird className="w-5 h-5" />
             </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{totalStationsCount}</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Deployed scope</p>
-          </div>
-
-          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Detections</span>
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Activity className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Ingested call events</p>
-          </div>
-
-          <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Species</span>
-              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Bird className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Identified taxa</p>
-          </div>
-
-          <div className="premium-card gradient-border-emerald p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Avg Conf.</span>
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">--</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Model threshold 85%</p>
-          </div>
-
-          <div className="premium-card gradient-border-indigo p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Storage</span>
-              <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
-                <Database className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">0.0 GB</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Supabase Bucket</p>
-          </div>
-
-          <div className="premium-card gradient-border-amber p-4 rounded-[20px] flex flex-col justify-between min-h-[140px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Projects</span>
-              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-                <FolderKanban className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="my-1">
-              <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">{projects.length}</p>
-            </div>
-            <p className="text-[11px] font-bold text-slate-400">Active research</p>
+            <h4 className="text-lg font-black text-slate-900">Species Master Curation</h4>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              Cross-reference metadata against the IISER Tirupati avian master list to flag rare, endemic, and indicator taxa.
+            </p>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* Charts */}
-      <div className="space-y-6">
-        <div className="premium-card p-6 rounded-[24px] space-y-4">
-          <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
+      {/* Projects directory split layout */}
+      <section id="projects" className="space-y-12 pt-6 scroll-margin-top-24">
+        
+        {/* --- CATEGORY 1: PAM BIOACOUSTICS PROJECTS --- */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center font-black">
+              <Layers className="w-4 h-4" />
+            </div>
             <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-indigo-600" /> Detections by Time of Day (24-Hour Diurnal)
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 font-medium">Hourly vocalization activity pattern.</p>
+              <h3 className="text-lg font-black text-slate-900">1. Passive Acoustic Monitoring (PAM) Projects</h3>
+              <p className="text-xs text-slate-500 font-medium">Batch processed offline surveys with spatial metadata and species accumulation metrics.</p>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 flex-shrink-0">Live Scope</span>
           </div>
-          <DiurnalChart />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Dynamically render primary TST Project Card only if it exists in the database */}
+            {tstProject && (
+              <div 
+                className="p-8 rounded-[30px] bg-slate-900 text-white border border-slate-800 shadow-xl space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-2xl relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/15 transition-all"></div>
+                
+                <div className="space-y-4 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 font-extrabold text-[10px] uppercase border border-emerald-500/30">
+                      {tstProject.organization}
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold">Standard Theme</span>
+                  </div>
+
+                  <h4 className="text-2xl font-black tracking-tight text-white leading-tight">
+                    {tstProject.name}
+                  </h4>
+
+                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                    {tstProject.description}
+                  </p>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-3 gap-2 text-center text-xs font-mono text-slate-300">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Recorders</span>
+                      <strong className="text-white font-black text-sm">{tstStats.recorders} Sites</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Species</span>
+                      <strong className="text-emerald-400 font-black text-sm">{tstStats.species} Species</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Detections</span>
+                      <strong className="text-white font-black text-sm">{tstStats.detections.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <Link
+                  href="/dashboard/tst"
+                  className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn relative z-10 shadow-lg shadow-emerald-500/10"
+                >
+                  <span>Open TST Research Dashboard</span>
+                  <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
+                </Link>
+              </div>
+            )}
+
+            {/* Custom PAM Projects dynamically created */}
+            {otherPamProjects.map(p => (
+              <div 
+                key={p.id}
+                className="p-8 rounded-[30px] bg-white border border-slate-200 shadow-sm space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="px-3 py-1 rounded-xl bg-indigo-50 text-indigo-800 font-extrabold text-[10px] uppercase border border-indigo-200">
+                      {p.organization || 'Research PAM Project'}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold">Common Format</span>
+                  </div>
+
+                  <h4 className="text-2xl font-black text-slate-900 leading-tight">
+                    {p.name}
+                  </h4>
+
+
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    {p.description || 'Long-term acoustic soundscape monitoring assessing avian community shifts.'}
+                  </p>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs font-mono">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Recorders</span>
+                      <strong className="text-slate-900 font-black text-sm">{p.stations_count || 0} Sites</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Species</span>
+                      <strong className="text-indigo-600 font-black text-sm">{p.species_count || 0} Species</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Detections</span>
+                      <strong className="text-slate-900 font-black text-sm">{p.total_detections || 0}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/dashboard/common?project=${p.id}`}
+                  className="px-6 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn"
+                >
+                  <span>Open Common Format Dashboard</span>
+                  <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
+                </Link>
+              </div>
+            ))}
+
+          </div>
         </div>
 
-        <div className="premium-card p-6 rounded-[24px] space-y-4">
-          <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
+        {/* --- CATEGORY 2: LIVE RECORDER PROJECTS --- */}
+        <div className="space-y-6 pt-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center font-black">
+              <Radio className="w-4 h-4 animate-pulse" />
+            </div>
             <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Bird className="w-4 h-4 text-emerald-600" /> Relative Species Abundance Ranking
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 font-medium">Top detected species ranked by call volume across recording transects.</p>
+              <h3 className="text-lg font-black text-slate-900">2. Live Recorder Projects</h3>
+              <p className="text-xs text-slate-500 font-medium">Real-time continuous streaming field nodes with live AI classification.</p>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 flex-shrink-0">Live Scope</span>
           </div>
-          <TopSpeciesChart />
-        </div>
-      </div>
 
-      {/* Recent Detections Feed */}
-      <div className="premium-card p-6 rounded-[24px] space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-indigo-600" /> Recent Live Bioacoustic Detections Feed
-            </h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Stream of latest automatic species classifications across active field stations.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Dynamic Live Projects */}
+            {liveProjects.map(p => (
+              <div key={p.id} className="p-8 rounded-[30px] bg-white border border-slate-200 shadow-sm space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-800 font-extrabold text-[10px] uppercase border border-emerald-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span> Live Audio Stream
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-600 font-bold">{p.stations_count || 0} Nodes Active</span>
+                  </div>
+
+                  <h4 className="text-2xl font-black text-slate-900 leading-tight">
+                    {p.name}
+                  </h4>
+
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    {p.description || 'Continuous audio streaming field node telemetry.'}
+                  </p>
+                </div>
+
+                <Link
+                  href="/dashboard"
+                  className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn"
+                >
+                  <span>Open Live Streaming Dashboard</span>
+                  <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
+                </Link>
+              </div>
+            ))}
+
+            {liveProjects.length === 0 && (
+              <div className="col-span-2 p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center gap-2.5">
+                <Radio className="w-8 h-8 text-slate-400" />
+                <div className="font-black text-slate-800 text-sm">No Live Streaming Projects Registered Yet</div>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Navigate to the Admin Console to register a new real-time project entry and start ingestion telemetry.
+                </p>
+              </div>
+            )}
+
           </div>
         </div>
 
-        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-          <Volume2 className="w-8 h-8 text-slate-400 mx-auto" />
-          <div className="font-black text-xs text-slate-900">No Audio Detections Ingested Yet</div>
-          <p className="text-[11px] text-slate-500 max-w-md mx-auto font-medium">
-            Run <code className="bg-slate-200 px-1.5 py-0.5 rounded font-mono text-[10px]">python-sync/birdnet_sync.py</code> or connect a live Raspberry Pi node to stream detections into the platform.
-          </p>
-        </div>
-      </div>
+      </section>
 
-      {selectedDetection && (
-        <AudioPlayerModal
-          detection={selectedDetection}
-          currentRole={currentRole}
-          onClose={() => setSelectedDetection(null)}
-        />
-      )}
+      {/* --- WORKFLOW FLOWCHART SECTION --- */}
+      <section className="space-y-8 pt-8 border-t border-slate-200">
+        <div className="space-y-1">
+          <h3 className="text-2xl font-black text-slate-900 tracking-tight">Ecoacoustics Workflow Pipeline</h3>
+          <p className="text-xs text-slate-500 font-medium">Click on any pipeline stage to inspect detailed operations.</p>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-[32px] p-6 md:p-10 shadow-sm space-y-8">
+          
+          {/* Interactive Steps Tracker */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {workflowSteps.map((step, idx) => {
+              const StepIcon = step.icon;
+              const isActive = activeStep === idx;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setActiveStep(idx)}
+                  className={`p-5 rounded-2xl border text-left transition duration-300 relative overflow-hidden group outline-none ${
+                    isActive 
+                      ? 'border-slate-900 bg-slate-50 shadow-md ring-2 ring-indigo-500/10' 
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                  }`}
+                >
+                  <div className={`absolute top-0 left-0 h-1 bg-gradient-to-r ${step.color} transition-all duration-300 ${
+                    isActive ? 'w-full' : 'w-0 group-hover:w-1/2'
+                  }`}></div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold transition-transform duration-300 ${step.bgColor} ${
+                      isActive ? 'scale-110' : 'group-hover:scale-105'
+                    }`}>
+                      <StepIcon className="w-5 h-5" />
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400 font-black">STAGE {idx + 1}</span>
+                  </div>
+                  
+                  <h4 className="text-sm font-black text-slate-900 mt-4 leading-tight">{step.title}</h4>
+                  <p className="text-[11px] text-slate-400 font-bold mt-1 line-clamp-1">{step.short}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Interactive detail card */}
+          <div className="p-6 md:p-8 rounded-2xl bg-slate-50 border border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-6 items-center min-h-[160px] transition-all duration-500">
+            <div className="md:col-span-2 flex justify-center">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${workflowSteps[activeStep].bgColor} shadow-md`}>
+                {React.createElement(workflowSteps[activeStep].icon, { className: 'w-8 h-8' })}
+              </div>
+            </div>
+            <div className="md:col-span-10 space-y-2">
+              <span className="font-mono text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Active Stage Details</span>
+              <h4 className="text-lg font-black text-slate-900 leading-tight">{workflowSteps[activeStep].title}</h4>
+              <p className="text-xs text-slate-600 font-semibold leading-relaxed max-w-3xl">
+                {workflowSteps[activeStep].desc}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </div>
   );
 }

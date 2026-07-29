@@ -19,7 +19,7 @@ import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
 
 export default function UserManagementPage() {
-  const { usersList, currentUser, deleteUser, updateUserCredentials } = useRole();
+  const { usersList, currentUser, deleteUser, updateUserCredentials, addUser } = useRole();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -64,6 +64,25 @@ export default function UserManagementPage() {
 
     setEditingUser(null);
     showNotification(`User account for ${formName} updated successfully!`);
+  };
+
+  const handleCreateUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newUser: User = {
+      id: `usr-${Math.random().toString(36).substr(2, 9)}`,
+      name: formName,
+      email: formEmail,
+      role: formRole,
+      organization: formOrg,
+      assignedProjectType: formProjectType,
+      status: 'active',
+      createdAt: new Date().toISOString().split('T')[0],
+      lastLogin: 'Never'
+    };
+
+    addUser(newUser);
+    setIsCreateOpen(false);
+    showNotification(`User account for ${formName} created successfully!`);
   };
 
   const handleDeleteUserConfirm = (userId: string) => {
@@ -287,6 +306,96 @@ export default function UserManagementPage() {
         </div>
       )}
 
+      {/* Create User Modal */}
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[28px] border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+            <h3 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-emerald-600" /> Create New User Account
+            </h3>
+
+            <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
+                  placeholder="e.g. Dr. Robin Vijayan"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-900"
+                  placeholder="name@organization.in"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Role</label>
+                <select
+                  value={formRole}
+                  onChange={(e) => setFormRole(e.target.value as UserRole)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
+                >
+                  <option value="Admin">Admin (Full Access to PAM &amp; Live)</option>
+                  <option value="Project Manager">Project Manager</option>
+                  <option value="Site Manager">Site Manager</option>
+                  <option value="Public">Public Visitor</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Organization</label>
+                <input
+                  type="text"
+                  value={formOrg}
+                  onChange={(e) => setFormOrg(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Assigned Project Scope Permissions</label>
+                <select
+                  value={formProjectType}
+                  onChange={(e) => setFormProjectType(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
+                >
+                  <option value="Both">Both (PAM Data &amp; Live Recorder Projects)</option>
+                  <option value="PAM">PAM Only (Passive Acoustic Datasets)</option>
+                  <option value="Live">Live Only (Realtime Streaming Nodes)</option>
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black hover:bg-emerald-400 shadow-md shadow-emerald-500/25"
+                >
+                  Create User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Delete User Account Confirmation Modal */}
       {deleteConfirmId && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -311,6 +420,7 @@ export default function UserManagementPage() {
           </div>
         </div>
       )}
+
 
     </div>
   );
