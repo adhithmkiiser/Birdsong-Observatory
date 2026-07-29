@@ -596,59 +596,7 @@ export default function PamAdminPage() {
               />
             </div>
 
-            {/* If Filename Code Parser detects a new unregistered site */}
-            {csvSiteAction === 'create' && parsedSiteCode && (
-              <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 space-y-3">
-                <div className="flex items-center gap-2 text-amber-900 font-extrabold">
-                  <AlertCircle className="w-4 h-4 text-amber-600" />
-                  <span>Unregistered Site Code Detected: &quot;{parsedSiteCode}&quot;</span>
-                </div>
-                <p className="text-slate-600 text-[11px] font-medium">
-                  The uploaded file filename contains site code <strong className="font-mono text-slate-900">{parsedSiteCode}</strong> which is not in the site directory. Please enter coordinates to register this site automatically during upload:
-                </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
-                  <div>
-                    <label className="font-extrabold text-slate-700 block mb-1">Site Name</label>
-                    <input
-                      type="text"
-                      value={csvNewSiteName}
-                      onChange={(e) => setCsvNewSiteName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      value={csvNewSiteLat}
-                      onChange={(e) => setCsvNewSiteLat(Number(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono text-slate-900 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      value={csvNewSiteLng}
-                      onChange={(e) => setCsvNewSiteLng(Number(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono text-slate-900 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
-                    <input
-                      type="text"
-                      value={csvNewSiteElev}
-                      onChange={(e) => setCsvNewSiteElev(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
 
             {uploadFiles.length > 0 && (
               <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
