@@ -169,7 +169,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      await supabase.from('users').update(dbUpdates).eq('id', userId);
+      const { error } = await supabase.from('users').update(dbUpdates).eq('id', userId);
+      if (error) {
+        console.error('Supabase error updating user:', error);
+        alert('Error updating user in database: ' + error.message);
+      }
     } catch (e) {
       console.error('Supabase error updating user:', e);
     }
@@ -178,7 +182,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const deleteUser = async (userId: string) => {
     setUsersList(prev => prev.filter(u => u.id !== userId));
     try {
-      await supabase.from('users').delete().eq('id', userId);
+      const { error } = await supabase.from('users').delete().eq('id', userId);
+      if (error) {
+        console.error('Supabase error deleting user:', error);
+        alert('Error deleting user in database: ' + error.message);
+      }
     } catch (e) {
       console.error('Supabase error deleting user:', e);
     }
@@ -188,7 +196,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     setUsersList(prev => [newUser, ...prev]);
     try {
       const dbUser = mapUserToDbUser(newUser);
-      await supabase.from('users').insert([dbUser]);
+      const { error } = await supabase.from('users').insert([dbUser]);
+      if (error) {
+        console.error('Supabase error adding user:', error);
+        alert('Error adding user in database: ' + error.message);
+      }
     } catch (e) {
       console.error('Supabase error adding user:', e);
     }
