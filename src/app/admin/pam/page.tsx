@@ -969,7 +969,6 @@ export default function PamAdminPage() {
                 <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
                 <input
                   type="text"
-                  required
                   value={editSiteElev}
                   onChange={(e) => setEditSiteElev(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
