@@ -130,12 +130,7 @@ export default function PamAdminPage() {
 
   // Helper: Normalize Site Code (e.g. TST-LC03 -> lc_03)
   const normalizeSiteCode = (name: string): string => {
-    let clean = name.trim().toLowerCase();
-    const match = clean.match(/([a-z]+)[-_]?(\d+)/);
-    if (match) {
-      return `${match[1]}_${match[2].padStart(2, '0')}`;
-    }
-    return clean;
+    return name.trim().toLowerCase().replace(/[-\s]+/g, '_');
   };
 
   // Handler: Parse CSV Filename for Site Code
