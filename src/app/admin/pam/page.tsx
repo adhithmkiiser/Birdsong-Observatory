@@ -126,15 +126,19 @@ export default function PamAdminPage() {
   const [newSiteProjId, setNewSiteProjId] = useState('');
   const [newSiteId, setNewSiteId] = useState('');
 
-  // Synchronize newSiteProjId with first project ID on projectsList load
+  // Synchronize newSiteProjId and selectedUploadProjId with first project ID on projectsList load
   useEffect(() => {
     if (projectsList.length > 0) {
-      const exists = projectsList.some(p => p.id === newSiteProjId);
-      if (!exists) {
+      const existsNew = projectsList.some(p => p.id === newSiteProjId);
+      if (!existsNew) {
         setNewSiteProjId(projectsList[0].id);
       }
+      const existsUpload = projectsList.some(p => p.id === selectedUploadProjId);
+      if (!existsUpload) {
+        setSelectedUploadProjId(projectsList[0].id);
+      }
     }
-  }, [projectsList, newSiteProjId]);
+  }, [projectsList, newSiteProjId, selectedUploadProjId]);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteElev, setNewSiteElev] = useState('1,100m');
   const [newSiteLat, setNewSiteLat] = useState<number | ''>(13.58);
@@ -197,9 +201,11 @@ export default function PamAdminPage() {
       };
       
       const { error } = await supabase.from('sites').insert([createdSite]);
-      if (!error) {
-        setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
+      if (error) {
+        alert(`Error auto-registering site "${parsedSiteCode}": ` + error.message);
+        return;
       }
+      setSitesList(prev => [...prev, mapDbSiteToItem(createdSite)]);
     }
 
     // 2. Parse the uploaded Raven Selection Table files (.txt) and save detections to Supabase!
@@ -208,7 +214,10 @@ export default function PamAdminPage() {
       try {
         const text = await file.text();
         const lines = text.split(/\r?\n/);
-        if (lines.length < 2) continue;
+        if (lines.length < 2) {
+          alert(`File ${file.name} is empty or has only one line.`);
+          continue;
+        }
 
         // Parse tab-separated headers
         const header = lines[0].split('\t');
@@ -217,7 +226,7 @@ export default function PamAdminPage() {
         const beginPathIdx = header.indexOf('Begin Path');
 
         if (commonNameIdx === -1 || confidenceIdx === -1) {
-          console.warn(`File ${file.name} is missing required 'Common Name' or 'Confidence' columns.`);
+          alert(`File ${file.name} is missing 'Common Name' or 'Confidence' column. Columns found: ${header.join(', ')}`);
           continue;
         }
 
