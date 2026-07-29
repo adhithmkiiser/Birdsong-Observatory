@@ -123,8 +123,18 @@ export default function PamAdminPage() {
   const [editSiteProjId, setEditSiteProjId] = useState('');
 
   // Form: Register New Site
-  const [newSiteProjId, setNewSiteProjId] = useState('prj-01');
+  const [newSiteProjId, setNewSiteProjId] = useState('');
   const [newSiteId, setNewSiteId] = useState('');
+
+  // Synchronize newSiteProjId with first project ID on projectsList load
+  useEffect(() => {
+    if (projectsList.length > 0) {
+      const exists = projectsList.some(p => p.id === newSiteProjId);
+      if (!exists) {
+        setNewSiteProjId(projectsList[0].id);
+      }
+    }
+  }, [projectsList, newSiteProjId]);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteElev, setNewSiteElev] = useState('1,100m');
   const [newSiteLat, setNewSiteLat] = useState<number | ''>(13.58);
