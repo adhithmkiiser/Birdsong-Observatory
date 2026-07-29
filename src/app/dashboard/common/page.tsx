@@ -35,13 +35,19 @@ export default function CommonDashboardPage() {
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
-  const [detectionsList, setDetectionsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load projects and combine stations/sites
+  // Aggregated stats (from DB RPC — no row limit problem!)
+  const [totalDetections, setTotalDetections] = useState(0);
+  const [uniqueSpecies, setUniqueSpecies] = useState(0);
+  const [hourlyData, setHourlyData] = useState<{ hour: string; detections: number }[]>(
+    Array.from({ length: 24 }, (_, i) => ({ hour: `${i.toString().padStart(2, '0')}:00`, detections: 0 }))
+  );
+  const [topSpeciesData, setTopSpeciesData] = useState<{ species: string; detections: number }[]>([]);
+
+  // Load projects and combined stations/sites on mount
   useEffect(() => {
     async function initData() {
-      setLoading(true);
       try {
         const [projectsRes, stationsRes, sitesRes] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
@@ -49,67 +55,70 @@ export default function CommonDashboardPage() {
           supabase.from('sites').select('*').order('name')
         ]);
 
-        const projects = projectsRes.data || [];
-        setProjectsList(projects);
+        setProjectsList(projectsRes.data || []);
 
-        // Combine stations (Live) and sites (PAM)
         const combined: any[] = [];
-        if (sitesRes.data) {
-          sitesRes.data.forEach(s => {
-            combined.push({
-              id: s.id,
-              station_name: s.name,
-              project_id: s.project_id,
-              description: s.elevation ? `PAM Elevation: ${s.elevation}` : 'PAM Site',
-              type: 'PAM'
-            });
-          });
-        }
-        if (stationsRes.data) {
-          stationsRes.data.forEach(s => {
-            combined.push({
-              id: s.id,
-              station_name: s.station_name,
-              project_id: s.project_id,
-              description: s.description || 'Live Recorder Node',
-              type: 'Live'
-            });
-          });
-        }
+        (sitesRes.data || []).forEach(s => {
+          combined.push({ id: s.id, station_name: s.name, project_id: s.project_id, type: 'PAM' });
+        });
+        (stationsRes.data || []).forEach(s => {
+          combined.push({ id: s.id, station_name: s.station_name, project_id: s.project_id, type: 'Live' });
+        });
         setStationsList(combined);
-
-        // Fetch all detections
-        const { data: detectionsData } = await supabase
-          .from('live_detections')
-          .select('*')
-          .order('timestamp', { ascending: false });
-        
-        setDetectionsList(detectionsData || []);
       } catch (err) {
-        console.error('Error loading dashboard data:', err);
+        console.error('Error loading projects/sites:', err);
+      }
+    }
+    initData();
+  }, []);
+
+  // Re-fetch aggregated stats whenever project/station filter changes
+  useEffect(() => {
+    async function loadAggregatedStats() {
+      setLoading(true);
+      try {
+        const projArg = selectedProjectId === 'ALL_PROJECTS' ? null : selectedProjectId;
+        const siteArg = selectedStationId === 'ALL_SITES' ? null : selectedStationId;
+
+        const [statsRes, hourlyRes, speciesRes] = await Promise.all([
+          supabase.rpc('get_detection_stats', { p_project_id: projArg, p_station_id: siteArg }),
+          supabase.rpc('get_hourly_stats', { p_project_id: projArg, p_station_id: siteArg }),
+          supabase.rpc('get_top_species', { p_project_id: projArg, p_station_id: siteArg, p_limit: 10 })
+        ]);
+
+        // Stats
+        const stats = statsRes.data?.[0];
+        setTotalDetections(Number(stats?.total_detections || 0));
+        setUniqueSpecies(Number(stats?.unique_species || 0));
+
+        // Hourly diurnal data — fill all 24 hours
+        const hourMap: Record<number, number> = {};
+        (hourlyRes.data || []).forEach((row: any) => {
+          hourMap[Number(row.hour)] = Number(row.detections);
+        });
+        setHourlyData(
+          Array.from({ length: 24 }, (_, i) => ({
+            hour: `${i.toString().padStart(2, '0')}:00`,
+            detections: hourMap[i] || 0
+          }))
+        );
+
+        // Top species
+        setTopSpeciesData(
+          (speciesRes.data || []).map((row: any) => ({
+            species: row.species,
+            detections: Number(row.detections)
+          }))
+        );
+      } catch (err) {
+        console.error('Error loading aggregated stats:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    initData();
-
-    // Subscribe to realtime live_detections insertions to update dashboard dynamically
-    const channel = supabase
-      .channel('live-dashboard-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'live_detections' },
-        (payload) => {
-          setDetectionsList((prev) => [payload.new, ...prev]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    loadAggregatedStats();
+  }, [selectedProjectId, selectedStationId]);
 
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
     ? stationsList
@@ -119,63 +128,6 @@ export default function CommonDashboardPage() {
     setSelectedProjectId(projId);
     setSelectedStationId('ALL_SITES');
   };
-
-  // Build a fast lookup map: station_id → project_id
-  const stationProjectMap = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    stationsList.forEach(s => {
-      map[s.id.toLowerCase()] = s.project_id;
-    });
-    return map;
-  }, [stationsList]);
-
-  // Filter detections by project and station
-  const filteredDetections = detectionsList.filter(d => {
-    const sid = d.station_id?.toLowerCase();
-    if (!sid) return false; // skip rows with no station_id
-
-    // Project filter
-    if (selectedProjectId !== 'ALL_PROJECTS') {
-      const projId = stationProjectMap[sid];
-      if (!projId || projId !== selectedProjectId) return false;
-    }
-
-    // Site filter
-    if (selectedStationId !== 'ALL_SITES') {
-      if (sid !== selectedStationId.toLowerCase()) return false;
-    }
-
-    return true;
-  });
-
-  // Calculate stats
-  const totalDetections = filteredDetections.length;
-  const uniqueSpecies = Array.from(new Set(filteredDetections.map(d => d.common_name))).length;
-
-  // Group detections for 24H Diurnal Chart
-  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-    hour: `${i.toString().padStart(2, '0')}:00`,
-    detections: 0
-  }));
-  filteredDetections.forEach(d => {
-    if (!d.timestamp) return;
-    const hour = new Date(d.timestamp).getHours();
-    if (hour >= 0 && hour < 24) {
-      hourlyData[hour].detections += 1;
-    }
-  });
-
-  // Group detections for Top Species Chart
-  const speciesMap: { [key: string]: number } = {};
-  filteredDetections.forEach(d => {
-    if (d.common_name) {
-      speciesMap[d.common_name] = (speciesMap[d.common_name] || 0) + 1;
-    }
-  });
-  const topSpeciesData = Object.keys(speciesMap)
-    .map(name => ({ species: name, detections: speciesMap[name] }))
-    .sort((a, b) => b.detections - a.detections)
-    .slice(0, 10);
 
   return (
     <div className="space-y-8 pb-12 font-sans">
@@ -263,7 +215,7 @@ export default function CommonDashboardPage() {
         <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-400">Total Detections</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{filteredDetections.length.toLocaleString()}</div>
+            <div className="text-2xl font-black text-slate-900 mt-1">{totalDetections.toLocaleString()}</div>
             <p className="text-[11px] text-slate-500 font-medium mt-0.5">Ingested calls</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
