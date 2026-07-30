@@ -139,6 +139,7 @@ export default function PamAdminPage() {
   // Form: Create New Project
   const [newProjId, setNewProjId] = useState('');
   const [newProjTitle, setNewProjTitle] = useState('');
+  const [newProjCategory, setNewProjCategory] = useState<'PAM' | 'TST'>('PAM');
   const [newProjTag, setNewProjTag] = useState('');
   const [newProjCollab, setNewProjCollab] = useState('');
   const [newProjDesc, setNewProjDesc] = useState('');
@@ -367,7 +368,7 @@ export default function PamAdminPage() {
       name: newProjTitle,
       description: newProjDesc || 'Project details pending data updates.',
       organization: newProjCollab || 'IISER Tirupati Bird Lab',
-      project_type: 'PAM',
+      project_type: newProjCategory,
       stations_count: 0,
       species_count: 0,
       total_detections: 0,
@@ -765,6 +766,31 @@ export default function PamAdminPage() {
                     value={newProjCollab}
                     onChange={(e) => setNewProjCollab(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Target Dashboard & Category Scope</label>
+                  <select
+                    value={newProjCategory}
+                    onChange={(e) => setNewProjCategory(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="PAM">Common PAM Dashboard Project (Visible in /dashboard/common)</option>
+                    <option value="TST">TST Bioacoustic Survey Project (Visible ONLY in /dashboard/tst)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
+                    value={newProjImage}
+                    onChange={(e) => setNewProjImage(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
