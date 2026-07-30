@@ -146,15 +146,6 @@ export default function ProjectsPage() {
             Multi-site bioacoustic monitoring programs funded by IISER Tirupati and biodiversity conservation agencies.
           </p>
         </div>
-
-        {canCreate && (
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-600/20 transition flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Create New Project
-          </button>
-        )}
       </div>
 
       {/* Projects Grid */}
@@ -166,8 +157,8 @@ export default function ProjectsPage() {
         ) : projectsList.length === 0 ? (
           <div className="col-span-3 py-16 flex flex-col items-center gap-3 text-slate-500">
             <FolderKanban className="w-10 h-10 text-slate-300" />
-            <div className="font-black text-sm text-slate-900">No Projects Yet</div>
-            <p className="text-xs text-slate-500 max-w-sm text-center">Create your first research project using the button above to get started.</p>
+            <div className="font-black text-sm text-slate-900">No Projects Found</div>
+            <p className="text-xs text-slate-500 max-w-sm text-center">Manage research projects via the Admin Consoles.</p>
           </div>
         ) : projectsList.map((proj) => (
           <div key={proj.id} className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between">
@@ -178,25 +169,26 @@ export default function ProjectsPage() {
                 </span>
                 <div className="flex items-center gap-1.5">
                   {proj.public_visible ? (
-                    <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 flex items-center gap-1">
                       <Globe className="w-3 h-3" /> Public
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> Restricted
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-100 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Internal
                     </span>
                   )}
                 </div>
               </div>
 
-              <h3 className="text-base font-black text-slate-900 leading-snug">{proj.name}</h3>
-              <p className="text-xs text-slate-500 font-medium leading-relaxed">{proj.description}</p>
-            </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight">{proj.name}</h3>
+                <p className="text-xs text-slate-500 line-clamp-2 mt-1 font-medium leading-relaxed">
+                  {proj.description || 'Bioacoustic monitoring project.'}
+                </p>
+              </div>
 
-            {/* Metrics Footer */}
-            <div className="space-y-3 pt-3 border-t border-slate-100">
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="text-[10px] text-slate-400 font-bold">Nodes</div>
                   <div className="font-black text-slate-900">{proj.stations_count ?? 0}</div>
                 </div>
@@ -210,38 +202,13 @@ export default function ProjectsPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1.5 pt-1">
+              <div className="pt-1">
                 <button
                   onClick={() => setSelectedProject(proj)}
-                  className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center gap-1.5 transition"
+                  className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center gap-1.5 transition shadow-2xs"
                 >
                   <Eye className="w-3.5 h-3.5" /> View Details
                 </button>
-
-                {canCreate && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        setEditingProj(proj);
-                        setEditName(proj.name);
-                        setEditDesc(proj.description || '');
-                        setEditOrg(proj.organization || '');
-                        setEditManager(proj.manager_name || '');
-                        setEditPublic(proj.public_visible);
-                        setEditImage(proj.image_url || '');
-                      }}
-                      className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProject(proj.id)}
-                      className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition border border-rose-100 hover:border-rose-600"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>

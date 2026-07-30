@@ -96,11 +96,15 @@ export default function LiveDashboardPage() {
     ? sitesList.filter(s => liveProjectIds.has(s.project_id))
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Hardware recorder nodes dynamically populated from database & live Raspberry Pi daemons
+  // Hardware recorder nodes dynamically populated from database & live Raspberry Pi daemons (ONLY Live daemons, NO PAM str_ recorders)
   const liveHardwareNodes = Array.from(new Set([
-    ...stationsList.map(st => st.id || st.station_name),
-    ...detections.map(d => d.station_id || d.station_name),
-    'Test_Lab_1'
+    'Test_Lab_1',
+    ...stationsList
+      .filter(st => !st.id?.startsWith('str_') && !st.station_name?.startsWith('str_'))
+      .map(st => st.id || st.station_name),
+    ...detections
+      .filter(d => !d.station_id?.startsWith('str_') && !d.station_name?.startsWith('str_'))
+      .map(d => d.station_id || d.station_name)
   ])).filter(Boolean);
 
   const availableStations = selectedSiteId === 'ALL'
