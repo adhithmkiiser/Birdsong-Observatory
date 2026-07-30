@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Radio, 
   Cpu, 
@@ -23,7 +23,9 @@ import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
-import { useEffect } from 'react';
+import dynamic from 'next/dynamic';
+
+const SatelliteMap = dynamic(() => import('@/components/map/SatelliteMap'), { ssr: false });
 
 export default function CommonDashboardPage() {
   const { currentRole } = useRole();
@@ -45,7 +47,7 @@ export default function CommonDashboardPage() {
   );
   const [topSpeciesData, setTopSpeciesData] = useState<{ species: string; detections: number }[]>([]);
 
-  // Load projects and combined stations/sites on mount
+  // Load projects (PAM only) and combined stations/sites on mount
   useEffect(() => {
     async function initData() {
       try {
@@ -55,7 +57,9 @@ export default function CommonDashboardPage() {
           supabase.from('sites').select('*').order('name')
         ]);
 
-        setProjectsList(projectsRes.data || []);
+        // Filter strictly to PAM projects
+        const pamProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
+        setProjectsList(pamProjects);
 
         const combined: any[] = [];
         (sitesRes.data || []).forEach(s => {
@@ -199,6 +203,9 @@ export default function CommonDashboardPage() {
         </div>
       </div>
 
+      {/* PAM GIS Satellite Recorder Network Map */}
+      <SatelliteMap />
+
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
@@ -273,7 +280,10 @@ export default function CommonDashboardPage() {
         </div>
       </div>
 
-      {/* Audio Modal */}
+      {/* PAM GIS Satellite Recorder Network Map */}
+      <SatelliteMap />
+
+      {/* Metrics Row */}
       {selectedDetection && (
         <AudioPlayerModal
           detection={selectedDetection}

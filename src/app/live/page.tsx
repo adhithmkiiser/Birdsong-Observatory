@@ -19,27 +19,41 @@ import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
 
 import { supabase } from '@/lib/supabase';
+import dynamic from 'next/dynamic';
+
+const SatelliteMap = dynamic(() => import('@/components/map/SatelliteMap'), { ssr: false });
 
 export default function LiveDetectionsPage() {
   const { currentRole } = useRole();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStation, setSelectedStation] = useState('ALL');
+  
+  // 3-level Toolbar States
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL');
+  const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
+  const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
+  
   const [minConfidence, setMinConfidence] = useState(0.5);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
-  const [detections, setDetections] = useState<any[]>([]);
+  const [liveProjects, setLiveProjects] = useState<any[]>([]);
+  const [sitesList, setSitesList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [detections, setDetections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   React.useEffect(() => {
     async function loadLiveData() {
       try {
-        const [{ data: sitesData }, { data: detData }] = await Promise.all([
+        const [{ data: projData }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
+          supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('sites').select('*').order('name'),
+          supabase.from('stations').select('*').order('station_name'),
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
         ]);
 
-        if (sitesData) setStationsList(sitesData);
+        if (projData) setLiveProjects(projData);
+        if (sitesData) setSitesList(sitesData);
+        if (stnData) setStationsList(stnData);
         if (detData) setDetections(detData);
       } catch (err) {
         console.error('Failed to load live detections:', err);
@@ -67,12 +81,38 @@ export default function LiveDetectionsPage() {
     };
   }, []);
 
+  // Filter sites by selected project
+  const availableSites = selectedProjectId === 'ALL'
+    ? sitesList
+    : sitesList.filter(s => s.project_id === selectedProjectId);
+
+  // Filter recorders by selected site or project
+  const availableStations = selectedSiteId === 'ALL'
+    ? (selectedProjectId === 'ALL' ? stationsList : stationsList.filter(st => st.project_id === selectedProjectId))
+    : stationsList.filter(st => st.site_id === selectedSiteId);
+
+  const handleProjectChange = (projId: string) => {
+    setSelectedProjectId(projId);
+    setSelectedSiteId('ALL');
+    setSelectedStationId('ALL');
+  };
+
+  const handleSiteChange = (siteId: string) => {
+    setSelectedSiteId(siteId);
+    setSelectedStationId('ALL');
+  };
+
   const filteredDetections = detections.filter((det) => {
     const common = det.common_name || '';
     const sci = det.scientific_name || '';
     const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           sci.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStation = selectedStation === 'ALL' || det.station_name === selectedStation || det.station_id === selectedStation;
+    
+    let matchesStation = true;
+    if (selectedStationId !== 'ALL') {
+      matchesStation = det.station_id === selectedStationId || det.station_name === selectedStationId;
+    }
+
     const matchesConf = (det.confidence || 0) >= minConfidence;
     return matchesSearch && matchesStation && matchesConf;
   });
@@ -84,10 +124,10 @@ export default function LiveDetectionsPage() {
         <div>
           <div className="flex items-center gap-2.5">
             <Radio className="w-5 h-5 text-emerald-600 animate-pulse" />
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">Live Bioacoustic Detection Recorder</h1>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">Live Bioacoustic Detection Recorders</h1>
           </div>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Realtime acoustic classifications ingested directly from Raspberry Pi field daemons running BirdNET-Pi model v2.4.
+            Realtime acoustic classifications ingested directly from Raspberry Pi field daemons running BirdNET-Pi.
           </p>
         </div>
 
@@ -98,7 +138,68 @@ export default function LiveDetectionsPage() {
         </div>
       </div>
 
-      {/* Filter Toolbar */}
+      {/* 3-Level Connected Toolbar */}
+      <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 text-xs font-black text-slate-900 border-b border-slate-100 pb-3">
+          <Filter className="w-4 h-4 text-emerald-600" />
+          <span>Live Scope Filter (Select Project ➔ Site ➔ Recorder Node):</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Live Project</label>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => handleProjectChange(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+            >
+              <option value="ALL">All Live Projects ({liveProjects.length})</option>
+              {liveProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site</label>
+            <select
+              value={selectedSiteId}
+              onChange={(e) => handleSiteChange(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+            >
+              <option value="ALL">All Sites in Project ({availableSites.length})</option>
+              {availableSites.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1.5">3. Select Recorder Node</label>
+            <select
+              value={selectedStationId}
+              onChange={(e) => setSelectedStationId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+            >
+              <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
+              {availableStations.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.station_name} ({st.id})
+                </option>
+              ))}
+              {/* Also include any live hardware node id in detections */}
+              {Array.from(new Set(detections.map(d => d.station_id))).map(id => (
+                <option key={id} value={id}>{id}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Live GIS Satellite Network Map */}
+      <SatelliteMap />
+
+      {/* Filter & Search Bar */}
       <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 text-xs">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -116,13 +217,13 @@ export default function LiveDetectionsPage() {
             <Filter className="w-3.5 h-3.5 text-slate-500" /> Station Node:
           </label>
           <select
-            value={selectedStation}
-            onChange={(e) => setSelectedStation(e.target.value)}
+            value={selectedStationId}
+            onChange={(e) => setSelectedStationId(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
           >
             <option value="ALL">All Field Stations</option>
-            {stationsList.map((s) => (
-              <option key={s.id} value={s.station_name}>{s.station_name}</option>
+            {stationsList.map((s: any) => (
+              <option key={s.id} value={s.id}>{s.station_name} ({s.id})</option>
             ))}
           </select>
         </div>
