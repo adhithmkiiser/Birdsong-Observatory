@@ -19,38 +19,79 @@ import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
 import { supabase } from '@/lib/supabase';
 
 export default function AnalyticsPage() {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
-  const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
+  // 3-level Toolbar States
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL');
+  const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
+  const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
 
-  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [liveProjects, setLiveProjects] = useState<any[]>([]);
+  const [sitesList, setSitesList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [detections, setDetections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('projects').select('*').order('created_at').then(({ data }) => setProjectsList(data || []));
-    supabase.from('stations').select('*').order('station_name').then(({ data }) => setStationsList(data || []));
+    async function loadAnalyticsData() {
+      setLoading(true);
+      try {
+        const [{ data: projs }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
+          supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
+          supabase.from('sites').select('*').order('name'),
+          supabase.from('stations').select('*').order('station_name'),
+          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
+        ]);
+
+        setLiveProjects(projs || []);
+        setSitesList(sitesData || []);
+        setStationsList(stnData || []);
+        setDetections(detData || []);
+      } catch (err) {
+        console.error('Failed to load analytics data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadAnalyticsData();
   }, []);
 
-  const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? stationsList
-    : stationsList.filter(s => s.project_id === selectedProjectId);
+  const liveProjectIds = new Set(liveProjects.map(p => p.id));
+  const availableSites = selectedProjectId === 'ALL'
+    ? sitesList.filter(s => liveProjectIds.has(s.project_id))
+    : sitesList.filter(s => s.project_id === selectedProjectId);
+
+  const availableStations = ['Test_Lab_1'];
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
-    setSelectedStationId('ALL_SITES');
+    setSelectedSiteId('ALL');
+    setSelectedStationId('ALL');
   };
 
-  const filteredDetections: any[] = [];
-  const activeStationsCount = availableStations.filter(s => s.status === 'online').length;
-  const totalDetectionsCount = 0;
-  const uniqueSpeciesSet = new Set<string>();
-  const speciesRichness = 0;
+  const handleSiteChange = (siteId: string) => {
+    setSelectedSiteId(siteId);
+    setSelectedStationId('ALL');
+  };
+
+  const filteredDetections = detections.filter((det) => {
+    let matchesStation = true;
+    if (selectedStationId !== 'ALL') {
+      matchesStation = det.station_id === selectedStationId || det.station_name === selectedStationId;
+    }
+    return matchesStation;
+  });
+
+  const activeStationsCount = availableStations.length;
+  const totalDetectionsCount = filteredDetections.length;
+  const uniqueSpeciesSet = new Set<string>(filteredDetections.map(d => d.common_name).filter(Boolean));
+  const speciesRichness = uniqueSpeciesSet.size;
 
   // Calculate dynamic Shannon Diversity Index H' = - sum(p_i * ln(p_i))
   let shannonDiversity = 0;
   if (filteredDetections.length > 0 && speciesRichness > 0) {
     const countsMap: { [key: string]: number } = {};
     filteredDetections.forEach(d => {
-      countsMap[d.scientific_name] = (countsMap[d.scientific_name] || 0) + 1;
+      countsMap[d.scientific_name || d.common_name] = (countsMap[d.scientific_name || d.common_name] || 0) + 1;
     });
 
     const total = filteredDetections.length;
@@ -99,34 +140,46 @@ export default function AnalyticsPage() {
           <span>Filter Analytics Scope:</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          {/* Dropdown 1: Project Selector */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Project</label>
+            <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Live Project</label>
             <select
               value={selectedProjectId}
               onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_PROJECTS">All Projects ({projectsList.length} Active)</option>
-              {projectsList.map((p) => (
+              <option value="ALL">All Live Projects ({liveProjects.length})</option>
+              {liveProjects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Dropdown 2: Site / Station Selector */}
           <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site / Recorder Node in Project</label>
+            <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site</label>
+            <select
+              value={selectedSiteId}
+              onChange={(e) => handleSiteChange(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+            >
+              <option value="ALL">All Sites in Project ({availableSites.length})</option>
+              {availableSites.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1.5">3. Select Recorder Node</label>
             <select
               value={selectedStationId}
               onChange={(e) => setSelectedStationId(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_SITES">All Sites ({availableStations.length} Recorders)</option>
-              {availableStations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.station_name} ({s.description})
+              <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
+              {availableStations.map((id: string) => (
+                <option key={id} value={id}>
+                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
                 </option>
               ))}
             </select>

@@ -61,14 +61,16 @@ export default function CommonDashboardPage() {
         const pamProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
         setProjectsList(pamProjects);
 
-        const combined: any[] = [];
-        (sitesRes.data || []).forEach(s => {
-          combined.push({ id: s.id, station_name: s.name, project_id: s.project_id, type: 'PAM' });
-        });
-        (stationsRes.data || []).forEach(s => {
-          combined.push({ id: s.id, station_name: s.station_name, project_id: s.project_id, type: 'Live' });
-        });
-        setStationsList(combined);
+        // Include ONLY PAM sites (Never Live stations)
+        const pamSites: any[] = (sitesRes.data || []).map(s => ({
+          id: s.id,
+          station_name: s.name,
+          description: `${s.name} Field Site`,
+          project_id: s.project_id,
+          type: 'PAM'
+        }));
+
+        setStationsList(pamSites);
       } catch (err) {
         console.error('Error loading projects/sites:', err);
       }

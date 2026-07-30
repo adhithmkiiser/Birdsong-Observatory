@@ -202,9 +202,6 @@ export default function LiveDetectionsPage() {
         </div>
       </div>
 
-      {/* Live GIS Satellite Network Map */}
-      <SatelliteMap />
-
       {/* Filter & Search Bar */}
       <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 text-xs">
         <div className="relative flex-1 min-w-[220px]">

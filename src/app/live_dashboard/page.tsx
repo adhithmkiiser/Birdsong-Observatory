@@ -96,19 +96,11 @@ export default function LiveDashboardPage() {
     ? sitesList.filter(s => liveProjectIds.has(s.project_id))
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Hardware recorder nodes dynamically populated from database & live Raspberry Pi daemons (ONLY Live daemons, NO PAM str_ recorders)
-  const liveHardwareNodes = Array.from(new Set([
-    'Test_Lab_1',
-    ...stationsList
-      .filter(st => !st.id?.startsWith('str_') && !st.station_name?.startsWith('str_'))
-      .map(st => st.id || st.station_name),
-    ...detections
-      .filter(d => !d.station_id?.startsWith('str_') && !d.station_name?.startsWith('str_'))
-      .map(d => d.station_id || d.station_name)
-  ])).filter(Boolean);
+  // Hardware recorder nodes dynamically populated ONLY from Live daemons (Test_Lab_1)
+  const liveHardwareNodes = ['Test_Lab_1'];
 
   const availableStations = selectedSiteId === 'ALL'
-    ? (selectedProjectId === 'ALL' ? liveHardwareNodes : liveHardwareNodes)
+    ? liveHardwareNodes
     : liveHardwareNodes;
 
   const handleProjectChange = (projId: string) => {
@@ -247,16 +239,13 @@ export default function LiveDashboardPage() {
         </div>
       </div>
 
-      {/* GIS Satellite Network Map */}
-      <SatelliteMap />
-
       {/* Realtime KPI Cards Grid (NO FAKE DATA) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-400">Active Field Nodes</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{availableStations.length} Nodes</div>
-            <p className="text-[11px] text-emerald-600 font-bold mt-0.5">Online stream daemons</p>
+            <div className="text-2xl font-black text-slate-900 mt-1">{availableStations.length} Node</div>
+            <p className="text-[11px] text-emerald-600 font-bold mt-0.5">Online stream daemon</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <Radio className="w-5 h-5 animate-pulse" />
