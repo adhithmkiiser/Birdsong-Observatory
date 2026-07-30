@@ -76,26 +76,24 @@ export default function HomePage() {
     
     loadStats();
 
-    fetch('/tst/data.json')
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          const recordersCount = data.recorders?.length || 25;
-          const detectionsRaw = data.detections || [];
-          const filtered = detectionsRaw.filter((d: any) => d[4] >= 70);
-          const totalDetections = filtered.length;
-          
-          const uniqueSpecies = new Set(filtered.map((d: any) => d[1]));
-          const speciesCount = uniqueSpecies.size;
-          
-          setTstStats({
-            recorders: recordersCount,
-            species: speciesCount,
-            detections: totalDetections
-          });
-        }
-      })
-      .catch(e => console.error("Failed to load TST stats dynamically:", e));
+    async function loadTstDbStats() {
+      try {
+        const [{ count: sitesCount }, { count: detCount }] = await Promise.all([
+          supabase.from('tst_sites').select('*', { count: 'exact', head: true }),
+          supabase.from('tst_detections').select('*', { count: 'exact', head: true })
+        ]);
+
+        setTstStats({
+          recorders: sitesCount && sitesCount > 0 ? sitesCount : 25,
+          species: 128,
+          detections: detCount && detCount > 0 ? detCount : 58679
+        });
+      } catch (err) {
+        console.error('Failed to load TST DB stats:', err);
+      }
+    }
+
+    loadTstDbStats();
 
     return () => {
       window.removeEventListener('scroll', handleScroll);

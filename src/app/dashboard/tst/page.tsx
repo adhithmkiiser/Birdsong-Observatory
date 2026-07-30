@@ -138,7 +138,7 @@ export default function TstDashboardPage() {
         const [d, c, { data: sbSites }] = await Promise.all([
           fetch('/tst/data.json'),
           fetch('/tst/config.json'),
-          supabase.from('sites').select('*').eq('project_id', 'tst')
+          supabase.from('tst_sites').select('*')
         ]);
         if (d.ok && c.ok) {
           setDataRaw(await d.json());

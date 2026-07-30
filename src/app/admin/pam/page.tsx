@@ -262,16 +262,36 @@ export default function PamAdminPage() {
               timestamp = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
             }
 
-            detectionsToInsert.push({
-              station_id: effectiveSiteId,
-              station_name: effectiveSiteName,
-              common_name: commonName,
-              confidence: confidenceVal,
-              timestamp: timestamp.toISOString(),
-              date_str: timestamp.toISOString().split('T')[0],
-              time_str: timestamp.toISOString().split('T')[1].slice(0, 8),
-              duration: 3.0
-            });
+            const dateStr = timestamp.toISOString().split('T')[0];
+            const timeStr = timestamp.toISOString().split('T')[1].split('.')[0];
+
+            if (selectedUploadProjId === 'tst') {
+              detectionsToInsert.push({
+                site_name: effectiveSiteName,
+                date: dateStr,
+                time: timeStr,
+                start_time: 0.0,
+                end_time: 3.0,
+                common_name: commonName,
+                scientific_name: commonName,
+                threshold: confidenceVal,
+                file_name: file.name
+              });
+            } else {
+              detectionsToInsert.push({
+                project_name: selectedUploadProjId,
+                site_name: effectiveSiteName,
+                recorder_name: effectiveSiteId,
+                date: dateStr,
+                time: timeStr,
+                start_time: 0.0,
+                end_time: 3.0,
+                common_name: commonName,
+                scientific_name: commonName,
+                confidence: confidenceVal,
+                file_name: file.name
+              });
+            }
           }
 
           if (detectionsToInsert.length > 0) {
@@ -382,6 +402,23 @@ export default function PamAdminPage() {
       longitude: newSiteLng !== '' ? Number(newSiteLng) : 75.64,
       expected_files: newSiteFiles !== '' ? Number(newSiteFiles) : 48
     };
+
+    if (newSiteProjId === 'tst') {
+      const tstSiteRecord = {
+        id: siteId,
+        site_name: newSiteName,
+        lat: newSiteLat !== '' ? Number(newSiteLat) : 11.41,
+        long: newSiteLng !== '' ? Number(newSiteLng) : 76.69,
+        number_of_files: newSiteFiles !== '' ? Number(newSiteFiles) : 0,
+        number_of_hours: 0.0,
+        total_size_bytes: 0
+      };
+
+      const { error } = await supabase.from('tst_sites').upsert([tstSiteRecord], { onConflict: 'id' });
+      if (error) {
+        console.error('Error inserting into tst_sites:', error);
+      }
+    }
 
     const { error } = await supabase.from('sites').insert([newSite]);
     if (error) {
