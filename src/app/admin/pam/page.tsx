@@ -84,21 +84,53 @@ export default function PamAdminPage() {
   const [csvNewSiteLat, setCsvNewSiteLat] = useState<number | ''>(13.58);
   const [csvNewSiteLng, setCsvNewSiteLng] = useState<number | ''>(75.64);
 
-  // 2. Projects & Sites Management States (starts empty — real projects added via form / Supabase)
+  // 2. Projects & Sites Management States
   const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
   const [sitesList, setSitesList] = useState<SiteItem[]>([]);
+  const [tstSitesList, setTstSitesList] = useState<any[]>([]);
+
+  // 3. Species Ecology Curator States
+  const [speciesEcologyList, setSpeciesEcologyList] = useState<any[]>([]);
+  const [unmappedSpecies, setUnmappedSpecies] = useState<string[]>([]);
+  const [speciesScopeTab, setSpeciesScopeTab] = useState<'tst_sites' | 'common_sites'>('tst_sites');
+
+  // Form for New Species Trait Entry
+  const [newSciName, setNewSciName] = useState('');
+  const [newComName, setNewComName] = useState('');
+  const [newIucn, setNewIucn] = useState('LC');
+  const [newGuild, setNewGuild] = useState('Insectivore');
+  const [newHabitat, setNewHabitat] = useState('Shola Forest / Canopy');
+  const [newStratum, setNewStratum] = useState('High canopy');
+  const [newEndemic, setNewEndemic] = useState('Western Ghats Endemic');
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [{ data: projs }, { data: sitesData }] = await Promise.all([
+        const [{ data: projs }, { data: sitesData }, { data: tstSites }, { data: speciesEco }, { data: tstDets }] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('sites').select('*').order('created_at', { ascending: false })
+          supabase.from('sites').select('*').order('created_at', { ascending: false }),
+          supabase.from('tst_sites').select('*').order('site_name'),
+          supabase.from('tst_species_ecology').select('*').order('scientific_name'),
+          supabase.from('tst_detections').select('common_name, scientific_name').limit(500)
         ]);
+
         if (projs) setProjectsList(projs.map(mapDbProjectToItem));
         if (sitesData) setSitesList(sitesData.map(mapDbSiteToItem));
+        if (tstSites) setTstSitesList(tstSites);
+        if (speciesEco) setSpeciesEcologyList(speciesEco);
+
+        // Find detected taxa not yet curated in tst_species_ecology
+        if (tstDets && speciesEco) {
+          const mappedSet = new Set(speciesEco.map((s: any) => s.common_name.toLowerCase()));
+          const unmapped = Array.from(new Set(
+            tstDets
+              .map((d: any) => d.common_name)
+              .filter((name: string) => name && !mappedSet.has(name.toLowerCase()))
+          ));
+          setUnmappedSpecies(unmapped);
+        }
       } catch (e) {
-        console.error('Failed to fetch projects or sites from Supabase:', e);
+        console.error('Failed to fetch PAM admin data from Supabase:', e);
       }
     }
     loadData();
@@ -430,6 +462,33 @@ export default function PamAdminPage() {
     setNewSiteId('');
     setNewSiteName('');
     showNotification(`Site "${newSiteName}" registered with coordinates (${newSiteLat}, ${newSiteLng}).`);
+  };
+
+  const handleAddSpeciesEcology = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSciName || !newComName) return;
+
+    const record = {
+      scientific_name: newSciName,
+      common_name: newComName,
+      iucn_status: newIucn,
+      guild: newGuild,
+      habitat: newHabitat,
+      foraging_stratum: newStratum,
+      endemic_status: newEndemic
+    };
+
+    const { error } = await supabase.from('tst_species_ecology').upsert([record], { onConflict: 'scientific_name' });
+    if (error) {
+      alert('Error saving species trait entry: ' + error.message);
+      return;
+    }
+
+    setSpeciesEcologyList(prev => [record, ...prev.filter(s => s.scientific_name !== newSciName)]);
+    setUnmappedSpecies(prev => prev.filter(name => name.toLowerCase() !== newComName.toLowerCase()));
+    setNewSciName('');
+    setNewComName('');
+    showNotification(`Species trait record for "${newComName}" saved to tst_species_ecology!`);
   };
 
   const handleDeleteSite = async (siteId: string) => {
@@ -927,15 +986,167 @@ export default function PamAdminPage() {
 
       {/* TAB 3: Species Ecology Curator */}
       {activeTab === 'species' && (
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Bird className="w-4 h-4 text-amber-600" /> Avian Species Ecological Traits Curator
-            </h3>
-          </div>
+        <div className="space-y-6 text-xs font-sans">
+          {/* Top Bar Banner with Unmapped Taxa Scrolling Alert Ticker */}
+          {unmappedSpecies.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-amber-900 flex items-center gap-3 overflow-hidden shadow-sm">
+              <span className="p-1.5 rounded-xl bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider flex-shrink-0 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Unmapped Taxa Detected ({unmappedSpecies.length})
+              </span>
+              <div className="overflow-hidden whitespace-nowrap w-full">
+                <div className="inline-block animate-marquee font-mono text-[11px] font-bold text-amber-800 space-x-6">
+                  {unmappedSpecies.map((sp, idx) => (
+                    <span key={idx} className="inline-flex items-center gap-1 bg-amber-100/80 px-2 py-0.5 rounded-lg border border-amber-200">
+                      ⚠️ <strong className="text-slate-900 font-extrabold">{sp}</strong> needs ecology trait curation
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-slate-600">
-            Curate foraging guild, conservation IUCN status, foraging stratum, and vocal activity parameters for species in database.
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column: Form to Add/Curate Species Trait */}
+            <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Bird className="w-4 h-4 text-emerald-600" /> Curate Avian Trait Entry
+              </h3>
+
+              <form onSubmit={handleAddSpeciesEcology} className="space-y-3">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Scientific Species Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Coracias benghalensis"
+                    value={newSciName}
+                    onChange={(e) => setNewSciName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Common English Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Indian Roller"
+                    value={newComName}
+                    onChange={(e) => setNewComName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-extrabold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">IUCN Status</label>
+                    <select
+                      value={newIucn}
+                      onChange={(e) => setNewIucn(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-900"
+                    >
+                      <option value="LC">LC (Least Concern)</option>
+                      <option value="NT">NT (Near Threatened)</option>
+                      <option value="VU">VU (Vulnerable)</option>
+                      <option value="EN">EN (Endangered)</option>
+                      <option value="CR">CR (Critically Endangered)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Feeding Guild</label>
+                    <input
+                      type="text"
+                      value={newGuild}
+                      onChange={(e) => setNewGuild(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Preferred Habitat</label>
+                  <input
+                    type="text"
+                    value={newHabitat}
+                    onChange={(e) => setNewHabitat(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Foraging Stratum</label>
+                    <input
+                      type="text"
+                      value={newStratum}
+                      onChange={(e) => setNewStratum(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Endemic Status</label>
+                    <input
+                      type="text"
+                      value={newEndemic}
+                      onChange={(e) => setNewEndemic(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md transition flex items-center justify-center gap-2 mt-2"
+                >
+                  <Bird className="w-4 h-4" /> Save Species Trait Entry
+                </button>
+              </form>
+            </div>
+
+            {/* Right Column: Database Table View */}
+            <div className="lg:col-span-2 p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-600" /> Avian Ecology Database ({speciesEcologyList.length} Species)
+                </h3>
+              </div>
+
+              <div className="overflow-x-auto max-h-[500px]">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase">
+                      <th className="pb-2">Taxon / Common Name</th>
+                      <th className="pb-2">IUCN</th>
+                      <th className="pb-2">Guild</th>
+                      <th className="pb-2">Habitat</th>
+                      <th className="pb-2">Endemic Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
+                    {speciesEcologyList.map((sp, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2.5">
+                          <div className="font-extrabold text-slate-900">{sp.common_name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono italic">{sp.scientific_name}</div>
+                        </td>
+                        <td className="py-2.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                            sp.iucn_status === 'EN' || sp.iucn_status === 'CR' ? 'bg-rose-100 text-rose-800' :
+                            sp.iucn_status === 'VU' || sp.iucn_status === 'NT' ? 'bg-amber-100 text-amber-800' :
+                            'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {sp.iucn_status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 font-bold text-slate-700">{sp.guild}</td>
+                        <td className="py-2.5 text-slate-600 truncate max-w-[150px]">{sp.habitat}</td>
+                        <td className="py-2.5 font-bold text-indigo-600">{sp.endemic_status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       )}

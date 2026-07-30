@@ -21,8 +21,24 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
     if (audioRef.current) audioRef.current.load();
   }, [src]);
 
+  const getAudioUrl = (species: string, explicitSrc?: string) => {
+    if (explicitSrc && explicitSrc.startsWith('http')) return explicitSrc;
+    if (explicitSrc && explicitSrc.startsWith('/audio/')) {
+      const filename = explicitSrc.split('/').pop() || '';
+      return `https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/audio-clips/${filename}`;
+    }
+    const cleanName = species.toLowerCase().trim();
+    if (cleanName.includes('myna')) return 'https://cdn.download.ams.birds.cornell.edu/api/v1/asset/121287/audio';
+    if (cleanName.includes('roller')) return 'https://cdn.download.ams.birds.cornell.edu/api/v1/asset/280053/audio';
+    if (cleanName.includes('warbler')) return 'https://cdn.download.ams.birds.cornell.edu/api/v1/asset/204278/audio';
+    if (cleanName.includes('barbet')) return 'https://cdn.download.ams.birds.cornell.edu/api/v1/asset/324108/audio';
+    if (cleanName.includes('drongo')) return 'https://cdn.download.ams.birds.cornell.edu/api/v1/asset/175841/audio';
+    return `https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/audio-clips/${encodeURIComponent(species)}.mp3`;
+  };
+
+  const resolvedAudioSrc = getAudioUrl(speciesName, src);
+
   const togglePlay = () => {
-    if (!src) return;
     const audio = audioRef.current;
     if (!audio) return;
     if (isPlaying) {
@@ -51,7 +67,7 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
     <div className={`audio-player-card${!src ? ' disabled' : ''}`}>
       <audio
         ref={audioRef}
-        src={src}
+        src={resolvedAudioSrc}
         onTimeUpdate={() => audioRef.current && setCurrentTime(audioRef.current.currentTime)}
         onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)}
         onEnded={() => { setIsPlaying(false); setCurrentTime(0); }}
