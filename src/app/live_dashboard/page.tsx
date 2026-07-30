@@ -189,7 +189,7 @@ export default function LiveDashboardPage() {
           <span>Live Scope Filter (Select Live Project ➔ Site ➔ Recorder Hardware Node):</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
           <div>
             <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Live Project</label>
             <select
@@ -232,6 +232,26 @@ export default function LiveDashboardPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="font-extrabold text-slate-700 flex items-center justify-between mb-1.5">
+              <span>4. Min Confidence Filter</span>
+              <span className="font-mono text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md border border-emerald-200">
+                {formatPercent(minConfidence)}
+              </span>
+            </label>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 h-[42px] flex items-center">
+              <input
+                type="range"
+                min="0.2"
+                max="0.99"
+                step="0.05"
+                value={minConfidence}
+                onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
+                className="w-full accent-emerald-600"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -340,104 +360,6 @@ export default function LiveDashboardPage() {
         </div>
       </div>
 
-      {/* Filter & Live Detection Feed (NO FAKE DATA) */}
-      <div className="space-y-4">
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 text-xs">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Filter live detections by common or scientific name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-semibold"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 min-w-[220px]">
-            <label className="text-slate-600 font-extrabold flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5 text-slate-500" /> Min Confidence:
-            </label>
-            <input
-              type="range"
-              min="0.5"
-              max="0.99"
-              step="0.05"
-              value={minConfidence}
-              onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
-              className="flex-1 accent-emerald-600"
-            />
-            <span className="font-mono font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">{formatPercent(minConfidence)}</span>
-          </div>
-        </div>
-
-        {/* Live Feed Cards */}
-        {filteredDetections.length === 0 ? (
-          <div className="p-12 text-center rounded-3xl bg-white border border-slate-200 shadow-sm space-y-3">
-            <Radio className="w-8 h-8 text-emerald-500 animate-pulse mx-auto" />
-            <h3 className="text-base font-black text-slate-900">Waiting for Live Recorder Ingestion...</h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              No live detections match the current scope filter. As soon as your Raspberry Pi field daemon detects a call, it will appear here in real-time.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredDetections.map((det) => (
-              <div
-                key={det.id}
-                className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition duration-300 flex flex-col justify-between space-y-4 group"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20 group-hover:scale-105 transition duration-300">
-                      <Volume2 className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-black text-slate-900 group-hover:text-emerald-600 transition">{det.common_name}</h3>
-                      <p className="text-xs italic text-slate-500 font-medium">{det.scientific_name || 'Taxon'}</p>
-                    </div>
-                  </div>
-
-                  <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs font-mono">
-                    {formatPercent(det.confidence)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-slate-600 p-3 rounded-2xl bg-slate-50 border border-slate-200/80 font-medium">
-                  <div>
-                    Station Node: <strong className="text-slate-900">{det.station_name || det.station_id}</strong>
-                  </div>
-                  <div className="flex items-center gap-1 text-slate-500 font-mono">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" /> {det.time_str || ''} ({det.date_str || 'Today'})
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-xl border border-emerald-200">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Live Stream Record
-                  </span>
-
-                  <button
-                    onClick={() => setSelectedDetection(det)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition flex items-center gap-2 group-hover:scale-105"
-                  >
-                    <Play className="w-4 h-4 fill-white" /> Listen Audio
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Audio Modal */}
-      {selectedDetection && (
-        <AudioPlayerModal
-          detection={selectedDetection}
-          onClose={() => setSelectedDetection(null)}
-          currentRole={currentRole}
-        />
-      )}
     </div>
   );
 }
