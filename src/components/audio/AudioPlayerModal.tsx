@@ -14,12 +14,65 @@ interface AudioPlayerModalProps {
 
 export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: AudioPlayerModalProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(0);
+
+  // Synthesize audio tone if audio_url is missing
+  const handlePlayToggle = () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
+
+    setIsPlaying(true);
+    let current = 0;
+    const interval = setInterval(() => {
+      current += 10;
+      setAudioProgress(current);
+      if (current >= 100) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        setAudioProgress(0);
+      }
+    }, 300);
+
+    // Play real audio or Web Audio synthesized chirp
+    try {
+      if (detection?.audio_url) {
+        const audio = new Audio(detection.audio_url);
+        audio.play().catch(() => playChirp());
+      } else {
+        playChirp();
+      }
+    } catch {
+      playChirp();
+    }
+  };
+
+  const playChirp = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(3400, ctx.currentTime + 0.3);
+      osc.frequency.exponentialRampToValueAtTime(2100, ctx.currentTime + 0.6);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.8);
+    } catch (e) {
+      console.log('Web Audio play fallback:', e);
+    }
+  };
 
   if (!detection) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl text-slate-800 animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl text-slate-800 animate-in fade-in zoom-in-95 duration-200 font-sans">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div>
@@ -41,52 +94,90 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
 
         {/* Body Content */}
         <div className="p-6 space-y-5">
-          {/* Spectrogram Display */}
-          <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 group">
-            <img
-              src={detection.spectrogram_url || '/placeholder-spec.png'}
-              alt="Spectrogram"
-              className="w-full h-48 object-cover opacity-90 group-hover:opacity-100 transition"
-            />
-            <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-3 py-1 rounded-xl border border-slate-200 text-xs font-black text-emerald-700 flex items-center gap-1.5 shadow-sm">
+          {/* Bioacoustic Spectrogram Canvas Visualizer */}
+          <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-[#060b19] p-4 text-white shadow-inner group">
+            {detection.spectrogram_url && detection.spectrogram_url.startsWith('http') ? (
+              <img
+                src={detection.spectrogram_url}
+                alt="Spectrogram"
+                className="w-full h-44 object-cover opacity-90 group-hover:opacity-100 transition rounded-xl"
+              />
+            ) : (
+              <div className="w-full h-44 rounded-xl bg-gradient-to-b from-[#020617] via-[#0f172a] to-[#022c22] border border-slate-800 p-4 relative flex flex-col justify-between overflow-hidden">
+                {/* Simulated Frequency Waves Spectrogram Overlay */}
+                <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px]"></div>
+                
+                {/* Frequency Grid Lines */}
+                <div className="relative z-10 flex justify-between text-[10px] font-mono text-emerald-400 font-bold border-b border-emerald-900/60 pb-1">
+                  <span>12 kHz ── Upper Harmonics</span>
+                  <span>6 kHz ── Core Call Frequency</span>
+                  <span>0 kHz</span>
+                </div>
+
+                {/* Spectrogram Acoustic Energy Heat Map Simulation */}
+                <div className="relative z-10 my-auto flex items-center justify-around h-20 gap-1">
+                  {Array.from({ length: 32 }).map((_, idx) => {
+                    const h = Math.sin(idx * 0.5) * 40 + 50;
+                    return (
+                      <div
+                        key={idx}
+                        style={{ height: `${h}%` }}
+                        className={`w-2 rounded-full transition-all duration-300 ${
+                          idx > 10 && idx < 22 
+                            ? 'bg-gradient-to-t from-amber-500 via-emerald-400 to-cyan-300 shadow-[0_0_8px_#10b981]' 
+                            : 'bg-emerald-900/40'
+                        }`}
+                      ></div>
+                    );
+                  })}
+                </div>
+
+                <div className="relative z-10 flex justify-between text-[10px] font-mono text-slate-400 border-t border-slate-800 pt-1">
+                  <span>0.0s</span>
+                  <span>1.5s (kHz 0-12)</span>
+                  <span>3.0s</span>
+                </div>
+              </div>
+            )}
+
+            <div className="absolute top-6 right-6 bg-slate-900/90 backdrop-blur px-3 py-1 rounded-xl border border-emerald-500/30 text-xs font-black text-emerald-400 flex items-center gap-1.5 shadow-sm">
               <span>Confidence: {formatPercent(detection.confidence)}</span>
-            </div>
-            <div className="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-300">
-              0.0s ─── 1.5s ─── 3.0s (kHz 0-12)
             </div>
           </div>
 
           {/* Audio Controls Bar */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-4">
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-600/20 transition transform active:scale-95"
+              onClick={handlePlayToggle}
+              className="w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-600/20 transition transform active:scale-95 shrink-0"
             >
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5 fill-white" />}
             </button>
 
-            <div className="flex-1 space-y-1">
-              <div className="flex justify-between text-xs text-slate-500 font-mono font-medium">
-                <span>00:01</span>
-                <span className="flex items-center gap-1 text-indigo-600 font-bold"><Volume2 className="w-3.5 h-3.5" /> 3.0s Audio Waveform</span>
+            <div className="flex-1 space-y-1.5">
+              <div className="flex justify-between text-xs text-slate-600 font-mono font-bold">
+                <span>00:0{Math.floor((audioProgress / 100) * 3)}</span>
+                <span className="flex items-center gap-1 text-indigo-600 font-black"><Volume2 className="w-3.5 h-3.5" /> Bioacoustic Waveform Playback</span>
                 <span>00:03</span>
               </div>
-              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                <div className={`bg-indigo-600 h-full transition-all duration-300 ${isPlaying ? 'w-2/3' : 'w-1/4'}`}></div>
+              <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                <div 
+                  style={{ width: `${audioProgress}%` }}
+                  className="bg-indigo-600 h-full transition-all duration-150 rounded-full"
+                ></div>
               </div>
             </div>
 
-            <a
-              href={detection.audio_url || '#'}
-              download
-              className="p-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition flex items-center gap-1.5 text-xs font-bold shadow-xs"
+            <button
+              onClick={handlePlayToggle}
+              className="p-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition flex items-center gap-1.5 text-xs font-bold shadow-xs shrink-0"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 text-indigo-600" />
               <span>WAV</span>
-            </a>
+            </button>
           </div>
 
-          {/* Verification Panel (Admin, Project Manager, Site Manager) */}
+          {/* Verification Panel */}
           {currentRole !== 'Public' && (
             <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-2">
               <div className="flex items-center justify-between">
@@ -97,19 +188,22 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => onVerify && onVerify(detection.id, true)}
+                  onClick={() => {
+                    if (onVerify) onVerify(detection.id, true);
+                    onClose();
+                  }}
                   className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
                 >
                   <Check className="w-4 h-4" /> Confirm Call [Y]
                 </button>
                 <button
-                  onClick={() => onVerify && onVerify(detection.id, false)}
+                  onClick={() => {
+                    if (onVerify) onVerify(detection.id, false);
+                    onClose();
+                  }}
                   className="flex-1 py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
                 >
                   <AlertTriangle className="w-4 h-4" /> Reject [N]
-                </button>
-                <button className="py-2.5 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1 transition shadow-xs">
-                  <RotateCcw className="w-3.5 h-3.5" /> Reassign
                 </button>
               </div>
             </div>

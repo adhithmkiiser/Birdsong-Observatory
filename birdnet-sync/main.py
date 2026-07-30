@@ -1,4 +1,4 @@
-﻿import time
+import time
 import os
 import sys
 import logging
@@ -49,6 +49,8 @@ def run_sync_cycle(config, sqlite_reader, storage, db, state_manager):
         payload = {
           "station_id": config.STATION_ID,
           "station_name": config.STATION_NAME,
+          "project_id": config.PROJECT_ID,
+          "site_id": config.SITE_ID,
           "common_name": detection['com_name'],
           "scientific_name": detection['sci_name'],
           "confidence": float(detection['confidence']),
