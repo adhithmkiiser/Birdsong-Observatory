@@ -506,19 +506,36 @@ export default function PamAdminPage() {
     e.preventDefault();
     if (!newSciName || !newComName) return;
 
-    const record = {
+    const record: any = {
       scientific_name: newSciName,
       common_name: newComName,
       iucn_status: newIucn,
       guild: newGuild,
       habitat: newHabitat,
       foraging_stratum: newStratum,
-      endemic_status: newEndemic,
-      image_link: newImgLink || null,
-      audio_link: newAudioLink || null
+      endemic_status: newEndemic
     };
 
-    const { error } = await supabase.from('tst_species_ecology').upsert([record], { onConflict: 'scientific_name' });
+    if (newImgLink) record.image_link = newImgLink;
+    if (newAudioLink) record.audio_link = newAudioLink;
+
+    let { error } = await supabase.from('tst_species_ecology').upsert([record], { onConflict: 'scientific_name' });
+
+    // Fallback if audio_link/image_link columns are missing in DB schema cache
+    if (error && error.message.includes('column')) {
+      const coreRecord = {
+        scientific_name: newSciName,
+        common_name: newComName,
+        iucn_status: newIucn,
+        guild: newGuild,
+        habitat: newHabitat,
+        foraging_stratum: newStratum,
+        endemic_status: newEndemic
+      };
+      const { error: coreErr } = await supabase.from('tst_species_ecology').upsert([coreRecord], { onConflict: 'scientific_name' });
+      error = coreErr;
+    }
+
     if (error) {
       alert('Error saving species trait entry: ' + error.message);
       return;
@@ -530,7 +547,7 @@ export default function PamAdminPage() {
     setNewComName('');
     setNewImgLink('');
     setNewAudioLink('');
-    showNotification(`Species trait record for "${newComName}" saved to tst_species_ecology!`);
+    showNotification(`Species trait record for "${newComName}" saved successfully!`);
   };
 
   const handleDeleteSite = async (siteId: string) => {
