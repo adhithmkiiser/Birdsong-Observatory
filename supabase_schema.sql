@@ -12,10 +12,16 @@ CREATE TABLE IF NOT EXISTS public.users (
   role TEXT NOT NULL DEFAULT 'Researcher' CHECK (role IN ('Admin', 'Project Manager', 'Site Manager', 'Researcher', 'Public')),
   organization TEXT DEFAULT 'IISER Tirupati',
   project_scope_permissions JSONB DEFAULT '[]'::jsonb,
+  assigned_project_type TEXT DEFAULT 'Both',
   is_one_time_password BOOLEAN DEFAULT FALSE,
   must_change_password BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+-- Safe migration: add missing columns if they don't already exist
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS assigned_project_type TEXT DEFAULT 'Both';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_one_time_password BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
 
 -- 2. TST PAM OFFLINE SURVEY PROJECT TABLES
 
@@ -112,5 +118,21 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   storage_used_percent DOUBLE PRECISION,
   firmware_version TEXT DEFAULT 'v2.4',
   last_ping TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 6. PROJECTS DIRECTORY TABLE (PAM & Live Projects Registry)
+CREATE TABLE IF NOT EXISTS public.projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  project_type TEXT NOT NULL DEFAULT 'PAM' CHECK (project_type IN ('PAM', 'Live')),
+  description TEXT,
+  organization TEXT DEFAULT 'IISER Tirupati',
+  manager_id UUID REFERENCES public.users(id),
+  manager_name TEXT,
+  image_url TEXT,
+  stations_count INTEGER DEFAULT 0,
+  species_count INTEGER DEFAULT 0,
+  total_detections INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
