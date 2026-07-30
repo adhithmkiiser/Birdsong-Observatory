@@ -465,8 +465,6 @@ WantedBy=multi-user.target`;
               const recId = (form.elements.namedItem('recId') as HTMLInputElement).value;
               const siteName = (form.elements.namedItem('siteName') as HTMLInputElement).value;
               const projName = (form.elements.namedItem('projName') as HTMLSelectElement).value;
-              const lat = parseFloat((form.elements.namedItem('lat') as HTMLInputElement).value) || 13.58;
-              const lng = parseFloat((form.elements.namedItem('lng') as HTMLInputElement).value) || 75.64;
 
               const record = {
                 project_type: 'Live',
@@ -474,8 +472,8 @@ WantedBy=multi-user.target`;
                 site_name: siteName,
                 recorder_id: recId,
                 status: 'ONLINE',
-                lat,
-                long: lng,
+                lat: 13.58,
+                long: 75.64,
                 last_ping: new Date().toISOString()
               };
 
@@ -521,20 +519,13 @@ WantedBy=multi-user.target`;
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
-                  <input name="lat" type="number" step="0.0001" defaultValue={13.58} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-900 font-bold" />
-                </div>
-                <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
-                  <input name="lng" type="number" step="0.0001" defaultValue={75.64} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-900 font-bold" />
-                </div>
-                <div className="flex items-end">
-                  <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md transition flex items-center justify-center gap-2">
-                    <PlusCircle className="w-4 h-4" /> Register Sensor Node
-                  </button>
-                </div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" /> GPS Lat & Long coordinates are automatically extracted & synced from the Pi&apos;s BirdNET-Pi config!
+                </span>
+                <button type="submit" className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md transition flex items-center gap-2">
+                  <PlusCircle className="w-4 h-4" /> Register Sensor Node
+                </button>
               </div>
             </form>
           </div>
