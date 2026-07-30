@@ -670,14 +670,45 @@ WantedBy=multi-user.target`;
               <FolderPlus className="w-4 h-4 text-emerald-600" /> Create Live Streaming Observatory Project
             </h3>
 
-            <form onSubmit={handleCreateLiveProject} className="space-y-4">
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newProjName) return;
+
+              const record = {
+                id: newProjName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                name: newProjName,
+                project_type: 'Live',
+                organization: newProjOrg || 'IISER Tirupati Bird Lab',
+                description: newProjDesc,
+                image_url: (e.target as any).elements.namedItem('projImg')?.value || 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=600'
+              };
+
+              const { error } = await supabase.from('projects').upsert([record], { onConflict: 'id' });
+              if (error) {
+                alert('Error creating project: ' + error.message);
+                return;
+              }
+
+              setLiveProjects(prev => [{
+                id: record.id,
+                name: record.name,
+                description: record.description,
+                organization: record.organization,
+                stationsCount: 0,
+                image_url: record.image_url
+              } as any, ...prev]);
+
+              setNewProjName('');
+              setNewProjDesc('');
+              showNotification(`Created Live project "${record.name}" with custom description & image!`);
+            }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="font-extrabold text-slate-700 block mb-1">Project Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Western Ghats Live Stream"
+                    placeholder="e.g. Bird_Lab_demo"
                     value={newProjName}
                     onChange={(e) => setNewProjName(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
@@ -694,6 +725,28 @@ WantedBy=multi-user.target`;
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Description & Objectives</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Continuous 24/7 bioacoustic streaming monitoring of Western Ghats endemic avian species..."
+                  value={newProjDesc}
+                  onChange={(e) => setNewProjDesc(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Cover Image URL</label>
+                <input
+                  name="projImg"
+                  type="url"
+                  placeholder="https://... or /projects/live.jpg"
+                  defaultValue="https://images.unsplash.com/photo-1448375240586-882707db888b?w=600"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium"
+                />
               </div>
 
               <div className="flex justify-end">
@@ -716,8 +769,20 @@ WantedBy=multi-user.target`;
             </h3>
 
             <div className="space-y-3">
-              {liveProjects.map(p => (
+              {liveProjects.map((p: any) => (
                 <div key={p.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    {p.image_url && (
+                      <img src={p.image_url} alt={p.name} className="w-16 h-16 rounded-xl object-cover border border-slate-200 shadow-sm flex-shrink-0" />
+                    )}
+                    <div>
+                      <strong className="text-sm font-black text-slate-900">{p.name}</strong>
+                      <p className="text-slate-500 font-medium text-[11px] mt-0.5">{p.organization}</p>
+                      {p.description && (
+                        <p className="text-slate-600 text-[11px] mt-1 line-clamp-2 max-w-xl">{p.description}</p>
+                      )}
+                    </div>
+                  </div>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">{p.id}</span>
