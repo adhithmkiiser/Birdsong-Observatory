@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { 
@@ -90,15 +90,22 @@ export default function LiveDashboardPage() {
     };
   }, []);
 
-  // Filter sites by selected Live project
+  // Filter sites strictly by selected Live project (Never PAM sites)
+  const liveProjectIds = new Set(liveProjects.map(p => p.id));
   const availableSites = selectedProjectId === 'ALL'
-    ? sitesList
+    ? sitesList.filter(s => liveProjectIds.has(s.project_id))
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Filter hardware stations by selected site or project
+  // Hardware recorder nodes dynamically populated from database & live Raspberry Pi daemons
+  const liveHardwareNodes = Array.from(new Set([
+    ...stationsList.map(st => st.id || st.station_name),
+    ...detections.map(d => d.station_id || d.station_name),
+    'Test_Lab_1'
+  ])).filter(Boolean);
+
   const availableStations = selectedSiteId === 'ALL'
-    ? (selectedProjectId === 'ALL' ? stationsList : stationsList.filter(st => st.project_id === selectedProjectId))
-    : stationsList.filter(st => st.site_id === selectedSiteId);
+    ? (selectedProjectId === 'ALL' ? liveHardwareNodes : liveHardwareNodes)
+    : liveHardwareNodes;
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -226,13 +233,10 @@ export default function LiveDashboardPage() {
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
             >
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
-              {availableStations.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.station_name} ({st.id})
+              {availableStations.map((id: string) => (
+                <option key={id} value={id}>
+                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
                 </option>
-              ))}
-              {Array.from(new Set(detections.map(d => d.station_id))).filter(Boolean).map(id => (
-                <option key={id} value={id}>{id}</option>
               ))}
             </select>
           </div>

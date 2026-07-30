@@ -15,6 +15,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   // Determine if current route is part of the Dashboard section where Sidebar should appear
   const dashboardRoutes = [
     '/dashboard',
+    '/live_dashboard',
+    '/live',
     '/stations',
     '/projects',
     '/species',
