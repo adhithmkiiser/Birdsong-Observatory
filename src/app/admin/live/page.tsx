@@ -519,10 +519,10 @@ WantedBy=multi-user.target`;
               
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Folder</span>
+                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Home Folder</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/BirdNET-Pi');
+                      navigator.clipboard.writeText('cd ~');
                       showNotification('Step 1 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
@@ -530,9 +530,9 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and navigate INSIDE your BirdNET-Pi folder:</p>
+                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and navigate to home. The <code className="bg-slate-800 text-slate-200 px-1 rounded">birdnet-sync</code> folder will be placed directly here, at <code className="bg-slate-800 text-emerald-300 px-1 rounded">~/birdnet-sync</code>:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
-                  cd ~/BirdNET-Pi
+                  cd ~
                 </div>
               </div>
 
@@ -549,7 +549,7 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Download ONLY the sync engine directory (skips downloading the web dashboard codebase):</p>
+                <p className="text-slate-400 text-xs font-medium">Download ONLY the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder from GitHub into your home directory (this skips downloading the full website codebase):</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all overflow-x-auto">
                   wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync
                 </div>
@@ -569,9 +569,9 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Variables
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Open the configuration file using the <code className="text-slate-200 bg-slate-800 px-1 rounded">nano</code> editor:</p>
+                <p className="text-slate-400 text-xs font-medium">Open the <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> config file in your home directory using nano:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all overflow-x-auto">
-                  nano ~/BirdNET-Pi/birdnet-sync/.env
+                  nano ~/birdnet-sync/.env
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Paste the exact block below into the file, save with <strong>Ctrl+O</strong>, Enter, then exit with <strong>Ctrl+X</strong>.</p>
                 <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
@@ -589,7 +589,7 @@ SYNC_INTERVAL=${genInterval}`}
                   <span className="font-extrabold text-indigo-400 text-sm">Step 4: Run the Auto-Installer script</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/BirdNET-Pi/birdnet-sync && sudo bash install.sh');
+                      navigator.clipboard.writeText('cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync');
                       showNotification('Install command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
@@ -597,10 +597,11 @@ SYNC_INTERVAL=${genInterval}`}
                     <Copy className="w-3.5 h-3.5" /> Copy Command
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Run this script. It will automatically set up the systemd service to run the daemon continuously on boot.</p>
+                <p className="text-slate-400 text-xs font-medium">Navigate into the sync folder, install the systemd service, and start the daemon — all in one command:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all overflow-x-auto">
-                  cd ~/BirdNET-Pi/birdnet-sync && sudo bash install.sh
+                  cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync
                 </div>
+                <p className="text-slate-400 text-xs font-medium mt-1">Verify it's running with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">sudo systemctl status birdnet-sync</code></p>
               </div>
 
               <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
