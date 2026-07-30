@@ -51,10 +51,16 @@ export default function LiveDetectionsPage() {
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
         ]);
 
+        const liveProjectIds = new Set((projData || []).map((p: any) => p.id));
+        const liveSites = (sitesData || []).filter((s: any) => liveProjectIds.has(s.project_id));
+        const liveDetsFiltered = (detData || []).filter((d: any) => 
+          !d.station_id?.startsWith('str_') && !d.station_name?.startsWith('TST')
+        );
+
         if (projData) setLiveProjects(projData);
-        if (sitesData) setSitesList(sitesData);
+        setSitesList(liveSites);
         if (stnData) setStationsList(stnData);
-        if (detData) setDetections(detData);
+        setDetections(liveDetsFiltered);
       } catch (err) {
         console.error('Failed to load live detections:', err);
       } finally {
