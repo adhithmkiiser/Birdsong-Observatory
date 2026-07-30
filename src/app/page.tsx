@@ -34,24 +34,41 @@ export default function HomePage() {
   const [detectionsList, setDetectionsList] = useState<any[]>([]);
   const [tstStats, setTstStats] = useState({ recorders: 25, species: 128, detections: 58679 });
 
+  const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
+
   useEffect(() => {
     const handleScroll = () => {
       setScrollY(window.scrollY);
     };
     window.addEventListener('scroll', handleScroll);
 
-    // Fetch projects, sites, and basic detections metadata for dynamic landing page counters
     async function loadStats() {
       try {
-        const [projRes, sitesRes, detRes] = await Promise.all([
+        const [projRes, sitesRes] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('sites').select('id, project_id'),
-          supabase.from('live_detections').select('station_id, common_name')
+          supabase.from('sites').select('id, project_id')
         ]);
         
-        if (projRes.data) setProjects(projRes.data);
-        if (sitesRes.data) setSitesList(sitesRes.data);
-        if (detRes.data) setDetectionsList(detRes.data);
+        const projData = projRes.data || [];
+        const sitesData = sitesRes.data || [];
+        
+        if (projRes.data) setProjects(projData);
+        if (sitesRes.data) setSitesList(sitesData);
+
+        // Fetch stats via RPC for each non-TST project to avoid 1000 row truncation
+        const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
+        for (const p of projData) {
+          if (p.id === 'tst') continue;
+          const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
+          const { data: rpcStats } = await supabase.rpc('get_detection_stats', { p_project_id: p.id, p_station_id: null });
+          const row = rpcStats?.[0];
+          statsMap[p.id] = {
+            recorders: siteCount,
+            species: Number(row?.unique_species || 0),
+            detections: Number(row?.total_detections || 0)
+          };
+        }
+        setProjectStatsMap(statsMap);
       } catch (err) {
         console.error('Failed to load dynamic landing page counters:', err);
       }
@@ -92,16 +109,14 @@ export default function HomePage() {
   
   // Helper to compute live project stats dynamically
   const getProjectStats = (projectId: string) => {
+    if (projectStatsMap[projectId]) {
+      return projectStatsMap[projectId];
+    }
     const projSites = sitesList.filter(s => s.project_id === projectId);
-    const siteIds = new Set(projSites.map(s => s.id.toLowerCase()));
-    
-    const projDetections = detectionsList.filter(d => d.station_id && siteIds.has(d.station_id.toLowerCase()));
-    const uniqueSp = new Set(projDetections.map(d => d.common_name)).size;
-    
     return {
       recorders: projSites.length,
-      species: uniqueSp,
-      detections: projDetections.length
+      species: 0,
+      detections: 0
     };
   };
 
