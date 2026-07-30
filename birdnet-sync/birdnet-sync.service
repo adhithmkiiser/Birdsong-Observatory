@@ -1,0 +1,18 @@
+﻿[Unit]
+Description=BirdNET-Pi to Supabase Live Synchronization Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=livedetector
+WorkingDirectory=/home/livedetector/birdnet-sync
+ExecStart=/usr/bin/python3 /home/livedetector/birdnet-sync/main.py
+Restart=always
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=birdnet-sync
+
+[Install]
+WantedBy=multi-user.target
