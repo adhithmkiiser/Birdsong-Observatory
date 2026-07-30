@@ -20,6 +20,7 @@ import {
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
+import { PolarDiurnalChart } from '@/components/charts/PolarDiurnalChart';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
@@ -307,6 +308,23 @@ export default function LiveDashboardPage() {
             </div>
           </div>
           <DiurnalChart data={hourlyData} />
+        </div>
+
+        {/* Polar 24-Hour Bioacoustic Clock Chart (Nightingale Rose Chart) */}
+        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 font-sans">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-600" /> Live Diurnal Activity Pattern (24-Hour Radial Clock - Total)
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 font-medium">Daily updated circular polar distribution of total vocal detections per hour (12am to 11pm).</p>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+              ⚡ Live Daily Updated
+            </span>
+          </div>
+
+          <PolarDiurnalChart hourlyData={hourlyData} totalDetections={totalDetections} />
         </div>
 
         <div className="premium-card p-6 rounded-[24px] space-y-4">
