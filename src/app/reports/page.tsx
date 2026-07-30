@@ -31,12 +31,17 @@ export default function ReportsPage() {
   const [stationsList, setStationsList] = useState<any[]>([]);
 
   useEffect(() => {
-    supabase.from('projects').select('*').order('created_at').then(({ data }) => {
-      setProjectsList(data || []);
-    });
-    supabase.from('stations').select('*').order('station_name').then(({ data }) => {
-      setStationsList(data || []);
-    });
+    async function loadReportsFilters() {
+      const [{ data: projs }, { data: sitesData }] = await Promise.all([
+        supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
+        supabase.from('sites').select('*').order('name')
+      ]);
+
+      setProjectsList(projs || []);
+      setStationsList([{ id: 'Test_Lab_1', station_name: 'Inside BirdLab (Test_Lab_1)', description: 'Raspberry Pi Live Stream Node' }]);
+    }
+
+    loadReportsFilters();
   }, []);
 
   const selectedProject = projectsList.find(p => p.id === selectedProjectId) || {

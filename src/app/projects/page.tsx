@@ -40,10 +40,15 @@ export default function ProjectsPage() {
   const canCreate = currentRole === 'Admin' || currentRole === 'Project Manager';
 
   useEffect(() => {
-    supabase.from('projects').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-      setProjectsList(data || []);
-      setLoading(false);
-    });
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('project_type', 'Live')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setProjectsList(data || []);
+        setLoading(false);
+      });
   }, []);
 
   const [editingProj, setEditingProj] = useState<any | null>(null);
