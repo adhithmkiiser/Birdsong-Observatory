@@ -514,65 +514,84 @@ WantedBy=multi-user.target`;
               </div>
             </div>
 
-            {/* Generated Systemd Config Box */}
-            <div className="space-y-2 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] font-bold text-slate-400">
-                  Target Path on Pi: <code className="text-emerald-400">/etc/systemd/system/birdnet-sync.service</code>
-                </span>
-                <button
-                  onClick={handleCopySystemd}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition flex items-center gap-1.5"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>{copiedCode ? 'Copied!' : 'Copy Config'}</span>
-                </button>
-              </div>
-
-              <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">
-                {generatedSystemdScript}
-              </pre>
-
-              <div className="space-y-4 pt-2 border-t border-slate-800">
-              <div className="space-y-2">
+            {/* Step-by-Step Workflow Guide */}
+            <div className="space-y-6 pt-4 border-t border-slate-800">
+              
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-emerald-400 text-xs">Step 1: Install Sync Engine on Raspberry Pi (Run once in Pi Terminal)</span>
+                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Download the Sync Engine to your Raspberry Pi</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong && cd ~/birdsong/birdnet-sync && bash install.sh');
-                      showNotification('Step 1 install command copied to clipboard!');
+                      navigator.clipboard.writeText('git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong');
+                      showNotification('Step 1 install command copied!');
                     }}
-                    className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black hover:bg-emerald-500/30 flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
                   >
-                    <Copy className="w-3 h-3" /> Copy Install Command
+                    <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-emerald-400 select-all">
-                  git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong && cd ~/birdsong/birdnet-sync && bash install.sh
+                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and run this command to download the repository:</p>
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
+                  git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-indigo-400 text-xs">Step 2: Start Daemon & Register Node to Live Database</span>
+                  <span className="font-extrabold text-amber-400 text-sm">Step 2: Edit the Configuration File via Nano</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`python3 main.py --project "${genProjectName}" --site "${genStationName}" --recorder "station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"`);
-                      showNotification('Step 2 daemon execution command copied to clipboard!');
+                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nSTATION_NAME="${genStationName}"\nPROJECT_NAME="${genProjectName}"\nSTATION_ID="station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"\nSYNC_INTERVAL=${genInterval}`;
+                      navigator.clipboard.writeText(envText);
+                      showNotification('.env block copied!');
                     }}
-                    className="px-3 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-black hover:bg-indigo-500/30 flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black hover:bg-amber-500/30 flex items-center gap-1.5 transition"
                   >
-                    <Copy className="w-3 h-3" /> Copy Start Command
+                    <Copy className="w-3.5 h-3.5" /> Copy Variables
                   </button>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-300 select-all">
-                  python3 main.py --project &quot;{genProjectName}&quot; --site &quot;{genStationName}&quot; --recorder &quot;station_{genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}&quot;
+                <p className="text-slate-400 text-xs font-medium">Open the configuration file using the <code className="text-slate-200 bg-slate-800 px-1 rounded">nano</code> editor:</p>
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all">
+                  nano ~/birdsong/birdnet-sync/.env
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium">
-                  Running this command automatically registers <code className="text-white font-bold">{genStationName}</code> under project <code className="text-white font-bold">{genProjectName}</code> in <code className="text-emerald-400 font-bold">recorders_registry</code> and starts streaming detections to <code className="text-emerald-400 font-bold">live_detections</code>!
+                <p className="text-slate-400 text-xs font-medium">Paste the exact block below into the file, save with <strong>Ctrl+O</strong>, Enter, then exit with <strong>Ctrl+X</strong>.</p>
+                <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
+{`SUPABASE_URL="${genSupabaseUrl}"
+SUPABASE_KEY="${genSupabaseKey}"
+STATION_NAME="${genStationName}"
+PROJECT_NAME="${genProjectName}"
+STATION_ID="station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"
+SYNC_INTERVAL=${genInterval}`}
+                </pre>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-indigo-400 text-sm">Step 3: Run the Auto-Installer script</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('cd ~/birdsong/birdnet-sync && sudo bash install.sh');
+                      showNotification('Install command copied!');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Command
+                  </button>
+                </div>
+                <p className="text-slate-400 text-xs font-medium">Run this script. It will automatically set up the systemd service to run the daemon continuously on boot.</p>
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all">
+                  cd ~/birdsong/birdnet-sync && sudo bash install.sh
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
+                <p className="text-emerald-100 text-xs font-medium leading-relaxed">
+                  <strong><CheckCircle2 className="w-4 h-4 inline-block mr-1 mb-0.5 text-emerald-400"/> Success! What happens next?</strong><br/><br/>
+                  The daemon will automatically extract GPS coordinates from <code className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300">/etc/birdnet/birdnet.conf</code>, detect the CPU temp/storage on the Pi, and register <strong className="text-white">station_{genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}</strong> to the Live Dashboard! <br/><br/>
+                  Audio files are securely uploaded directly into your Supabase Storage Bucket (<code className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300">live_audio</code>), and the dashboard website natively converts them into beautiful interactive spectrograms using Wavesurfer.js!
                 </p>
               </div>
-            </div>
+
             </div>
           </div>
         </div>
