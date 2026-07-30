@@ -31,7 +31,7 @@ export function Sidebar({ currentRole, onlineStationsCount }: SidebarProps) {
   const pathname = usePathname();
 
   const navItems = [
-    { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { label: 'Dashboard', href: '/live_dashboard', icon: LayoutDashboard },
     { label: 'Live Stream', href: '/live', icon: Radio, badge: 'LIVE' },
     { label: 'Stations', href: '/stations', icon: Cpu, count: onlineStationsCount },
     { label: 'Projects', href: '/projects', icon: FolderKanban },
@@ -39,7 +39,6 @@ export function Sidebar({ currentRole, onlineStationsCount }: SidebarProps) {
     { label: 'Map', href: '/map', icon: MapPin },
     { label: 'Analytics', href: '/analytics', icon: BarChart3 },
     { label: 'Review Queue', href: '/review', icon: CheckSquare, roleRequired: ['Admin', 'Project Manager', 'Site Manager'] },
-    { label: 'User Management', href: '/users', icon: Users, roleRequired: ['Admin', 'Project Manager'] },
     { label: 'Reports', href: '/reports', icon: FileText, roleRequired: ['Admin', 'Project Manager'] },
     { label: 'Settings', href: '/settings', icon: Settings, roleRequired: ['Admin'] },
   ];
