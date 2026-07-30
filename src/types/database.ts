@@ -17,7 +17,10 @@ export interface User {
   organization: string;
   assignedProject?: string;
   assignedSite?: string;
-  assignedProjectType?: 'PAM' | 'Live' | 'Both'; // Admin assigned project type access
+  assignedProjectType?: 'PAM' | 'Live' | 'Both';
+  projectScopePermissions?: string[];
+  isOneTimePassword?: boolean;
+  mustChangePassword?: boolean;
   status: 'active' | 'suspended' | 'inactive';
   createdAt: string;
   lastLogin?: string;

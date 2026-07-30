@@ -30,12 +30,14 @@ const defaultVisibilitySettings: PublicVisibilitySettings = {
 
 const mapDbUserToUser = (dbUser: any): User => ({
   id: dbUser.id,
-  name: dbUser.name,
+  name: dbUser.full_name || dbUser.name || 'User',
   email: dbUser.email,
-  password: dbUser.password_hash || 'pass123',
+  password: dbUser.password_hash || dbUser.password || 'pass123',
   role: dbUser.role as any,
   organization: dbUser.organization || 'IISER Tirupati Bird Lab',
-  assignedProjectType: dbUser.assigned_project_type as any || 'Both',
+  projectScopePermissions: dbUser.project_scope_permissions || [],
+  isOneTimePassword: dbUser.is_one_time_password || false,
+  mustChangePassword: dbUser.must_change_password || false,
   status: dbUser.status as any || 'active',
   createdAt: dbUser.created_at ? dbUser.created_at.split('T')[0] : '2026-01-15',
   lastLogin: dbUser.last_login || 'Never'
@@ -43,14 +45,15 @@ const mapDbUserToUser = (dbUser: any): User => ({
 
 const mapUserToDbUser = (user: User) => ({
   id: user.id,
-  name: user.name,
+  full_name: user.name,
   email: user.email,
   password_hash: user.password || 'pass123',
   role: user.role,
   organization: user.organization,
-  assigned_project_type: user.assignedProjectType || 'Both',
+  project_scope_permissions: user.projectScopePermissions || [],
+  is_one_time_password: user.isOneTimePassword || false,
+  must_change_password: user.mustChangePassword || false,
   status: user.status || 'active',
-  last_login: user.lastLogin === 'Never' ? null : user.lastLogin,
   created_at: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString()
 });
 

@@ -8,9 +8,12 @@ CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL DEFAULT 'pass123',
   role TEXT NOT NULL DEFAULT 'Researcher' CHECK (role IN ('Admin', 'Project Manager', 'Site Manager', 'Researcher', 'Public')),
   organization TEXT DEFAULT 'IISER Tirupati',
   project_scope_permissions JSONB DEFAULT '[]'::jsonb,
+  is_one_time_password BOOLEAN DEFAULT FALSE,
+  must_change_password BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
