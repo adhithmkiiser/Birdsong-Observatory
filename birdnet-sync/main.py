@@ -14,6 +14,26 @@ logger = setup_logger()
 import argparse
 import requests
 
+import shutil
+
+def get_system_telemetry():
+    cpu_temp = 45.0
+    try:
+        if os.path.exists("/sys/class/thermal/thermal_zone0/temp"):
+            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                cpu_temp = round(float(f.read().strip()) / 1000.0, 1)
+    except Exception:
+        pass
+    
+    storage_used_percent = 50.0
+    try:
+        total, used, free = shutil.disk_usage("/")
+        storage_used_percent = round((used / total) * 100, 1)
+    except Exception:
+        pass
+        
+    return cpu_temp, storage_used_percent
+
 def register_in_recorders_registry(url, key, project_name, site_name, recorder_id, lat=13.58, long=75.64):
     endpoint = f"{url.rstrip('/')}/rest/v1/recorders_registry"
     headers = {
@@ -22,14 +42,21 @@ def register_in_recorders_registry(url, key, project_name, site_name, recorder_i
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates"
     }
+    
+    cpu_temp, storage_used_percent = get_system_telemetry()
+    
     payload = {
         "project_type": "Live",
         "project_name": project_name,
         "site_name": site_name,
         "recorder_id": recorder_id,
-        "status": "ONLINE",
+        "status": "online",
         "lat": lat,
         "long": long,
+        "battery_level": 100.0,
+        "cpu_temperature": cpu_temp,
+        "storage_used_percent": storage_used_percent,
+        "firmware_version": "v2.4 (Live)",
         "last_ping": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     }
     try:

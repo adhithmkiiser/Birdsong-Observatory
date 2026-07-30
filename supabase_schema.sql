@@ -107,5 +107,10 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   status TEXT DEFAULT 'online' CHECK (status IN ('online', 'offline')),
   lat DOUBLE PRECISION,
   long DOUBLE PRECISION,
+  battery_level DOUBLE PRECISION DEFAULT 100.0,
+  cpu_temperature DOUBLE PRECISION,
+  storage_used_percent DOUBLE PRECISION,
+  firmware_version TEXT DEFAULT 'v2.4',
+  last_ping TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );

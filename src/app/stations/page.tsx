@@ -24,10 +24,10 @@ export default function StationsPage() {
           project_name: r.project_name || 'Bird_Lab_demo',
           status: (r.status?.toLowerCase() || 'online'),
           last_seen: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
-          battery_level: 100,
-          cpu_temperature: 42.5,
-          storage_used_percent: 18,
-          firmware_version: 'v2.4.1',
+          battery_level: r.battery_level ?? 100,
+          cpu_temperature: r.cpu_temperature ?? 42.5,
+          storage_used_percent: r.storage_used_percent ?? 18,
+          firmware_version: r.firmware_version || 'v2.4.1',
           birdnet_version: 'BirdNET V2.4'
         }));
 
