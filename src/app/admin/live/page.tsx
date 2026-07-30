@@ -519,26 +519,45 @@ WantedBy=multi-user.target`;
               
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Location & Download the Sync Engine</span>
+                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Folder</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~ && git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git');
-                      showNotification('Step 1 install command copied!');
+                      navigator.clipboard.writeText('cd ~/BirdNET-Pi');
+                      showNotification('Step 1 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal, navigate to your home folder (or target location), and download the repository:</p>
+                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and navigate INSIDE your BirdNET-Pi folder:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
-                  cd ~ && git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git
+                  cd ~/BirdNET-Pi
                 </div>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-amber-400 text-sm">Step 2: Edit the Configuration File via Nano</span>
+                  <span className="font-extrabold text-emerald-400 text-sm">Step 2: Download the Sync Engine</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync');
+                      showNotification('Step 2 command copied!');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Code
+                  </button>
+                </div>
+                <p className="text-slate-400 text-xs font-medium">Download ONLY the sync engine directory (skips downloading the web dashboard codebase):</p>
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all overflow-x-auto">
+                  wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-amber-400 text-sm">Step 3: Edit the Configuration File via Nano</span>
                   <button
                     onClick={() => {
                       const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nSTATION_NAME="${genStationName}"\nPROJECT_NAME="${genProjectName}"\nSTATION_ID="station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"\nSYNC_INTERVAL=${genInterval}`;
@@ -551,8 +570,8 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Open the configuration file using the <code className="text-slate-200 bg-slate-800 px-1 rounded">nano</code> editor:</p>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all">
-                  nano ~/birdsong/birdnet-sync/.env
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all overflow-x-auto">
+                  nano ~/BirdNET-Pi/birdnet-sync/.env
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Paste the exact block below into the file, save with <strong>Ctrl+O</strong>, Enter, then exit with <strong>Ctrl+X</strong>.</p>
                 <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
@@ -567,10 +586,10 @@ SYNC_INTERVAL=${genInterval}`}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-indigo-400 text-sm">Step 3: Run the Auto-Installer script</span>
+                  <span className="font-extrabold text-indigo-400 text-sm">Step 4: Run the Auto-Installer script</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/birdsong/birdnet-sync && sudo bash install.sh');
+                      navigator.clipboard.writeText('cd ~/BirdNET-Pi/birdnet-sync && sudo bash install.sh');
                       showNotification('Install command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
@@ -579,8 +598,8 @@ SYNC_INTERVAL=${genInterval}`}
                   </button>
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Run this script. It will automatically set up the systemd service to run the daemon continuously on boot.</p>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all">
-                  cd ~/birdsong/birdnet-sync && sudo bash install.sh
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all overflow-x-auto">
+                  cd ~/BirdNET-Pi/birdnet-sync && sudo bash install.sh
                 </div>
               </div>
 
