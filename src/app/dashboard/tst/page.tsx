@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { supabase } from '@/lib/supabase';
 
 // ─── ECharts (dynamic import to avoid SSR issues) ───────────────────────────
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
@@ -129,13 +130,22 @@ export default function TstDashboardPage() {
   const [indicatorClass, setIndicatorClass] = useState<'recovery' | 'lantana' | 'all'>('recovery');
   const [indicatorLogScale, setIndicatorLogScale] = useState(true);
 
+  const [dbSites, setDbSites] = useState<any[]>([]);
+
   useEffect(() => {
     async function load() {
       try {
-        const [d, c] = await Promise.all([fetch('/tst/data.json'), fetch('/tst/config.json')]);
+        const [d, c, { data: sbSites }] = await Promise.all([
+          fetch('/tst/data.json'),
+          fetch('/tst/config.json'),
+          supabase.from('sites').select('*').eq('project_id', 'tst')
+        ]);
         if (d.ok && c.ok) {
           setDataRaw(await d.json());
           setConfigRaw(await c.json());
+        }
+        if (sbSites) {
+          setDbSites(sbSites);
         }
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
@@ -154,7 +164,42 @@ export default function TstDashboardPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const recorders: any[] = useMemo(() => dataRaw?.recorders || [], [dataRaw]);
+  const recorders: any[] = useMemo(() => {
+    const jsonRecs = dataRaw?.recorders || [];
+    if (!dbSites || dbSites.length === 0) return jsonRecs;
+
+    // Merge Supabase sites with jsonRecs
+    const merged = [...jsonRecs];
+    const existingKeys = new Set(jsonRecs.map((r: any) => `${r.site_group}/${r.recorder_id}`.toLowerCase()));
+
+    dbSites.forEach(s => {
+      // Parse site id e.g. atr_01_lc_01 or site_code
+      const parts = s.id.split('_');
+      let siteGroup = 'TST';
+      let recorderId = s.id;
+      if (parts.length >= 4) {
+        siteGroup = `${parts[0]}_${parts[1]}`.toUpperCase();
+        recorderId = `${parts[2]}_${parts[3]}`.toUpperCase();
+      } else if (parts.length >= 2) {
+        siteGroup = parts[0].toUpperCase();
+        recorderId = parts.slice(1).join('_').toUpperCase();
+      }
+      const key = `${siteGroup}/${recorderId}`.toLowerCase();
+      if (!existingKeys.has(key)) {
+        merged.push({
+          site_group: siteGroup,
+          recorder_id: recorderId,
+          habitat: s.habitat_type || 'PAM',
+          latitude: Number(s.latitude) || 10.47,
+          longitude: Number(s.longitude) || 76.87,
+          size_gb: 4.0,
+          expected_files: s.expected_files || 264,
+          actual_files: 264
+        });
+      }
+    });
+    return merged;
+  }, [dataRaw, dbSites]);
   const speciesList: string[] = useMemo(() => dataRaw?.species_list || [], [dataRaw]);
   const speciesMetadata: any = useMemo(() => dataRaw?.species_metadata || {}, [dataRaw]);
   const detectionsRaw: any[] = useMemo(() => dataRaw?.detections || [], [dataRaw]);
