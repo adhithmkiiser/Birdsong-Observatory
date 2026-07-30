@@ -14,7 +14,7 @@ logger = setup_logger()
 import argparse
 import requests
 
-def register_in_recorders_registry(url, key, project_name, site_name, recorder_id):
+def register_in_recorders_registry(url, key, project_name, site_name, recorder_id, lat=13.58, long=75.64):
     endpoint = f"{url.rstrip('/')}/rest/v1/recorders_registry"
     headers = {
         "apikey": key,
@@ -28,12 +28,14 @@ def register_in_recorders_registry(url, key, project_name, site_name, recorder_i
         "site_name": site_name,
         "recorder_id": recorder_id,
         "status": "ONLINE",
+        "lat": lat,
+        "long": long,
         "last_ping": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     }
     try:
         r = requests.post(endpoint, headers=headers, json=[payload])
         if r.status_code in [200, 201, 204]:
-            logger.info(f"Registered/Pinged recorder in recorders_registry: {recorder_id} ({site_name} @ {project_name})")
+            logger.info(f"Registered/Pinged recorder in recorders_registry: {recorder_id} ({site_name} @ {project_name}) [lat: {lat}, long: {long}]")
         else:
             logger.warning(f"Could not register in recorders_registry (HTTP {r.status_code}): {r.text}")
     except Exception as e:
@@ -115,8 +117,8 @@ def main():
     site_name = args.site or os.getenv("SITE_NAME") or getattr(config, "STATION_NAME", "Test_lab_1")
     recorder_id = args.recorder or os.getenv("RECORDER_ID") or getattr(config, "STATION_ID", "station_01")
 
-    # Upsert info into recorders_registry table
-    register_in_recorders_registry(config.SUPABASE_URL, config.SUPABASE_KEY, project_name, site_name, recorder_id)
+    # Upsert info into recorders_registry table with exact BirdNET-Pi GPS coordinates
+    register_in_recorders_registry(config.SUPABASE_URL, config.SUPABASE_KEY, project_name, site_name, recorder_id, config.LATITUDE, config.LONGITUDE)
 
     sqlite_reader = SQLiteReader(config.SQLITE_DB, config.AUDIO_ROOT)
     storage = SupabaseStorage(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -126,13 +128,14 @@ def main():
     logger.info(f"Project Name : {project_name}")
     logger.info(f"Site Name    : {site_name}")
     logger.info(f"Recorder ID  : {recorder_id}")
+    logger.info(f"Coordinates  : Lat {config.LATITUDE}° N, Lng {config.LONGITUDE}° E")
     logger.info(f"Sync Interval: {config.SYNC_INTERVAL} seconds")
     logger.info(f"Last RowID   : {state_manager.get_last_rowid()}")
 
     while True:
         try:
             run_sync_cycle(config, sqlite_reader, storage, db, state_manager, project_name, site_name, recorder_id)
-            register_in_recorders_registry(config.SUPABASE_URL, config.SUPABASE_KEY, project_name, site_name, recorder_id)
+            register_in_recorders_registry(config.SUPABASE_URL, config.SUPABASE_KEY, project_name, site_name, recorder_id, config.LATITUDE, config.LONGITUDE)
         except Exception as e:
             logger.error(f"Unexpected error in sync cycle: {e}", exc_info=True)
 

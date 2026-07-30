@@ -1,6 +1,21 @@
 import os
 from dotenv import load_dotenv
 
+def get_birdnet_pi_coords():
+    lat, lng = 13.58, 75.64
+    conf_path = "/etc/birdnet/birdnet.conf"
+    if os.path.exists(conf_path):
+        try:
+            with open(conf_path, "r") as f:
+                for line in f:
+                    if line.startswith("LATITUDE="):
+                        lat = float(line.split("=")[1].strip().strip('"').strip("'"))
+                    elif line.startswith("LONGITUDE="):
+                        lng = float(line.split("=")[1].strip().strip('"').strip("'"))
+        except Exception:
+            pass
+    return lat, lng
+
 class Config:
     def __init__(self):
         load_dotenv()
@@ -14,6 +29,10 @@ class Config:
         self.SITE_ID = os.getenv("SITE_ID", "inside_birdlab")
         self.SYNC_INTERVAL = int(os.getenv("SYNC_INTERVAL", "10"))
         self.STATE_FILE = os.getenv("STATE_FILE", "state.json")
+
+        auto_lat, auto_lng = get_birdnet_pi_coords()
+        self.LATITUDE = float(os.getenv("LATITUDE", auto_lat))
+        self.LONGITUDE = float(os.getenv("LONGITUDE", auto_lng))
 
     def validate(self):
         if not self.SUPABASE_URL:
