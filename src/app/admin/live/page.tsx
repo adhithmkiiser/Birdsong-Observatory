@@ -519,10 +519,10 @@ WantedBy=multi-user.target`;
               
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Download the Sync Engine to your Raspberry Pi</span>
+                  <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Location & Download the Sync Engine</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong');
+                      navigator.clipboard.writeText('cd ~ && git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git');
                       showNotification('Step 1 install command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
@@ -530,9 +530,9 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and run this command to download the repository:</p>
+                <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal, navigate to your home folder (or target location), and download the repository:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
-                  git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong
+                  cd ~ && git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git
                 </div>
               </div>
 
