@@ -53,8 +53,13 @@ export default function LiveDetectionsPage() {
 
         const liveProjectIds = new Set((projData || []).map((p: any) => p.id));
         const liveSites = (sitesData || []).filter((s: any) => liveProjectIds.has(s.project_id));
+        
+        // STRICT FILTER: Only real Live stream daemons (Inside BirdLab / Test_Lab_1)
         const liveDetsFiltered = (detData || []).filter((d: any) => 
-          !d.station_id?.startsWith('str_') && !d.station_name?.startsWith('TST')
+          d.station_id === 'Test_Lab_1' || 
+          d.station_name === 'Inside BirdLab' || 
+          d.station_name?.includes('BirdLab') || 
+          d.station_id?.includes('Test_Lab')
         );
 
         if (projData) setLiveProjects(projData);

@@ -41,10 +41,18 @@ export default function AnalyticsPage() {
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
+        // STRICT FILTER: Only real Live stream daemons (Inside BirdLab / Test_Lab_1)
+        const liveDetsFiltered = (detData || []).filter((d: any) => 
+          d.station_id === 'Test_Lab_1' || 
+          d.station_name === 'Inside BirdLab' || 
+          d.station_name?.includes('BirdLab') || 
+          d.station_id?.includes('Test_Lab')
+        );
+
         setLiveProjects(projs || []);
         setSitesList(sitesData || []);
         setStationsList(stnData || []);
-        setDetections(detData || []);
+        setDetections(liveDetsFiltered);
       } catch (err) {
         console.error('Failed to load analytics data:', err);
       } finally {
