@@ -13,10 +13,13 @@ import {
   Key,
   Database,
   Radio,
-  Layers
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
+import { supabase } from '@/lib/supabase';
+import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 export default function UserManagementPage() {
   const { usersList, currentUser, deleteUser, updateUserCredentials, addUser } = useRole();
@@ -66,23 +69,54 @@ export default function UserManagementPage() {
     showNotification(`User account for ${formName} updated successfully!`);
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const [formOtpPassword, setFormOtpPassword] = useState('TempPass_9821!');
+
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formName || !formEmail) return;
+
+    const otpToUse = formOtpPassword || `TempPass_${Math.floor(1000 + Math.random() * 9000)}!`;
+
     const newUser: User = {
-      id: `usr-${Math.random().toString(36).substr(2, 9)}`,
+      id: `usr-${Date.now().toString().slice(-4)}`,
       name: formName,
       email: formEmail,
+      password: otpToUse,
       role: formRole,
       organization: formOrg,
       assignedProjectType: formProjectType,
+      isOneTimePassword: true,
+      mustChangePassword: true,
       status: 'active',
-      createdAt: new Date().toISOString().split('T')[0],
-      lastLogin: 'Never'
+      createdAt: new Date().toISOString().split('T')[0]
     };
 
     addUser(newUser);
+
+    try {
+      await supabase.from('users').insert([{
+        full_name: formName,
+        email: formEmail,
+        password_hash: otpToUse,
+        role: formRole,
+        organization: formOrg,
+        project_scope_permissions: [formProjectType === 'Live' ? 'bird_lab_demo' : 'tst'],
+        is_one_time_password: true,
+        must_change_password: true
+      }]);
+
+      await sendOneTimePasswordEmail({
+        email: formEmail,
+        name: formName,
+        otpCode: otpToUse,
+        isNewUser: true
+      });
+    } catch (err) {
+      console.error('Error inserting user into Supabase:', err);
+    }
+
     setIsCreateOpen(false);
-    showNotification(`User account for ${formName} created successfully!`);
+    showNotification(`New user account created for ${formName}! One-Time Password: ${otpToUse}`);
   };
 
   const handleDeleteUserConfirm = (userId: string) => {
@@ -361,6 +395,30 @@ export default function UserManagementPage() {
                   onChange={(e) => setFormOrg(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
                 />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-extrabold text-slate-700">Initial One-Time Password (OTP)</label>
+                  <button
+                    type="button"
+                    onClick={() => setFormOtpPassword(`TempPass_${Math.floor(1000 + Math.random() * 9000)}!`)}
+                    className="text-[11px] font-black text-emerald-600 hover:underline flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3 h-3" /> Auto-Generate OTP
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Type temporary password or click Auto-Generate"
+                  value={formOtpPassword}
+                  onChange={(e) => setFormOtpPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono font-bold text-emerald-700"
+                />
+                <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                  User will be forced to change this temporary password upon initial login.
+                </p>
               </div>
 
               <div>
