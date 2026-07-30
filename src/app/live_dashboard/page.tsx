@@ -224,9 +224,9 @@ export default function LiveDashboardPage() {
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
             >
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
-              {availableStations.map((id: string) => (
-                <option key={id} value={id}>
-                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
+              {availableStations.map((s: any) => (
+                <option key={s.recorder_id || s.id} value={s.recorder_id || s.id}>
+                  {s.site_name || s.recorder_id} ({s.recorder_id})
                 </option>
               ))}
             </select>
