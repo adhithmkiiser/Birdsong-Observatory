@@ -18,6 +18,8 @@ import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
 
+import { supabase } from '@/lib/supabase';
+
 export default function LiveDetectionsPage() {
   const { currentRole } = useRole();
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,14 +27,53 @@ export default function LiveDetectionsPage() {
   const [minConfidence, setMinConfidence] = useState(0.5);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
-  const detections: Detection[] = []; // will be populated by Supabase realtime
-  const stationsList: any[] = []; // will be populated by Supabase
+  const [detections, setDetections] = useState<any[]>([]);
+  const [stationsList, setStationsList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    async function loadLiveData() {
+      try {
+        const [{ data: sitesData }, { data: detData }] = await Promise.all([
+          supabase.from('sites').select('*').order('name'),
+          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
+        ]);
+
+        if (sitesData) setStationsList(sitesData);
+        if (detData) setDetections(detData);
+      } catch (err) {
+        console.error('Failed to load live detections:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadLiveData();
+
+    // Subscribe to realtime live_detections
+    const channel = supabase
+      .channel('live-recorder-stream')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'live_detections' },
+        (payload) => {
+          setDetections((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const filteredDetections = detections.filter((det) => {
-    const matchesSearch = det.common_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          det.scientific_name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStation = selectedStation === 'ALL' || det.station_name === selectedStation;
-    const matchesConf = det.confidence >= minConfidence;
+    const common = det.common_name || '';
+    const sci = det.scientific_name || '';
+    const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          sci.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStation = selectedStation === 'ALL' || det.station_name === selectedStation || det.station_id === selectedStation;
+    const matchesConf = (det.confidence || 0) >= minConfidence;
     return matchesSearch && matchesStation && matchesConf;
   });
 
