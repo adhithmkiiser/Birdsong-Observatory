@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { 
@@ -45,16 +45,25 @@ export default function ReviewQueuePage() {
       setLoading(true);
       try {
         const [{ data: projs }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
-          supabase.from('projects').select('*').order('name'),
+          supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('sites').select('*').order('name'),
           supabase.from('stations').select('*').order('station_name'),
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
+        const liveProjectIds = new Set((projs || []).map(p => p.id));
+        const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
+        const liveDets = (detData || []).filter(d => 
+          d.station_id === 'Test_Lab_1' || 
+          d.station_name === 'Inside BirdLab' || 
+          d.station_name?.includes('BirdLab') ||
+          d.station_id?.includes('Test_Lab')
+        );
+
         setProjectsList(projs || []);
-        setSitesList(sitesData || []);
+        setSitesList(liveSites);
         setStationsList(stnData || []);
-        setDetections(detData || []);
+        setDetections(liveDets);
       } catch (err) {
         console.error('Error loading review queue data:', err);
       } finally {
@@ -69,9 +78,7 @@ export default function ReviewQueuePage() {
     ? sitesList
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  const availableStations = selectedSiteId === 'ALL'
-    ? (selectedProjectId === 'ALL' ? stationsList : stationsList.filter(st => st.project_id === selectedProjectId))
-    : stationsList.filter(st => st.site_id === selectedSiteId);
+  const availableStations = ['Test_Lab_1'];
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -195,9 +202,9 @@ export default function ReviewQueuePage() {
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
-              {availableStations.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.station_name || st.name} ({st.id})
+              {availableStations.map((id: string) => (
+                <option key={id} value={id}>
+                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
                 </option>
               ))}
             </select>

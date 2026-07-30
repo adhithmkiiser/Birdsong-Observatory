@@ -16,7 +16,14 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
 
-  // Synthesize audio tone if audio_url is missing
+  // Real bioacoustic species call audio clips dictionary
+  const REAL_SPECIES_AUDIO: Record<string, string> = {
+    'Indian Roller': 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Coracias_benghalensis_call.ogg',
+    'Common Myna': 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Acridotheres_tristis_call.ogg',
+    'Green Warbler': 'https://upload.wikimedia.org/wikipedia/commons/5/52/Phylloscopus_nitidus.ogg',
+    'White-cheeked Barbet': 'https://upload.wikimedia.org/wikipedia/commons/b/b8/Psilopogon_viridis.ogg'
+  };
+
   const handlePlayToggle = () => {
     if (isPlaying) {
       setIsPlaying(false);
@@ -35,36 +42,19 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
       }
     }, 300);
 
-    // Play real audio or Web Audio synthesized chirp
-    try {
-      if (detection?.audio_url) {
-        const audio = new Audio(detection.audio_url);
-        audio.play().catch(() => playChirp());
-      } else {
-        playChirp();
-      }
-    } catch {
-      playChirp();
-    }
-  };
+    const targetUrl = detection?.audio_url || 
+                      (detection?.common_name ? REAL_SPECIES_AUDIO[detection.common_name] : null) || 
+                      'https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3';
 
-  const playChirp = () => {
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1800, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(3400, ctx.currentTime + 0.3);
-      osc.frequency.exponentialRampToValueAtTime(2100, ctx.currentTime + 0.6);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.8);
+      const audio = new Audio(targetUrl);
+      audio.play().catch((err) => {
+        console.log('Fallback to secondary audio stream:', err);
+        const fallback = new Audio('https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3');
+        fallback.play().catch(() => {});
+      });
     } catch (e) {
-      console.log('Web Audio play fallback:', e);
+      console.log('Audio playback error:', e);
     }
   };
 
