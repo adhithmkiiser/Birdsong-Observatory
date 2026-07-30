@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { X, Lock, Mail, ShieldCheck, Key, LogIn, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
+import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -49,9 +50,17 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         })
         .eq('email', targetUser.email);
 
+      // Trigger automated email dispatch
+      await sendOneTimePasswordEmail({
+        email: targetUser.email,
+        name: targetUser.name,
+        otpCode: generatedOTP,
+        isNewUser: false
+      });
+
       setLoading(false);
       setOtpCode(generatedOTP);
-      setSuccessMsg(`One-Time Password generated! Use temporary password: ${generatedOTP}`);
+      setSuccessMsg(`One-Time Password sent to ${targetUser.email}! Use temporary OTP: ${generatedOTP}`);
       setMode('login');
     } catch (err) {
       setLoading(false);
