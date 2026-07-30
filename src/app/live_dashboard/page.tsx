@@ -52,25 +52,15 @@ export default function LiveDashboardPage() {
     async function loadLiveDashboardData() {
       setLoading(true);
       try {
-        const [{ data: projs }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
+        const [{ data: projs }, { data: recordersData }, { data: detData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
-          supabase.from('sites').select('*').order('name'),
-          supabase.from('stations').select('*').order('station_name'),
-          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
+          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
-        // STRICT FILTER: Only real Live stream daemons (Inside BirdLab / Test_Lab_1)
-        const liveDetsFiltered = (detData || []).filter((d: any) => 
-          d.station_id === 'Test_Lab_1' || 
-          d.station_name === 'Inside BirdLab' || 
-          d.station_name?.includes('BirdLab') || 
-          d.station_id?.includes('Test_Lab')
-        );
-
         setLiveProjects(projs || []);
-        setSitesList(sitesData || []);
-        setStationsList(stnData || []);
-        setDetections(liveDetsFiltered);
+        setStationsList(recordersData || []);
+        setDetections(detData || []);
       } catch (err) {
         console.error('Failed to load Live Dashboard data:', err);
       } finally {
@@ -80,7 +70,7 @@ export default function LiveDashboardPage() {
 
     loadLiveDashboardData();
 
-    // Subscribe to realtime live_detections
+    // Subscribe to realtime live_detections stream
     const channel = supabase
       .channel('live-dashboard-realtime')
       .on(
@@ -103,12 +93,10 @@ export default function LiveDashboardPage() {
     ? sitesList.filter(s => liveProjectIds.has(s.project_id))
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Hardware recorder nodes dynamically populated ONLY from Live daemons (Test_Lab_1)
-  const liveHardwareNodes = ['Test_Lab_1'];
-
-  const availableStations = selectedSiteId === 'ALL'
-    ? liveHardwareNodes
-    : liveHardwareNodes;
+  // Hardware recorder nodes dynamically populated from recorders_registry
+  const availableStations = selectedProjectId === 'ALL'
+    ? stationsList
+    : stationsList.filter(s => s.project_name === selectedProjectId);
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);

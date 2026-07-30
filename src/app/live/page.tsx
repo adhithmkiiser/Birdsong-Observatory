@@ -44,30 +44,17 @@ export default function LiveDetectionsPage() {
   React.useEffect(() => {
     async function loadLiveData() {
       try {
-        const [{ data: projData }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
+        const [{ data: projData }, { data: recordersData }, { data: detData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
-          supabase.from('sites').select('*').order('name'),
-          supabase.from('stations').select('*').order('station_name'),
-          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
+          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
-        const liveProjectIds = new Set((projData || []).map((p: any) => p.id));
-        const liveSites = (sitesData || []).filter((s: any) => liveProjectIds.has(s.project_id));
-        
-        // STRICT FILTER: Only real Live stream daemons (Inside BirdLab / Test_Lab_1)
-        const liveDetsFiltered = (detData || []).filter((d: any) => 
-          d.station_id === 'Test_Lab_1' || 
-          d.station_name === 'Inside BirdLab' || 
-          d.station_name?.includes('BirdLab') || 
-          d.station_id?.includes('Test_Lab')
-        );
-
-        if (projData) setLiveProjects(projData);
-        setSitesList(liveSites);
-        if (stnData) setStationsList(stnData);
-        setDetections(liveDetsFiltered);
+        setLiveProjects(projData || []);
+        setStationsList(recordersData || []);
+        setDetections(detData || []);
       } catch (err) {
-        console.error('Failed to load live detections:', err);
+        console.error('Failed to load Live detections:', err);
       } finally {
         setLoading(false);
       }

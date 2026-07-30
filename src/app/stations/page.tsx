@@ -11,31 +11,27 @@ export default function StationsPage() {
   useEffect(() => {
     async function loadStations() {
       try {
-        const [{ data: stns }, { data: liveDets }] = await Promise.all([
-          supabase.from('stations').select('*').order('station_name'),
-          supabase.from('live_detections').select('*').limit(10)
-        ]);
+        const { data: recordersData } = await supabase
+          .from('recorders_registry')
+          .select('*')
+          .eq('project_type', 'Live')
+          .order('created_at', { ascending: false });
 
-        let combined = [...(stns || [])];
+        const mapped = (recordersData || []).map((r: any) => ({
+          id: r.recorder_id,
+          station_name: r.site_name,
+          description: `Live Recorder Node ${r.recorder_id}`,
+          project_name: r.project_name || 'Bird_Lab_demo',
+          status: (r.status?.toLowerCase() || 'online'),
+          last_seen: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
+          battery_level: 100,
+          cpu_temperature: 42.5,
+          storage_used_percent: 18,
+          firmware_version: 'v2.4.1',
+          birdnet_version: 'BirdNET V2.4'
+        }));
 
-        // Ensure Test_Lab_1 live Raspberry Pi daemon is included
-        if (!combined.some(s => s.id === 'Test_Lab_1' || s.station_name === 'Test_Lab_1')) {
-          combined.unshift({
-            id: 'Test_Lab_1',
-            station_name: 'Inside BirdLab (Test_Lab_1)',
-            description: 'Raspberry Pi 4 Live Ingestion Engine (BirdNET-Pi v2.4)',
-            project_name: 'Live Observatory',
-            status: 'online',
-            last_seen: 'Just now',
-            battery_level: 100,
-            cpu_temperature: 41.2,
-            storage_used_percent: 14,
-            firmware_version: 'v2.4.1',
-            birdnet_version: 'BirdNET V2.4'
-          });
-        }
-
-        setStations(combined);
+        setStations(mapped);
       } catch (err) {
         console.error('Failed to load stations:', err);
       } finally {
