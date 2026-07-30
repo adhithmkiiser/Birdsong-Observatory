@@ -1,21 +1,58 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckSquare, Play, Check, X, RotateCcw } from 'lucide-react';
-import { DETECTIONS_DATA } from '@/lib/mockData';
 import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 export default function ReviewQueuePage() {
   const { currentRole } = useRole();
-  const [queue, setQueue] = useState(DETECTIONS_DATA);
+  const [queue, setQueue] = useState<any[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadReviewQueue() {
+      try {
+        const { data } = await supabase
+          .from('live_detections')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(50);
+
+        setQueue(data || []);
+      } catch (err) {
+        console.error('Failed to load review queue:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReviewQueue();
+  }, []);
 
   const activeItem = queue[activeIdx];
 
-  const handleDecision = (decision: 'confirm' | 'reject') => {
-    if (activeIdx < queue.length - 1) {
-      setActiveIdx(activeIdx + 1);
+  const handleDecision = async (decision: 'confirm' | 'reject') => {
+    if (!activeItem) return;
+
+    try {
+      await supabase
+        .from('live_detections')
+        .update({
+          reviewed: true,
+          verified: decision === 'confirm'
+        })
+        .eq('id', activeItem.id);
+
+      if (activeIdx < queue.length - 1) {
+        setActiveIdx(activeIdx + 1);
+      } else {
+        setQueue((prev) => prev.filter((_, idx) => idx !== activeIdx));
+      }
+    } catch (err) {
+      console.error('Failed to update verification decision:', err);
     }
   };
 
