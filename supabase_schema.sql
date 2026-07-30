@@ -1,141 +1,108 @@
--- ============================================================
--- BIRDSONG OBSERVATORY SUPABASE DATABASE SCHEMA (SAFE RUN)
--- Handles existing tables, RLS policies, and Realtime publications
--- ============================================================
+-- ==============================================================================
+-- BIRDSONG OBSERVATORY - MASTER SUPABASE DATABASE SCHEMA
+-- Permanently Structured Architecture for Live Recorders & PAM Offline Surveys
+-- ==============================================================================
 
--- 1. Enable Required Extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 2. Projects Table
-CREATE TABLE IF NOT EXISTS public.projects (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  organization TEXT DEFAULT 'IISER Tirupati Bird Lab',
-  manager_id TEXT,
-  manager_name TEXT,
-  project_type TEXT DEFAULT 'PAM',
-  stations_count INT DEFAULT 0,
-  species_count INT DEFAULT 0,
-  total_detections INT DEFAULT 0,
-  public_visible BOOLEAN DEFAULT TRUE,
-  image_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 1. USER DETAILS & ROLE-BASED ACCESS CONTROL
+CREATE TABLE IF NOT EXISTS public.users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'Researcher' CHECK (role IN ('Admin', 'Project Manager', 'Site Manager', 'Researcher', 'Public')),
+  organization TEXT DEFAULT 'IISER Tirupati',
+  project_scope_permissions JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 3. Sites Directory Table
-CREATE TABLE IF NOT EXISTS public.sites (
-  id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES public.projects(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  elevation TEXT DEFAULT '1,200m',
-  status TEXT DEFAULT 'Active',
-  latitude NUMERIC(9,6),
-  longitude NUMERIC(9,6),
-  habitat_type TEXT,
-  expected_files INT DEFAULT 48,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 2. TST PAM OFFLINE SURVEY PROJECT TABLES
 
--- 4. Live Detections Table
-CREATE TABLE IF NOT EXISTS public.live_detections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  station_id TEXT,
-  station_name TEXT NOT NULL,
-  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  date_str TEXT,
-  time_str TEXT,
-  common_name TEXT NOT NULL,
-  scientific_name TEXT,
-  confidence NUMERIC(5,4) NOT NULL,
-  audio_url TEXT,
-  spectrogram_url TEXT,
-  duration NUMERIC(4,2) DEFAULT 3.0,
-  reviewed BOOLEAN DEFAULT FALSE,
-  verified BOOLEAN DEFAULT FALSE,
-  verifier_id TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 5. Species Ecology Table
-CREATE TABLE IF NOT EXISTS public.species (
-  id TEXT PRIMARY KEY,
+-- a) TST Detections Stream
+CREATE TABLE IF NOT EXISTS public.tst_detections (
+  id BIGSERIAL PRIMARY KEY,
+  site_name TEXT NOT NULL,
+  date DATE,
+  time TIME,
+  start_time DOUBLE PRECISION,
+  end_time DOUBLE PRECISION,
   common_name TEXT NOT NULL,
   scientific_name TEXT NOT NULL,
-  birdnet_label TEXT UNIQUE NOT NULL,
-  iucn_status TEXT DEFAULT 'Least Concern',
-  family TEXT,
-  order_name TEXT,
-  foraging_guild TEXT,
-  foraging_stratum TEXT,
-  vocal_activity TEXT,
-  image_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  threshold DOUBLE PRECISION DEFAULT 0.5,
+  file_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 6. Users Directory Table
-CREATE TABLE IF NOT EXISTS public.users (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL DEFAULT 'pass123',
-  role TEXT NOT NULL DEFAULT 'Site Manager',
-  organization TEXT DEFAULT 'IISER Tirupati Bird Lab',
-  assigned_project_type TEXT DEFAULT 'Both',
-  status TEXT DEFAULT 'active',
-  last_login TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 7. Stations / Hardware Telemetry Table
-CREATE TABLE IF NOT EXISTS public.stations (
+-- b) TST Site Metadata & Recording Telemetry
+CREATE TABLE IF NOT EXISTS public.tst_sites (
   id TEXT PRIMARY KEY,
-  station_name TEXT NOT NULL UNIQUE,
-  description TEXT,
-  project_id TEXT REFERENCES public.projects(id) ON DELETE SET NULL,
-  project_name TEXT,
-  country TEXT DEFAULT 'India',
-  state TEXT DEFAULT 'Karnataka',
-  latitude NUMERIC(10, 8),
-  longitude NUMERIC(11, 8),
-  elevation INT DEFAULT 0,
-  installation_date DATE DEFAULT CURRENT_DATE,
-  firmware_version TEXT DEFAULT 'v2.4.1',
-  birdnet_version TEXT DEFAULT 'BirdNET V2.4',
-  status TEXT DEFAULT 'online',
-  last_seen TEXT DEFAULT 'Just now',
-  battery_level INT DEFAULT 100,
-  cpu_temperature NUMERIC(5,2) DEFAULT 42.5,
-  storage_used_percent INT DEFAULT 18,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  site_name TEXT NOT NULL,
+  lat DOUBLE PRECISION,
+  long DOUBLE PRECISION,
+  number_of_files INTEGER DEFAULT 0,
+  number_of_hours DOUBLE PRECISION DEFAULT 0.0,
+  total_size_bytes BIGINT DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- Safely Add Realtime Publication (Prevents duplicate relation error)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' 
-    AND schemaname = 'public' 
-    AND tablename = 'live_detections'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.live_detections;
-  END IF;
-END $$;
+-- c) Species Ecology Matrix
+CREATE TABLE IF NOT EXISTS public.tst_species_ecology (
+  scientific_name TEXT PRIMARY KEY,
+  common_name TEXT NOT NULL,
+  iucn_status TEXT DEFAULT 'LC',
+  guild TEXT,
+  habitat TEXT,
+  foraging_stratum TEXT,
+  endemic_status TEXT DEFAULT 'Non-endemic',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
--- Disable Row Level Security (RLS) for seamless development
-ALTER TABLE public.projects DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sites DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.live_detections DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.species DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.stations DISABLE ROW LEVEL SECURITY;
+-- 3. COMMON PAM OFFLINE SURVEY DETECTIONS TABLE
+CREATE TABLE IF NOT EXISTS public.pam_detections (
+  id BIGSERIAL PRIMARY KEY,
+  project_name TEXT NOT NULL,
+  site_name TEXT NOT NULL,
+  recorder_name TEXT NOT NULL,
+  date DATE,
+  time TIME,
+  start_time DOUBLE PRECISION,
+  end_time DOUBLE PRECISION,
+  common_name TEXT NOT NULL,
+  scientific_name TEXT NOT NULL,
+  confidence DOUBLE PRECISION DEFAULT 0.5,
+  file_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
--- Storage Buckets & Policies
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('birdnet-audio', 'birdnet-audio', true)
-ON CONFLICT (id) DO NOTHING;
+-- 4. REALTIME LIVE RECORDER TABLE
+CREATE TABLE IF NOT EXISTS public.live_detections (
+  id BIGSERIAL PRIMARY KEY,
+  project_name TEXT DEFAULT 'Bird_Lab_demo',
+  site_name TEXT DEFAULT 'Inside BirdLab',
+  recorder_id TEXT NOT NULL DEFAULT 'Test_Lab_1',
+  station_id TEXT,
+  station_name TEXT,
+  common_name TEXT NOT NULL,
+  scientific_name TEXT NOT NULL,
+  confidence DOUBLE PRECISION NOT NULL,
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  date_str TEXT,
+  time_str TEXT,
+  duration DOUBLE PRECISION DEFAULT 3.0,
+  audio_url TEXT,
+  reviewed BOOLEAN DEFAULT FALSE,
+  verified BOOLEAN DEFAULT FALSE,
+  verification_status TEXT DEFAULT 'PENDING' CHECK (verification_status IN ('PENDING', 'YES', 'NO')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('observatory-data', 'observatory-data', true)
-ON CONFLICT (id) DO NOTHING;
+-- 5. MASTER SCOPE REGISTRY TABLE (Connecting PAM vs Live Projects, Sites, and Recorders)
+CREATE TABLE IF NOT EXISTS public.recorders_registry (
+  id TEXT PRIMARY KEY,
+  project_type TEXT NOT NULL CHECK (project_type IN ('PAM', 'Live')),
+  project_name TEXT NOT NULL,
+  site_name TEXT NOT NULL,
+  recorder_id TEXT NOT NULL,
+  status TEXT DEFAULT 'online' CHECK (status IN ('online', 'offline')),
+  lat DOUBLE PRECISION,
+  long DOUBLE PRECISION,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
