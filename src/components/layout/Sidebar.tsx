@@ -37,7 +37,6 @@ export function Sidebar({ currentRole, onlineStationsCount }: SidebarProps) {
     { label: 'Projects', href: '/projects', icon: FolderKanban },
     { label: 'Species', href: '/species', icon: Bird },
     { label: 'Map', href: '/map', icon: MapPin },
-    { label: 'Analytics', href: '/analytics', icon: BarChart3 },
     { label: 'Review Queue', href: '/review', icon: CheckSquare, roleRequired: ['Admin', 'Project Manager', 'Site Manager'] },
     { label: 'Reports', href: '/reports', icon: FileText, roleRequired: ['Admin', 'Project Manager'] },
     { label: 'Settings', href: '/settings', icon: Settings, roleRequired: ['Admin'] },

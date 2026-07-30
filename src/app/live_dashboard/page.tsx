@@ -17,6 +17,7 @@ import {
   Sliders,
   CheckCircle2
 } from 'lucide-react';
+import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
@@ -283,6 +284,19 @@ export default function LiveDashboardPage() {
 
       {/* Stacked Charts */}
       <div className="space-y-6">
+        <div className="premium-card p-6 rounded-[24px] space-y-4">
+          <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" /> Species Accumulation Curve (15-Day Transect)
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 font-medium">Cumulative unique species counts reaching plateau as live monitoring progresses.</p>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200">Transect Curve</span>
+          </div>
+          <AccumulationChart />
+        </div>
+
         <div className="premium-card p-6 rounded-[24px] space-y-4">
           <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
             <div>
