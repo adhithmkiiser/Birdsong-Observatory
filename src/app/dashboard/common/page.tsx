@@ -83,25 +83,43 @@ export default function CommonDashboardPage() {
     async function loadAggregatedStats() {
       setLoading(true);
       try {
-        const projArg = selectedProjectId === 'ALL_PROJECTS' ? null : selectedProjectId;
-        const siteArg = selectedStationId === 'ALL_SITES' ? null : selectedStationId;
+        let query = supabase.from('pam_detections').select('*');
 
-        const [statsRes, hourlyRes, speciesRes] = await Promise.all([
-          supabase.rpc('get_detection_stats', { p_project_id: projArg, p_station_id: siteArg }),
-          supabase.rpc('get_hourly_stats', { p_project_id: projArg, p_station_id: siteArg }),
-          supabase.rpc('get_top_species', { p_project_id: projArg, p_station_id: siteArg, p_limit: 10 })
-        ]);
+        if (selectedProjectId !== 'ALL_PROJECTS') {
+          const selectedProj = projectsList.find(p => p.id === selectedProjectId);
+          if (selectedProj) {
+            query = query.eq('project_name', selectedProj.name);
+          }
+        }
+        if (selectedStationId !== 'ALL_SITES') {
+          const selectedSite = stationsList.find(s => s.id === selectedStationId);
+          if (selectedSite) {
+            query = query.eq('site_name', selectedSite.station_name);
+          }
+        }
 
-        // Stats
-        const stats = statsRes.data?.[0];
-        setTotalDetections(Number(stats?.total_detections || 0));
-        setUniqueSpecies(Number(stats?.unique_species || 0));
+        const { data: pamDets, error } = await query.limit(1000);
+        if (error) {
+          console.error('Error querying pam_detections:', error);
+          setLoading(false);
+          return;
+        }
 
-        // Hourly diurnal data — fill all 24 hours
+        const dets = pamDets || [];
+        setTotalDetections(dets.length);
+
+        const uniqueSet = new Set(dets.map(d => d.common_name));
+        setUniqueSpecies(uniqueSet.size);
+
+        // Compute 24-hour diurnal distribution
         const hourMap: Record<number, number> = {};
-        (hourlyRes.data || []).forEach((row: any) => {
-          hourMap[Number(row.hour)] = Number(row.detections);
+        dets.forEach(d => {
+          if (d.time) {
+            const h = parseInt(d.time.split(':')[0], 10);
+            if (!isNaN(h)) hourMap[h] = (hourMap[h] || 0) + 1;
+          }
         });
+
         setHourlyData(
           Array.from({ length: 24 }, (_, i) => ({
             hour: `${i.toString().padStart(2, '0')}:00`,
@@ -109,13 +127,20 @@ export default function CommonDashboardPage() {
           }))
         );
 
-        // Top species
-        setTopSpeciesData(
-          (speciesRes.data || []).map((row: any) => ({
-            species: row.species,
-            detections: Number(row.detections)
-          }))
-        );
+        // Compute top species
+        const speciesMap: Record<string, number> = {};
+        dets.forEach(d => {
+          if (d.common_name) {
+            speciesMap[d.common_name] = (speciesMap[d.common_name] || 0) + 1;
+          }
+        });
+
+        const sortedTop = Object.entries(speciesMap)
+          .map(([species, count]) => ({ species, detections: count }))
+          .sort((a, b) => b.detections - a.detections)
+          .slice(0, 10);
+
+        setTopSpeciesData(sortedTop);
       } catch (err) {
         console.error('Error loading aggregated stats:', err);
       } finally {
@@ -124,7 +149,7 @@ export default function CommonDashboardPage() {
     }
 
     loadAggregatedStats();
-  }, [selectedProjectId, selectedStationId]);
+  }, [selectedProjectId, selectedStationId, projectsList, stationsList]);
 
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
     ? stationsList
