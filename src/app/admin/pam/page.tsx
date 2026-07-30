@@ -102,6 +102,43 @@ export default function PamAdminPage() {
   const [newHabitat, setNewHabitat] = useState('Shola Forest / Canopy');
   const [newStratum, setNewStratum] = useState('High canopy');
   const [newEndemic, setNewEndemic] = useState('Western Ghats Endemic');
+  const [newImgLink, setNewImgLink] = useState('');
+  const [newAudioLink, setNewAudioLink] = useState('');
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+
+  const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setIsUploadingAudio(true);
+
+    try {
+      const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { data, error } = await supabase.storage
+        .from('species-audio-bucket')
+        .upload(filename, file, { upsert: true });
+
+      if (error) {
+        const { data: d2, error: e2 } = await supabase.storage
+          .from('audio-clips')
+          .upload(filename, file, { upsert: true });
+
+        if (e2) {
+          alert('Audio upload error: ' + e2.message);
+          return;
+        }
+        const publicUrl = supabase.storage.from('audio-clips').getPublicUrl(filename).data.publicUrl;
+        setNewAudioLink(publicUrl);
+      } else {
+        const publicUrl = supabase.storage.from('species-audio-bucket').getPublicUrl(filename).data.publicUrl;
+        setNewAudioLink(publicUrl);
+      }
+      showNotification('Avian call audio clip uploaded to species-audio-bucket!');
+    } catch (err: any) {
+      alert('Upload error: ' + err.message);
+    } finally {
+      setIsUploadingAudio(false);
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -476,7 +513,9 @@ export default function PamAdminPage() {
       guild: newGuild,
       habitat: newHabitat,
       foraging_stratum: newStratum,
-      endemic_status: newEndemic
+      endemic_status: newEndemic,
+      image_link: newImgLink || null,
+      audio_link: newAudioLink || null
     };
 
     const { error } = await supabase.from('tst_species_ecology').upsert([record], { onConflict: 'scientific_name' });
@@ -489,6 +528,8 @@ export default function PamAdminPage() {
     setUnmappedSpecies(prev => prev.filter(name => name.toLowerCase() !== newComName.toLowerCase()));
     setNewSciName('');
     setNewComName('');
+    setNewImgLink('');
+    setNewAudioLink('');
     showNotification(`Species trait record for "${newComName}" saved to tst_species_ecology!`);
   };
 
@@ -1120,6 +1161,35 @@ export default function PamAdminPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Species Photo / Image URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://... or /birds/myna.jpg"
+                    value={newImgLink}
+                    onChange={(e) => setNewImgLink(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Avian Call Audio (.mp3 / .wav)</label>
+                  <div className="space-y-1.5">
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleAudioFileUpload}
+                      className="w-full text-[11px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-extrabold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                    />
+                    {isUploadingAudio && <div className="text-[10px] text-indigo-600 font-extrabold animate-pulse">Uploading audio to species-audio-bucket...</div>}
+                    {newAudioLink && (
+                      <div className="text-[10px] font-mono text-emerald-600 truncate bg-emerald-50 p-1.5 rounded-lg border border-emerald-200">
+                        🔊 {newAudioLink}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md transition flex items-center justify-center gap-2 mt-2"
@@ -1146,6 +1216,7 @@ export default function PamAdminPage() {
                       <th className="pb-2">Guild</th>
                       <th className="pb-2">Habitat</th>
                       <th className="pb-2">Endemic Status</th>
+                      <th className="pb-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -1167,6 +1238,25 @@ export default function PamAdminPage() {
                         <td className="py-2.5 font-bold text-slate-700">{sp.guild}</td>
                         <td className="py-2.5 text-slate-600 truncate max-w-[150px]">{sp.habitat}</td>
                         <td className="py-2.5 font-bold text-indigo-600">{sp.endemic_status}</td>
+                        <td className="py-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              setNewSciName(sp.scientific_name);
+                              setNewComName(sp.common_name);
+                              setNewIucn(sp.iucn_status || 'LC');
+                              setNewGuild(sp.guild || 'Insectivore');
+                              setNewHabitat(sp.habitat || '');
+                              setNewStratum(sp.foraging_stratum || '');
+                              setNewEndemic(sp.endemic_status || '');
+                              setNewImgLink(sp.image_link || '');
+                              setNewAudioLink(sp.audio_link || '');
+                              showNotification(`Editing species traits for "${sp.common_name}"`);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-extrabold text-[11px] transition inline-flex items-center gap-1"
+                          >
+                            <Edit2 className="w-3 h-3" /> Edit
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
