@@ -616,6 +616,47 @@ WantedBy=multi-user.target`;
               <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">
                 {generatedSystemdScript}
               </pre>
+
+              <div className="space-y-4 pt-2 border-t border-slate-800">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-emerald-400 text-xs">Step 1: Install Sync Engine on Raspberry Pi (Run once in Pi Terminal)</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong && cd ~/birdsong/birdnet-sync && bash install.sh');
+                      showNotification('Step 1 install command copied to clipboard!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black hover:bg-emerald-500/30 flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" /> Copy Install Command
+                  </button>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-emerald-400 select-all">
+                  git clone https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/birdsong && cd ~/birdsong/birdnet-sync && bash install.sh
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-indigo-400 text-xs">Step 2: Start Daemon & Register Node to Live Database</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`python3 main.py --project "${genProjectName}" --site "${genStationName}" --recorder "station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"`);
+                      showNotification('Step 2 daemon execution command copied to clipboard!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-black hover:bg-indigo-500/30 flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" /> Copy Start Command
+                  </button>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-300 select-all">
+                  python3 main.py --project &quot;{genProjectName}&quot; --site &quot;{genStationName}&quot; --recorder &quot;station_{genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}&quot;
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  Running this command automatically registers <code className="text-white font-bold">{genStationName}</code> under project <code className="text-white font-bold">{genProjectName}</code> in <code className="text-emerald-400 font-bold">recorders_registry</code> and starts streaming detections to <code className="text-emerald-400 font-bold">live_detections</code>!
+                </p>
+              </div>
+            </div>
             </div>
           </div>
         </div>
