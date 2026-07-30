@@ -92,10 +92,11 @@ export default function LiveAdminPage() {
   useEffect(() => {
     async function loadLiveAdminData() {
       try {
-        const [{ data: projs }, { data: stats }] = await Promise.all([
+        const [{ data: projs }, { data: recordersData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-          supabase.from('stations').select('*').order('created_at', { ascending: false })
+          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false })
         ]);
+
         if (projs) {
           setLiveProjects(projs.map((p: any) => ({
             id: p.id,
@@ -105,22 +106,23 @@ export default function LiveAdminPage() {
             stationsCount: p.stations_count || 0
           })));
         }
-        if (stats) {
-          setNodesList(stats.map((s: any) => ({
-            id: s.id,
-            stationName: s.station_name,
-            projectName: s.project_name || 'Western Ghats Live Observatory',
+
+        if (recordersData) {
+          setNodesList(recordersData.map((r: any) => ({
+            id: r.recorder_id,
+            stationName: r.site_name,
+            projectName: r.project_name || 'Bird_Lab_demo',
             ipAddress: '192.168.1.100',
             lastUploadedId: 0,
             pendingQueue: 0,
-            lastSyncTime: s.last_seen || 'Just now',
-            status: s.status as any || 'online',
+            lastSyncTime: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
+            status: (r.status?.toLowerCase() || 'online') as any,
             sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
             audioDir: '/home/pi/BirdNET-Pi/clips/'
           })));
         }
       } catch (e) {
-        console.error('Failed to load Live admin data from database:', e);
+        console.error('Failed to load Live admin data from recorders_registry:', e);
       }
     }
     loadLiveAdminData();
@@ -449,6 +451,92 @@ WantedBy=multi-user.target`;
                 ))
               )}
             </div>
+          </div>
+
+          {/* Register New Live Sensor Node Card */}
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <PlusCircle className="w-4 h-4 text-emerald-600" /> Register New Live Field Sensor Node (recorders_registry)
+            </h3>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const form = e.target as HTMLFormElement;
+              const recId = (form.elements.namedItem('recId') as HTMLInputElement).value;
+              const siteName = (form.elements.namedItem('siteName') as HTMLInputElement).value;
+              const projName = (form.elements.namedItem('projName') as HTMLSelectElement).value;
+              const lat = parseFloat((form.elements.namedItem('lat') as HTMLInputElement).value) || 13.58;
+              const lng = parseFloat((form.elements.namedItem('lng') as HTMLInputElement).value) || 75.64;
+
+              const record = {
+                project_type: 'Live',
+                project_name: projName,
+                site_name: siteName,
+                recorder_id: recId,
+                status: 'ONLINE',
+                lat,
+                long: lng,
+                last_ping: new Date().toISOString()
+              };
+
+              const { error } = await supabase.from('recorders_registry').upsert([record], { onConflict: 'recorder_id' });
+              if (error) {
+                alert('Error registering recorder: ' + error.message);
+                return;
+              }
+
+              setNodesList(prev => [{
+                id: recId,
+                stationName: siteName,
+                projectName: projName,
+                ipAddress: '192.168.1.100',
+                lastUploadedId: 0,
+                pendingQueue: 0,
+                lastSyncTime: 'Just now',
+                status: 'online',
+                sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
+                audioDir: '/home/pi/BirdNET-Pi/clips/'
+              }, ...prev]);
+
+              form.reset();
+              showNotification(`Registered live recorder hardware node ${recId} (${siteName}) in recorders_registry!`);
+            }} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Target Live Project</label>
+                  <select name="projName" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900">
+                    <option value="Bird_Lab_demo">Bird_Lab_demo (IISER Tirupati Live Observatory)</option>
+                    {liveProjects.map(p => (
+                      <option key={p.id} value={p.name}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Recorder ID (e.g. Test_Lab_1 / station_01)</label>
+                  <input name="recId" required placeholder="e.g. Test_Lab_1" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900" />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Site Location Name</label>
+                  <input name="siteName" required placeholder="e.g. IISER Bioacoustics Lab 1" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
+                  <input name="lat" type="number" step="0.0001" defaultValue={13.58} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-900 font-bold" />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
+                  <input name="lng" type="number" step="0.0001" defaultValue={75.64} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-900 font-bold" />
+                </div>
+                <div className="flex items-end">
+                  <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md transition flex items-center justify-center gap-2">
+                    <PlusCircle className="w-4 h-4" /> Register Sensor Node
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
