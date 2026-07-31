@@ -46,6 +46,7 @@ def register_in_recorders_registry(url, key, project_name, site_name, recorder_i
     cpu_temp, storage_used_percent = get_system_telemetry()
     
     payload = {
+        "id": recorder_id,
         "project_type": "Live",
         "project_name": project_name,
         "site_name": site_name,
