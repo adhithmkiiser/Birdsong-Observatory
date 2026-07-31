@@ -42,7 +42,12 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
       }
     }, 300);
 
+    const bucketUrl = detection?.common_name
+      ? `https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/bird-audio/${detection.common_name.replace(/ /g, '_').replace(/'/g, '').replace(/-/g, '_')}.wav`
+      : null;
+
     const targetUrl = detection?.audio_url || 
+                      bucketUrl ||
                       (detection?.common_name ? REAL_SPECIES_AUDIO[detection.common_name] : null) || 
                       'https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3';
 
