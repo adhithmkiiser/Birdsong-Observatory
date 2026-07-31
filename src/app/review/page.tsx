@@ -22,6 +22,16 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 
+function dedupeDetections(list: any[]) {
+  const seen = new Set<string>();
+  return list.filter((d) => {
+    const key = `${d.recorder_id || d.station_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default function ReviewQueuePage() {
   const { currentRole } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<any | null>(null);
@@ -47,23 +57,17 @@ export default function ReviewQueuePage() {
         const [{ data: projs }, { data: sitesData }, { data: stnData }, { data: detData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('sites').select('*').order('name'),
-          supabase.from('stations').select('*').order('station_name'),
+          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
         const liveProjectIds = new Set((projs || []).map(p => p.id));
         const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
-        const liveDets = (detData || []).filter(d => 
-          d.station_id === 'Test_Lab_1' || 
-          d.station_name === 'Inside BirdLab' || 
-          d.station_name?.includes('BirdLab') ||
-          d.station_id?.includes('Test_Lab')
-        );
 
         setProjectsList(projs || []);
         setSitesList(liveSites);
         setStationsList(stnData || []);
-        setDetections(liveDets);
+        setDetections(dedupeDetections(detData || []));
       } catch (err) {
         console.error('Error loading review queue data:', err);
       } finally {
@@ -78,7 +82,16 @@ export default function ReviewQueuePage() {
     ? sitesList
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  const availableStations = ['Test_Lab_1'];
+  const selectedProjectName = selectedProjectId === 'ALL'
+    ? 'ALL'
+    : projectsList.find((p: any) => p.id === selectedProjectId)?.name;
+  const selectedSiteName = selectedSiteId === 'ALL'
+    ? 'ALL'
+    : availableSites.find((s: any) => s.id === selectedSiteId)?.name;
+
+  const availableStations = selectedProjectName === 'ALL'
+    ? stationsList
+    : stationsList.filter((s: any) => s.project_name === selectedProjectName && (selectedSiteName === 'ALL' || s.site_name === selectedSiteName));
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -98,12 +111,22 @@ export default function ReviewQueuePage() {
     const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           sci.toLowerCase().includes(searchQuery.toLowerCase());
 
-    let matchesStation = true;
-    if (selectedStationId !== 'ALL') {
-      matchesStation = det.station_id === selectedStationId || det.station_name === selectedStationId;
+    let matchesProject = true;
+    if (selectedProjectName !== 'ALL') {
+      matchesProject = det.project_name === selectedProjectName;
     }
 
-    return matchesSearch && matchesStation;
+    let matchesSite = true;
+    if (selectedSiteName !== 'ALL') {
+      matchesSite = det.site_name === selectedSiteName;
+    }
+
+    let matchesStation = true;
+    if (selectedStationId !== 'ALL') {
+      matchesStation = det.recorder_id === selectedStationId || det.station_id === selectedStationId || det.station_name === selectedStationId;
+    }
+
+    return matchesSearch && matchesProject && matchesSite && matchesStation;
   });
 
   // Sort Detections
@@ -202,9 +225,9 @@ export default function ReviewQueuePage() {
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
-              {availableStations.map((id: string) => (
-                <option key={id} value={id}>
-                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
+              {availableStations.map((s: any) => (
+                <option key={s.recorder_id} value={s.recorder_id}>
+                  {s.site_name} ({s.recorder_id})
                 </option>
               ))}
             </select>

@@ -17,6 +17,8 @@ export interface User {
   organization: string;
   assignedProject?: string;
   assignedSite?: string;
+  assignedProjects?: string[];
+  assignedSites?: string[];
   assignedProjectType?: 'PAM' | 'Live' | 'Both';
   projectScopePermissions?: string[];
   isOneTimePassword?: boolean;

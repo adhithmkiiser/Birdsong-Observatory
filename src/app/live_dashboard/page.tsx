@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Radio, 
   Cpu, 
@@ -28,6 +28,16 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 
+function dedupeDetections(list: any[]) {
+  const seen = new Set<string>();
+  return list.filter((d) => {
+    const key = `${d.recorder_id || d.station_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const SatelliteMap = dynamic(() => import('@/components/map/SatelliteMap'), { ssr: false });
 
 export default function LiveDashboardPage() {
@@ -54,15 +64,19 @@ export default function LiveDashboardPage() {
     async function loadLiveDashboardData() {
       setLoading(true);
       try {
-        const [{ data: projs }, { data: recordersData }, { data: detData }] = await Promise.all([
+        const [{ data: projs }, { data: recordersData }, { data: sitesData }, { data: detData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('sites').select('*').order('name'),
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
+        const liveProjectIds = new Set((projs || []).map(p => p.id));
+        const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
         setLiveProjects(projs || []);
         setStationsList(recordersData || []);
-        setDetections(detData || []);
+        setSitesList(liveSites);
+        setDetections(dedupeDetections(detData || []));
       } catch (err) {
         console.error('Failed to load Live Dashboard data:', err);
       } finally {
@@ -79,7 +93,7 @@ export default function LiveDashboardPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'live_detections' },
         (payload) => {
-          setDetections((prev) => [payload.new, ...prev]);
+          setDetections((prev) => dedupeDetections([payload.new, ...prev]));
         }
       )
       .subscribe();
@@ -89,16 +103,24 @@ export default function LiveDashboardPage() {
     };
   }, []);
 
-  // Filter sites strictly by selected Live project (Never PAM sites)
-  const liveProjectIds = new Set(liveProjects.map(p => p.id));
+  // Filter live sites strictly by selected Live project
   const availableSites = selectedProjectId === 'ALL'
-    ? sitesList.filter(s => liveProjectIds.has(s.project_id))
+    ? sitesList
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Hardware recorder nodes dynamically populated from recorders_registry
-  const availableStations = selectedProjectId === 'ALL'
-    ? stationsList
-    : stationsList.filter(s => s.project_name === selectedProjectId);
+  const selectedProjectName = selectedProjectId === 'ALL'
+    ? 'ALL'
+    : liveProjects.find((p: any) => p.id === selectedProjectId)?.name;
+  const selectedSiteName = selectedSiteId === 'ALL'
+    ? 'ALL'
+    : availableSites.find((s: any) => s.id === selectedSiteId)?.name;
+
+  // Hardware recorder nodes from recorders_registry, scoped by project and optional site
+  const availableStations = stationsList.filter((s: any) => {
+    if (selectedProjectName !== 'ALL' && s.project_name !== selectedProjectName) return false;
+    if (selectedSiteName !== 'ALL' && s.site_name !== selectedSiteName) return false;
+    return true;
+  });
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -152,12 +174,33 @@ export default function LiveDashboardPage() {
     .sort((a, b) => b.detections - a.detections)
     .slice(0, 10);
 
-  // Active Nodes calculation (last_ping <= 5 minutes)
-  const activeNodesCount = availableStations.filter((s: any) => {
-    if (!s.last_ping) return false;
-    const diffMins = (Date.now() - new Date(s.last_ping).getTime()) / (1000 * 60);
-    return diffMins <= 5;
-  }).length;
+  // Full-duration species accumulation curve (every day from first to last detection)
+  const accumulationData = useMemo(() => {
+    const dated = filteredDetections.filter(d => d.timestamp).map(d => {
+      const day = new Date(d.timestamp).toISOString().slice(0, 10);
+      return { day, species: d.common_name || d.scientific_name };
+    });
+    if (dated.length === 0) return [];
+    const days = dated.map(d => d.day).sort();
+    const min = new Date(days[0]);
+    const max = new Date(days[days.length - 1]);
+    const byDay: Record<string, Set<string>> = {};
+    dated.forEach(d => {
+      if (!byDay[d.day]) byDay[d.day] = new Set();
+      byDay[d.day].add(d.species);
+    });
+    const cumulative = new Set<string>();
+    const out: { day: string; species: number }[] = [];
+    for (let d = new Date(min); d <= max; d.setDate(d.getDate() + 1)) {
+      const day = d.toISOString().slice(0, 10);
+      (byDay[day] || new Set()).forEach(s => cumulative.add(s));
+      out.push({ day, species: cumulative.size });
+    }
+    return out;
+  }, [filteredDetections]);
+
+  // Active Nodes calculation (status === 'online')
+  const activeNodesCount = availableStations.filter((s: any) => s.status === 'online').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -319,13 +362,13 @@ export default function LiveDashboardPage() {
           <div className="flex items-start justify-between border-b border-slate-100 pb-3.5">
             <div>
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" /> Species Accumulation Curve (15-Day Transect)
+                <Sparkles className="w-4 h-4 text-emerald-600" /> Species Accumulation Curve (Full Detection History)
               </h3>
-              <p className="text-xs text-slate-500 mt-1 font-medium">Cumulative unique species counts reaching plateau as live monitoring progresses.</p>
+              <p className="text-xs text-slate-500 mt-1 font-medium">Cumulative unique species counts from the first live detection through today.</p>
             </div>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200">Transect Curve</span>
           </div>
-          <AccumulationChart />
+          <AccumulationChart data={accumulationData} />
         </div>
 
         <div className="premium-card p-6 rounded-[24px] space-y-4">

@@ -46,76 +46,33 @@ interface StationMapDetail {
 }
 
 export default function SatelliteMap() {
-  const centerLat = 13.58;
-  const centerLng = 75.64;
   const [rawStations, setRawStations] = useState<any[]>([]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([13.6288, 79.4192]);
 
   useEffect(() => {
     async function loadStationsData() {
       try {
-        const [{ data: stns }, { data: recRegistry }, { data: tstSites }] = await Promise.all([
-          supabase.from('sites').select('*'),
-          supabase.from('recorders_registry').select('*'),
-          supabase.from('tst_sites').select('*')
-        ]);
+        const { data: recRegistry } = await supabase
+          .from('recorders_registry')
+          .select('*')
+          .eq('project_type', 'Live');
 
-        let combined: any[] = [];
+        const combined: any[] = (recRegistry || []).map((r: any) => ({
+          id: r.id || `${r.site_name}_${r.recorder_id}`,
+          station_name: `${r.site_name} - Recorder ${r.recorder_id}`,
+          description: `Project: ${r.project_name} | Site: ${r.site_name} | Recorder: ${r.recorder_id}`,
+          project_name: r.project_name,
+          latitude: Number(r.lat) || 13.6288,
+          longitude: Number(r.long) || 79.4192,
+          status: r.status || 'online',
+          battery_level: r.battery_level ?? 100,
+          cpu_temperature: r.cpu_temperature ?? 42.5,
+          disk_usage: r.storage_used_percent ?? 18
+        }));
 
-        if (recRegistry && recRegistry.length > 0) {
-          recRegistry.forEach((r: any) => {
-            combined.push({
-              id: r.id || `${r.site_name}_${r.recorder_id}`,
-              station_name: `${r.site_name} - Recorder ${r.recorder_id}`,
-              description: `Project: ${r.project_name} | Site: ${r.site_name} | Recorder: ${r.recorder_id}`,
-              project_name: r.project_name,
-              latitude: r.lat || 13.58,
-              longitude: r.long || 75.64,
-              status: r.status || 'online',
-              battery_level: r.battery_level ?? 100,
-              cpu_temperature: r.cpu_temperature ?? 42.5,
-              disk_usage: r.storage_used_percent ?? 18
-            });
-          });
+        if (combined.length > 0) {
+          setMapCenter([combined[0].latitude, combined[0].longitude]);
         }
-
-        if (tstSites && tstSites.length > 0) {
-          tstSites.forEach((s: any) => {
-            if (!combined.some(c => c.station_name.includes(s.site_name))) {
-              combined.push({
-                id: s.id,
-                station_name: `TST Site ${s.site_name}`,
-                description: `TST Bioacoustic Survey Site ${s.site_name}`,
-                project_name: 'tst',
-                latitude: s.lat || 11.41,
-                longitude: s.long || 76.69,
-                status: 'online',
-                battery_level: 100,
-                cpu_temperature: 41.0,
-                disk_usage: 25
-              });
-            }
-          });
-        }
-
-        if (stns && stns.length > 0) {
-          stns.forEach((s: any) => {
-            if (!combined.some(c => c.id === s.id)) {
-              combined.push({
-                id: s.id,
-                station_name: s.name,
-                description: `Field Site ${s.name}`,
-                project_name: s.project_id || 'PAM',
-                latitude: s.latitude || 13.58,
-                longitude: s.longitude || 75.64,
-                status: 'online',
-                battery_level: 100,
-                cpu_temperature: 42.0,
-                disk_usage: 20
-              });
-            }
-          });
-        }
-
         setRawStations(combined);
       } catch (err) {
         console.error('Failed to load satellite map stations:', err);
@@ -152,7 +109,7 @@ export default function SatelliteMap() {
       <div className="flex items-center justify-between border-b border-slate-100 pb-3 px-1">
         <div className="flex items-center gap-2">
           <MapPin className="w-4 h-4 text-indigo-600" />
-          <h2 className="text-sm font-black text-slate-900">GIS Satellite Recorder Network Map</h2>
+          <h2 className="text-sm font-black text-slate-900">Live Recorder Location</h2>
         </div>
         <span className="text-[10px] font-black px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full ${onlineCount > 0 ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`}></span>
@@ -163,8 +120,9 @@ export default function SatelliteMap() {
       {/* Inner Map Container Box */}
       <div className="w-full h-[450px] rounded-[18px] border border-slate-200 overflow-hidden relative shadow-inner">
         <MapContainer
-          center={[centerLat, centerLng]}
-          zoom={10}
+          key={mapCenter.join(',')}
+          center={mapCenter}
+          zoom={16}
           scrollWheelZoom={true}
           zoomControl={false}
           className="w-full h-full rounded-[18px]"

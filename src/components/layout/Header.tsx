@@ -16,14 +16,12 @@ import {
   Users
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
-import { LoginModal } from '@/components/layout/LoginModal';
 
 export function Header() {
   const pathname = usePathname();
   const { currentRole, currentUser, logoutUser } = useRole();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -124,7 +122,7 @@ export function Header() {
             </a>
 
             {/* 5. Admin Console Dropdown */}
-            {currentRole === 'Admin' && (
+            {(currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager') && (
               <div className="relative ml-2" ref={dropdownRef}>
                 <button
                   onClick={() => toggleDropdown('admin')}
@@ -153,28 +151,32 @@ export function Header() {
                       </div>
                     </Link>
 
-                    <Link
-                      href="/admin/live"
-                      onClick={() => setActiveDropdown(null)}
-                      className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 hover:text-emerald-800 transition"
-                    >
-                      <Radio className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0 animate-pulse" />
-                      <div>
-                        <div className="font-extrabold text-slate-900">Live Recorder Admin</div>
-                        <div className="text-[10px] text-slate-500 font-medium font-sans">Realtime stream controls & gain DSP</div>
-                      </div>
-                    </Link>
+                    {currentRole === 'Admin' && (
+                      <>
+                        <Link
+                          href="/admin/live"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 hover:text-emerald-800 transition"
+                        >
+                          <Radio className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0 animate-pulse" />
+                          <div>
+                            <div className="font-extrabold text-slate-900">Live Recorder Admin</div>
+                            <div className="text-[10px] text-slate-500 font-medium font-sans">Realtime stream controls & gain DSP</div>
+                          </div>
+                        </Link>
 
-                    <div className="border-t border-slate-100 my-1"></div>
+                        <div className="border-t border-slate-100 my-1"></div>
 
-                    <Link
-                      href="/users"
-                      onClick={() => setActiveDropdown(null)}
-                      className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-100 text-slate-700 font-bold transition"
-                    >
-                      <Users className="w-3.5 h-3.5 text-slate-500" />
-                      <span>User Roles & Permissions</span>
-                    </Link>
+                        <Link
+                          href="/users"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-100 text-slate-700 font-bold transition"
+                        >
+                          <Users className="w-3.5 h-3.5 text-slate-500" />
+                          <span>User Roles & Permissions</span>
+                        </Link>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -198,12 +200,12 @@ export function Header() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setIsLoginModalOpen(true)}
+              <Link
+                href="/login"
                 className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md shadow-slate-900/10 transition"
               >
                 Sign In
-              </button>
+              </Link>
             )}
           </div>
 
@@ -252,18 +254,18 @@ export function Header() {
                 <LogOut className="w-4 h-4" />
               </button>
             ) : (
-              <button
-                onClick={() => { setIsLoginModalOpen(true); setMobileMenuOpen(false); }}
-                className="w-full p-3 rounded-xl bg-indigo-600 text-white font-black text-center"
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full p-3 rounded-xl bg-indigo-600 text-white font-black text-center block"
               >
                 Sign In
-              </button>
+              </Link>
             )}
           </div>
         )}
       </header>
 
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
     </>
   );
 }

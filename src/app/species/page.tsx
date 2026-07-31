@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bird, Search, ExternalLink, RefreshCw, TreePine } from 'lucide-react';
+import { Bird, Search, RefreshCw, TreePine } from 'lucide-react';
 
 interface APISpecies {
   id: string;
@@ -17,6 +17,12 @@ interface APISpecies {
   foraging_stratum: string;
   vocal_activity: string;
   endemic_status: string;
+  indicator_group?: string;
+  total_detections: number;
+  first_seen?: string;
+  last_seen?: string;
+  by_recorder: { recorder_id: string; count: number }[];
+  top_recorder: { recorder_id: string; count: number } | null;
 }
 
 export default function SpeciesPage() {
@@ -80,7 +86,7 @@ export default function SpeciesPage() {
   const fetchAPISpecies = async (query: string = '') => {
     setLoading(true);
     try {
-      const url = `/api/species/list?q=${encodeURIComponent(query)}`;
+      const url = `/api/species/detected?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.species) {
@@ -112,9 +118,6 @@ export default function SpeciesPage() {
     return 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80';
   };
 
-  const getEBirdCode = (scientificName: string) => {
-    return scientificName.toLowerCase().replace(/\s+/g, '_');
-  };
 
   return (
     <div className="space-y-6 pb-8">
@@ -123,10 +126,10 @@ export default function SpeciesPage() {
         <div>
           <div className="flex items-center gap-2.5">
             <Bird className="w-5 h-5 text-indigo-600" />
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">Avian Species & Ecological Database</h1>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">Detected Species from Live Recorders</h1>
           </div>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Comprehensive species inventory cataloging ecological guilds, habitat strata, and IUCN conservation statuses.
+            Species automatically detected by the live recorder network, with per-station detection counts and recorder breakdown.
           </p>
         </div>
 
@@ -235,11 +238,36 @@ export default function SpeciesPage() {
                   </div>
                 </div>
 
-                {/* Profile & Ecological Details */}
+                {/* Detection Stats & Ecological Details */}
                 <div className="p-5 space-y-3.5">
                   <div>
                     <h3 className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition">{spc.common_name}</h3>
                     <p className="text-xs italic text-slate-500 font-medium">{spc.scientific_name}</p>
+                  </div>
+
+                  <div className="space-y-2 text-[11px] text-slate-600 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 font-medium">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80">
+                      <span className="text-slate-500 font-bold">Total Detections:</span>
+                      <span className="text-indigo-700 font-black bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
+                        {spc.total_detections || 0}
+                      </span>
+                    </div>
+
+                    {spc.top_recorder && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-bold">Top Recorder:</span>
+                        <span className="text-slate-900 font-black">
+                          {spc.top_recorder.recorder_id} <span className="text-emerald-600">({spc.top_recorder.count})</span>
+                        </span>
+                      </div>
+                    )}
+
+                    {spc.last_seen && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-bold">Last Seen:</span>
+                        <span className="text-slate-900">{new Date(spc.last_seen).toLocaleDateString()}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2 text-[11px] text-slate-600 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 font-medium">
@@ -257,30 +285,32 @@ export default function SpeciesPage() {
 
                     <div className="flex items-center justify-between pt-1 text-[10px]">
                       <span><strong>Foraging:</strong> {spc.foraging_stratum}</span>
-                      <span><strong>Vocal Activity:</strong> <strong className="text-slate-900">{spc.vocal_activity}</strong></span>
+                      <span><strong>Vocal:</strong> <strong className="text-slate-900">{spc.vocal_activity}</strong></span>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* External Profile Links */}
-              <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs bg-slate-50/50">
-                <a
-                  href={`https://www.inaturalist.org/taxa/${spc.taxa_id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-slate-600 hover:text-emerald-600 font-extrabold transition flex items-center gap-1.5 text-[11px]"
-                >
-                  <span>iNaturalist Profile</span> <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-                <a
-                  href={`https://ebird.org/species/${getEBirdCode(spc.scientific_name)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-slate-600 hover:text-amber-600 font-extrabold transition flex items-center gap-1.5 text-[11px]"
-                >
-                  <span>eBird Profile</span> <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                  {spc.by_recorder.length > 1 && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-500">Recorder Breakdown</h4>
+                      <div className="space-y-1.5">
+                        {spc.by_recorder.map((rec: any) => (
+                          <div key={rec.recorder_id} className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-600 truncate max-w-[120px]">{rec.recorder_id}</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-emerald-500"
+                                  style={{ width: `${(rec.count / (spc.total_detections || 1)) * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="font-black text-slate-900 w-6 text-right">{rec.count}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}

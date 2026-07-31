@@ -17,13 +17,29 @@ interface LightMapProps {
   sites: SiteMarkerData[];
   center?: [number, number];
   zoom?: number;
+  uniformSize?: boolean;
+  markerRadius?: number;
+  heightClass?: string;
 }
 
-function RecenterMap({ center }: { center: [number, number] }) {
+function RecenterMap({
+  center,
+  zoom,
+  sites
+}: {
+  center: [number, number];
+  zoom: number;
+  sites: SiteMarkerData[];
+}) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center);
-  }, [center, map]);
+    if (sites.length > 0) {
+      const bounds: [number, number][] = sites.map((s) => [s.lat, s.lng]);
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    } else {
+      map.setView(center, zoom);
+    }
+  }, [center, zoom, sites, map]);
   return null;
 }
 
@@ -36,11 +52,18 @@ function getGradientColor(count: number, maxCount: number): string {
   return '#8b5cf6'; // Violet Purple
 }
 
-export default function LightMap({ sites, center = [11.41, 76.69], zoom = 10 }: LightMapProps) {
+export default function LightMap({
+  sites,
+  center = [11.41, 76.69],
+  zoom = 10,
+  uniformSize = false,
+  markerRadius = 10,
+  heightClass = 'h-[380px]'
+}: LightMapProps) {
   const maxSpecies = Math.max(...sites.map(s => s.speciesCount), 1);
 
   return (
-    <div className="w-full h-[380px] rounded-3xl overflow-hidden border border-slate-200 shadow-sm relative">
+    <div className={`w-full rounded-3xl overflow-hidden border border-slate-200 shadow-sm relative ${heightClass}`}>
       <MapContainer center={center} zoom={zoom} scrollWheelZoom={false} className="w-full h-full z-0">
         {/* Sleek Positron Light Map Tile Layer */}
         <TileLayer
@@ -48,11 +71,11 @@ export default function LightMap({ sites, center = [11.41, 76.69], zoom = 10 }: 
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        <RecenterMap center={center} />
+        <RecenterMap center={center} zoom={zoom} sites={sites} />
 
         {sites.map((site) => {
           const color = getGradientColor(site.speciesCount, maxSpecies);
-          const radius = Math.max(12, Math.min(24, 10 + site.speciesCount * 0.8));
+          const radius = uniformSize ? markerRadius : Math.max(12, Math.min(24, 10 + site.speciesCount * 0.8));
 
           return (
             <CircleMarker

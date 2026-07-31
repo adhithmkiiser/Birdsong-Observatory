@@ -37,18 +37,55 @@ export default function ProjectsPage() {
   const [publicVisible, setPublicVisible] = useState(true);
   const [createdSuccessMsg, setCreatedSuccessMsg] = useState('');
 
-  const canCreate = currentRole === 'Admin' || currentRole === 'Project Manager';
+  const canCreate = currentRole === 'Admin';
 
   useEffect(() => {
-    supabase
-      .from('projects')
-      .select('*')
-      .eq('project_type', 'Live')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setProjectsList(data || []);
-        setLoading(false);
+    async function loadProjectsWithCounts() {
+      const [{ data: projs }, { data: recs }, { data: dets }] = await Promise.all([
+        supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+        supabase.from('recorders_registry').select('project_name').eq('project_type', 'Live'),
+        supabase.from('live_detections').select('project_name, common_name, scientific_name, recorder_id, timestamp')
+      ]);
+
+      const projects = projs || [];
+      const projectNames = new Set(projects.map(p => p.name));
+
+      const recordersByProject: Record<string, number> = {};
+      (recs || []).forEach(r => {
+        if (projectNames.has(r.project_name)) {
+          recordersByProject[r.project_name] = (recordersByProject[r.project_name] || 0) + 1;
+        }
       });
+
+      const detsByProject: Record<string, any[]> = {};
+      (dets || []).forEach(d => {
+        if (projectNames.has(d.project_name)) {
+          (detsByProject[d.project_name] ||= []).push(d);
+        }
+      });
+
+      const withCounts = projects.map(p => {
+        const raw = detsByProject[p.name] || [];
+        const seen = new Set<string>();
+        const unique = raw.filter((d: any) => {
+          const key = `${d.recorder_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const species = new Set(unique.map(d => d.common_name || d.scientific_name).filter(Boolean));
+        return {
+          ...p,
+          stations_count: recordersByProject[p.name] || 0,
+          total_detections: unique.length,
+          species_count: species.size
+        };
+      });
+
+      setProjectsList(withCounts);
+      setLoading(false);
+    }
+    loadProjectsWithCounts();
   }, []);
 
   const [editingProj, setEditingProj] = useState<any | null>(null);

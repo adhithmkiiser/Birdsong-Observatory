@@ -1,7 +1,9 @@
 import time
 import os
+import re
 import sys
 import logging
+from datetime import datetime, timezone
 from config import Config
 from database import SQLiteReader
 from storage import SupabaseStorage
@@ -15,6 +17,9 @@ import argparse
 import requests
 
 import shutil
+
+def slugify(name: str) -> str:
+    return re.sub(r'[-\s]+', '_', name.strip().lower())
 
 def get_system_telemetry():
     cpu_temp = 45.0
@@ -34,6 +39,76 @@ def get_system_telemetry():
         
     return cpu_temp, storage_used_percent
 
+def supabase_rest(url: str, key: str, table: str, method: str = "GET", params=None, data=None, headers_extra=None):
+    endpoint = f"{url.rstrip('/')}/rest/v1/{table}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    if headers_extra:
+        headers.update(headers_extra)
+    try:
+        if method == "GET":
+            r = requests.get(endpoint, headers=headers, params=params)
+        elif method == "POST":
+            r = requests.post(f"{endpoint}?on_conflict=id", headers=headers, json=data)
+        elif method == "PATCH":
+            r = requests.patch(endpoint, headers=headers, params=params, json=data)
+        else:
+            r = requests.request(method, endpoint, headers=headers, params=params, json=data)
+        return r
+    except Exception as e:
+        logger.error(f"Supabase REST call failed for {table}: {e}")
+        return None
+
+def ensure_project_exists(url: str, key: str, project_name: str, lat: float, long: float):
+    project_id = slugify(project_name)
+    # Try to get existing
+    r = supabase_rest(url, key, "projects", "GET", params={"id": f"eq.{project_id}", "select": "id,name"})
+    if r and r.status_code == 200 and r.json():
+        return project_id
+
+    # Create if missing
+    payload = {
+        "id": project_id,
+        "name": project_name,
+        "project_type": "Live",
+        "description": "Real-time live streaming bioacoustics project.",
+        "organization": "IISER Tirupati Bird Lab",
+        "stations_count": 0,
+        "species_count": 0,
+        "total_detections": 0
+    }
+    r = supabase_rest(url, key, "projects", "POST", data=[payload], headers_extra={"Prefer": "return=representation"})
+    if r and r.status_code in [200, 201, 204]:
+        logger.info(f"Created new Live project in Supabase: {project_name} ({project_id})")
+        return project_id
+    else:
+        logger.error(f"Failed to create project {project_name}: {r.status_code if r else 'no response'} {r.text if r else ''}")
+        return project_id
+
+def ensure_site_exists(url: str, key: str, project_id: str, site_name: str, lat: float, long: float):
+    site_id = slugify(f"{project_id}_{site_name}")
+    r = supabase_rest(url, key, "sites", "GET", params={"id": f"eq.{site_id}", "select": "id"})
+    if r and r.status_code == 200 and r.json():
+        return site_id
+
+    payload = {
+        "id": site_id,
+        "project_id": project_id,
+        "name": site_name,
+        "latitude": lat,
+        "longitude": long,
+        "status": "Active"
+    }
+    r = supabase_rest(url, key, "sites", "POST", data=[payload], headers_extra={"Prefer": "return=representation"})
+    if r and r.status_code in [200, 201, 204]:
+        logger.info(f"Created new Live site in Supabase: {site_name} ({site_id})")
+    else:
+        logger.error(f"Failed to create site {site_name}: {r.status_code if r else 'no response'} {r.text if r else ''}")
+    return site_id
+
 def register_in_recorders_registry(url, key, project_name, site_name, recorder_id, lat=13.58, long=75.64):
     endpoint = f"{url.rstrip('/')}/rest/v1/recorders_registry"
     headers = {
@@ -42,11 +117,19 @@ def register_in_recorders_registry(url, key, project_name, site_name, recorder_i
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates"
     }
+
+    # Ensure project and site exist before registering
+    project_id = ensure_project_exists(url, key, project_name, lat, long)
+    ensure_site_exists(url, key, project_id, site_name, lat, long)
+
+    # Composite primary key allows the same recorder_id under different projects/sites
+    # while the same project/site/recorder always upserts in place.
+    registry_id = f"{project_id}::{slugify(site_name)}::{recorder_id}"
     
-    cpu_temp, storage_used_percent = get_system_telemetry()
-    
+    cpu_temp, storage_used = get_system_telemetry()
+
     payload = {
-        "id": recorder_id,
+        "id": registry_id,
         "project_type": "Live",
         "project_name": project_name,
         "site_name": site_name,
@@ -54,20 +137,20 @@ def register_in_recorders_registry(url, key, project_name, site_name, recorder_i
         "status": "online",
         "lat": lat,
         "long": long,
-        "battery_level": 100.0,
         "cpu_temperature": cpu_temp,
-        "storage_used_percent": storage_used_percent,
-        "firmware_version": "v2.4 (Live)",
-        "last_ping": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        "storage_used_percent": storage_used,
+        "last_ping": datetime.now(timezone.utc).isoformat()
     }
     try:
-        r = requests.post(endpoint, headers=headers, json=[payload])
+        r = requests.post(f"{endpoint}?on_conflict=id", headers=headers, json=[payload])
         if r.status_code in [200, 201, 204]:
             logger.info(f"Registered/Pinged recorder in recorders_registry: {recorder_id} ({site_name} @ {project_name}) [lat: {lat}, long: {long}]")
+            return True
         else:
             logger.warning(f"Could not register in recorders_registry (HTTP {r.status_code}): {r.text}")
     except Exception as e:
         logger.error(f"Failed to register in recorders_registry: {e}")
+    return False
 
 def run_sync_cycle(config, sqlite_reader, storage, db, state_manager, project_name, site_name, recorder_id):
     last_rowid = state_manager.get_last_rowid()
@@ -112,6 +195,9 @@ def run_sync_cycle(config, sqlite_reader, storage, db, state_manager, project_na
           "scientific_name": detection['sci_name'],
           "confidence": float(detection['confidence']),
           "timestamp": timestamp_iso,
+          "date_str": date_str,
+          "time_str": time_str,
+          "duration": 3.0,
           "audio_url": audio_url,
           "reviewed": False,
           "verified": False,

@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Cpu, Battery, HardDrive, Thermometer, MapPin, Clock, ShieldCheck, Activity } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
+const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const STATION_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
 export default function StationsPage() {
-  const [stations, setStations] = useState<any[]>([]);
+  const [recorders, setRecorders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     async function loadStations() {
@@ -17,29 +21,7 @@ export default function StationsPage() {
           .eq('project_type', 'Live')
           .order('created_at', { ascending: false });
 
-        const mapped = (recordersData || []).map((r: any) => {
-          const lastPingDate = r.last_ping ? new Date(r.last_ping) : null;
-          const minutesAgo = lastPingDate ? (Date.now() - lastPingDate.getTime()) / (1000 * 60) : 999;
-          const isOnline = minutesAgo <= 5;
-
-          return {
-            id: r.recorder_id,
-            station_name: r.site_name,
-            description: `Live Recorder Node ${r.recorder_id}`,
-            project_name: r.project_name || 'Bird_Lab_demo',
-            status: isOnline ? 'online' : 'offline',
-            last_seen: lastPingDate ? (minutesAgo < 1 ? 'Just now' : `${Math.round(minutesAgo)} min ago (${lastPingDate.toLocaleTimeString()})`) : 'Never',
-            battery_level: r.battery_level ?? 100,
-            cpu_temperature: r.cpu_temperature ? Math.round(r.cpu_temperature * 10) / 10 : 45.0,
-            disk_usage: r.storage_used_percent ? Math.round(r.storage_used_percent) : 0,
-            latitude: r.lat ? r.lat.toFixed(4) : '13.6288',
-            longitude: r.long ? r.long.toFixed(4) : '79.4192',
-            firmware_version: r.firmware_version || 'v2.4 (Live)',
-            birdnet_version: 'BirdNET-Pi'
-          };
-        });
-
-        setStations(mapped);
+        setRecorders(recordersData || []);
       } catch (err) {
         console.error('Failed to load stations:', err);
       } finally {
@@ -48,7 +30,35 @@ export default function StationsPage() {
     }
 
     loadStations();
+    const interval = setInterval(() => setNow(Date.now()), STATION_HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
+
+  const stations = useMemo(() => {
+    return recorders.map((r: any) => {
+      const lastPingAt = r.last_ping ? new Date(r.last_ping) : (r.created_at ? new Date(r.created_at) : null);
+      const isOnline = lastPingAt ? (now - lastPingAt.getTime()) < OFFLINE_THRESHOLD_MS : false;
+      const minutesAgo = lastPingAt ? (now - lastPingAt.getTime()) / (1000 * 60) : 999;
+
+      return {
+        id: r.recorder_id,
+        station_name: r.site_name,
+        description: `Live Recorder Node ${r.recorder_id}`,
+        project_name: r.project_name || 'Bird_Lab_demo',
+        status: isOnline ? 'online' : 'offline',
+        last_seen: isOnline ? 'Online now' : (lastPingAt ? `${Math.round(minutesAgo)} min ago (${lastPingAt.toLocaleTimeString()})` : 'Never'),
+        battery_level: r.battery_level ?? 100,
+        cpu_temperature: r.cpu_temperature ? Math.round(r.cpu_temperature * 10) / 10 : 45.0,
+        disk_usage: r.storage_used_percent ? Math.round(r.storage_used_percent) : 0,
+        latitude: r.lat ? r.lat.toFixed(4) : '13.6288',
+        longitude: r.long ? r.long.toFixed(4) : '79.4192',
+        firmware_version: r.firmware_version || 'v2.4 (Live)',
+        birdnet_version: 'BirdNET-Pi',
+        state: r.site_name,
+        country: r.project_name
+      };
+    });
+  }, [recorders, now]);
 
   return (
     <div className="space-y-6">

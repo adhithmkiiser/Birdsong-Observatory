@@ -32,7 +32,6 @@ export default function HomePage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [detectionsList, setDetectionsList] = useState<any[]>([]);
-  const [tstStats, setTstStats] = useState({ recorders: 25, species: 128, detections: 58679 });
 
   const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
 
@@ -46,7 +45,7 @@ export default function HomePage() {
       try {
         const [projRes, sitesRes] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('sites').select('id, project_id')
+          supabase.from('sites').select('id, project_id, name')
         ]);
         
         const projData = projRes.data || [];
@@ -55,17 +54,33 @@ export default function HomePage() {
         if (projRes.data) setProjects(projData);
         if (sitesRes.data) setSitesList(sitesData);
 
-        // Fetch stats via RPC for each non-TST project to avoid 1000 row truncation
         const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
         for (const p of projData) {
-          if (p.id === 'tst') continue;
+          if (p.project_type === 'Lantana') {
+            // Lantana projects keep their data in the dedicated lantana_* tables
+            const [{ data: lantanaSites }, { data: lantanaDets }] = await Promise.all([
+              supabase.from('lantana_sites').select('id').eq('project_id', p.id),
+              supabase.from('lantana_detections').select('common_name').eq('project_id', p.id)
+            ]);
+            statsMap[p.id] = {
+              recorders: (lantanaSites || []).length,
+              species: new Set((lantanaDets || []).map((d: any) => d.common_name)).size,
+              detections: (lantanaDets || []).length
+            };
+            continue;
+          }
           const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
-          const { data: rpcStats } = await supabase.rpc('get_detection_stats', { p_project_id: p.id, p_station_id: null });
-          const row = rpcStats?.[0];
+          const siteNames = sitesData
+            .filter((s: any) => s.project_id === p.id)
+            .map((s: any) => s.name)
+            .filter(Boolean);
+          const { data: detData, count: detCount } = p.project_type === 'PAM' && siteNames.length > 0
+            ? await supabase.from('pam_detections').select('common_name', { count: 'exact' }).in('project_name', siteNames)
+            : await supabase.from('live_detections').select('common_name', { count: 'exact' }).eq('project_name', p.name);
           statsMap[p.id] = {
             recorders: siteCount,
-            species: Number(row?.unique_species || 0),
-            detections: Number(row?.total_detections || 0)
+            species: new Set((detData || []).map((d: any) => d.common_name).filter((n: string) => n && n.toLowerCase() !== 'nocall')).size,
+            detections: detCount || 0
           };
         }
         setProjectStatsMap(statsMap);
@@ -76,34 +91,13 @@ export default function HomePage() {
     
     loadStats();
 
-    async function loadTstDbStats() {
-      try {
-        const [{ count: sitesCount }, { count: detCount }] = await Promise.all([
-          supabase.from('tst_sites').select('*', { count: 'exact', head: true }),
-          supabase.from('tst_detections').select('*', { count: 'exact', head: true })
-        ]);
-
-        setTstStats({
-          recorders: sitesCount && sitesCount > 0 ? sitesCount : 25,
-          species: 128,
-          detections: detCount && detCount > 0 ? detCount : 58679
-        });
-      } catch (err) {
-        console.error('Failed to load TST DB stats:', err);
-      }
-    }
-
-    loadTstDbStats();
-
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
-  const pamProjects = projects.filter(p => p.project_type === 'PAM');
+  const pamProjects = projects.filter(p => p.project_type === 'PAM' || p.project_type === 'Lantana');
   const liveProjects = projects.filter(p => p.project_type === 'Live');
-
-  const tstProjects = projects.filter(p => p.project_type === 'tst' || p.id === 'tst');
   
   // Helper to compute live project stats dynamically
   const getProjectStats = (projectId: string) => {
@@ -118,7 +112,7 @@ export default function HomePage() {
     };
   };
 
-  const otherPamProjects = projects.filter(p => p.project_type === 'PAM' && p.id !== 'tst');
+  const otherPamProjects = pamProjects;
 
   const workflowSteps = [
     {
@@ -249,62 +243,6 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Dynamically render primary TST Project Card only if it exists in the database */}
-            {tstProjects.map(tstProject => (
-              <div 
-                key={tstProject.id}
-                className="p-8 rounded-[30px] bg-slate-900 text-white border border-slate-800 shadow-xl space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-2xl relative overflow-hidden group"
-              >
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/15 transition-all"></div>
-                
-                <div className="space-y-4 relative z-10">
-                  <div className="flex items-center justify-between">
-                    <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 font-extrabold text-[10px] uppercase border border-emerald-500/30">
-                      {tstProject.organization}
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold">Standard Theme</span>
-                  </div>
-
-                  {(tstProject.image_url || '/Shola_Trust.png') && (
-                    <div className="w-full h-40 rounded-2xl overflow-hidden my-3 border border-slate-800 shadow-inner">
-                      <img src={tstProject.image_url || '/Shola_Trust.png'} alt={tstProject.name} className="w-full h-full object-cover" />
-                    </div>
-                  )}
-
-                  <h4 className="text-2xl font-black tracking-tight text-white leading-tight">
-                    {tstProject.name}
-                  </h4>
-
-                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                    {tstProject.description}
-                  </p>
-
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-3 gap-2 text-center text-xs font-mono text-slate-300">
-                    <div>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Recorders</span>
-                      <strong className="text-white font-black text-sm">{tstStats.recorders} Sites</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Species</span>
-                      <strong className="text-emerald-400 font-black text-sm">{tstStats.species} Species</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Detections</span>
-                      <strong className="text-white font-black text-sm">{tstStats.detections.toLocaleString()}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  href="/dashboard/tst"
-                  className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn relative z-10 shadow-lg shadow-emerald-500/10"
-                >
-                  <span>Open TST Research Dashboard</span>
-                  <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
-                </Link>
-              </div>
-            ))}
-
             {/* Custom PAM Projects dynamically created */}
             {otherPamProjects.map(p => (
               <div 
@@ -331,7 +269,7 @@ export default function HomePage() {
 
 
                   <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                    {p.description || 'Long-term acoustic soundscape monitoring assessing avian community shifts.'}
+                    {p.description}
                   </p>
 
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs font-mono">
@@ -351,10 +289,10 @@ export default function HomePage() {
                 </div>
 
                 <Link
-                  href={`/dashboard/common?project=${p.id}`}
+                  href={p.project_type === 'Lantana' ? `/dashboard/lantana?project=${p.id}` : `/dashboard/common?project=${p.id}`}
                   className="px-6 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn"
                 >
-                  <span>Open Common Format Dashboard</span>
+                  <span>{p.project_type === 'Lantana' ? 'Open Lantana Project Dashboard' : 'Open Common Format Dashboard'}</span>
                   <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
                 </Link>
               </div>

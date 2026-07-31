@@ -21,6 +21,16 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 
+function dedupeDetections(list: any[]) {
+  const seen = new Set<string>();
+  return list.filter((d) => {
+    const key = `${d.recorder_id || d.station_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const SatelliteMap = dynamic(() => import('@/components/map/SatelliteMap'), { ssr: false });
 
 export default function LiveDetectionsPage() {
@@ -44,15 +54,19 @@ export default function LiveDetectionsPage() {
   React.useEffect(() => {
     async function loadLiveData() {
       try {
-        const [{ data: projData }, { data: recordersData }, { data: detData }] = await Promise.all([
+        const [{ data: projData }, { data: recordersData }, { data: sitesData }, { data: detData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('sites').select('*').order('name'),
           supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
         ]);
 
+        const liveProjectIds = new Set((projData || []).map(p => p.id));
+        const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
         setLiveProjects(projData || []);
         setStationsList(recordersData || []);
-        setDetections(detData || []);
+        setSitesList(liveSites);
+        setDetections(dedupeDetections(detData || []));
       } catch (err) {
         console.error('Failed to load Live detections:', err);
       } finally {
@@ -69,7 +83,7 @@ export default function LiveDetectionsPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'live_detections' },
         (payload) => {
-          setDetections((prev) => [payload.new, ...prev]);
+          setDetections((prev) => dedupeDetections([payload.new, ...prev]));
         }
       )
       .subscribe();
@@ -84,10 +98,17 @@ export default function LiveDetectionsPage() {
     ? sitesList
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  // Filter recorders by selected site or project
+  const selectedProjectName = selectedProjectId === 'ALL'
+    ? 'ALL'
+    : liveProjects.find((p: any) => p.id === selectedProjectId)?.name;
+  const selectedSiteName = selectedSiteId === 'ALL'
+    ? 'ALL'
+    : availableSites.find((s: any) => s.id === selectedSiteId)?.name;
+
+  // Filter recorders by selected site or project using registry name fields
   const availableStations = selectedSiteId === 'ALL'
-    ? (selectedProjectId === 'ALL' ? stationsList : stationsList.filter(st => st.project_id === selectedProjectId))
-    : stationsList.filter(st => st.site_id === selectedSiteId);
+    ? (selectedProjectId === 'ALL' ? stationsList : stationsList.filter(st => st.project_name === selectedProjectName))
+    : stationsList.filter(st => st.site_name === selectedSiteName);
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -108,7 +129,7 @@ export default function LiveDetectionsPage() {
     
     let matchesStation = true;
     if (selectedStationId !== 'ALL') {
-      matchesStation = det.station_id === selectedStationId || det.station_name === selectedStationId;
+      matchesStation = det.recorder_id === selectedStationId || det.station_id === selectedStationId || det.station_name === selectedStationId;
     }
 
     const matchesConf = (det.confidence || 0) >= minConfidence;
@@ -181,8 +202,8 @@ export default function LiveDetectionsPage() {
             >
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
               {availableStations.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.station_name} ({st.id})
+                <option key={st.recorder_id || st.id} value={st.recorder_id || st.id}>
+                  {st.site_name || st.recorder_id} ({st.recorder_id})
                 </option>
               ))}
               {/* Also include any live hardware node id in detections */}
@@ -218,7 +239,7 @@ export default function LiveDetectionsPage() {
           >
             <option value="ALL">All Field Stations</option>
             {stationsList.map((s: any) => (
-              <option key={s.id} value={s.id}>{s.station_name} ({s.id})</option>
+              <option key={s.recorder_id || s.id} value={s.recorder_id || s.id}>{s.site_name || s.recorder_id} ({s.recorder_id})</option>
             ))}
           </select>
         </div>

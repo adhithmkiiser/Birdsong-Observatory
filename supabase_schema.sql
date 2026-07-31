@@ -29,10 +29,29 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME
 -- Disable RLS on users table for application queries
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 
--- 2. TST PAM OFFLINE SURVEY PROJECT TABLES
+-- 2. LANTANA PAM OFFLINE SURVEY PROJECT TABLES
 
--- a) TST Detections Stream
-CREATE TABLE IF NOT EXISTS public.tst_detections (
+-- Migration: rename the legacy tst_* tables to lantana_* if they still exist
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tst_detections')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'lantana_detections') THEN
+    ALTER TABLE public.tst_detections RENAME TO lantana_detections;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tst_sites')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'lantana_sites') THEN
+    ALTER TABLE public.tst_sites RENAME TO lantana_sites;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tst_species_ecology')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'lantana_species_ecology') THEN
+    ALTER TABLE public.tst_species_ecology RENAME TO lantana_species_ecology;
+  END IF;
+END $$;
+
+-- a) Lantana Detections Stream
+CREATE TABLE IF NOT EXISTS public.lantana_detections (
   id BIGSERIAL PRIMARY KEY,
   site_name TEXT NOT NULL,
   date DATE,
@@ -45,12 +64,16 @@ CREATE TABLE IF NOT EXISTS public.tst_detections (
   file_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.tst_detections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_detections DISABLE ROW LEVEL SECURITY;
 
--- b) TST Site Metadata & Recording Telemetry
-CREATE TABLE IF NOT EXISTS public.tst_sites (
+-- b) Lantana Site Metadata & Recording Telemetry
+CREATE TABLE IF NOT EXISTS public.lantana_sites (
   id TEXT PRIMARY KEY,
   site_name TEXT NOT NULL,
+  recorder_id TEXT,
+  elevation TEXT,
+  habitat_type TEXT,
+  expected_files INTEGER DEFAULT 0,
   lat DOUBLE PRECISION,
   long DOUBLE PRECISION,
   number_of_files INTEGER DEFAULT 0,
@@ -58,10 +81,28 @@ CREATE TABLE IF NOT EXISTS public.tst_sites (
   total_size_bytes BIGINT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.tst_sites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS recorder_id TEXT;
+ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS project_id TEXT;
+ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS project_name TEXT;
+ALTER TABLE public.lantana_sites DISABLE ROW LEVEL SECURITY;
 
--- c) Species Ecology Matrix
-CREATE TABLE IF NOT EXISTS public.tst_species_ecology (
+-- c) Common PAM project sites (kept separate from Lantana sites)
+CREATE TABLE IF NOT EXISTS public.sites (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  elevation TEXT,
+  status TEXT DEFAULT 'Active',
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  habitat_type TEXT,
+  expected_files INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.sites DISABLE ROW LEVEL SECURITY;
+
+-- d) Species Ecology Matrix
+CREATE TABLE IF NOT EXISTS public.lantana_species_ecology (
   scientific_name TEXT PRIMARY KEY,
   common_name TEXT NOT NULL,
   iucn_status TEXT DEFAULT 'LC',
@@ -73,7 +114,8 @@ CREATE TABLE IF NOT EXISTS public.tst_species_ecology (
   image_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.tst_species_ecology DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_species_ecology ADD COLUMN IF NOT EXISTS indicator_group TEXT;
+ALTER TABLE public.lantana_species_ecology DISABLE ROW LEVEL SECURITY;
 
 -- 3. COMMON PAM OFFLINE SURVEY DETECTIONS TABLE
 CREATE TABLE IF NOT EXISTS public.pam_detections (
@@ -116,6 +158,20 @@ CREATE TABLE IF NOT EXISTS public.live_detections (
 );
 ALTER TABLE public.live_detections DISABLE ROW LEVEL SECURITY;
 
+-- 4b) Live Recorder Sites (kept separate from PAM sites)
+CREATE TABLE IF NOT EXISTS public.live_sites (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES public.projects(id),
+  name TEXT NOT NULL,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  elevation TEXT,
+  habitat_type TEXT,
+  status TEXT DEFAULT 'Active',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.live_sites DISABLE ROW LEVEL SECURITY;
+
 -- 5. MASTER SCOPE REGISTRY TABLE (Connecting PAM vs Live Projects, Sites, and Recorders)
 CREATE TABLE IF NOT EXISTS public.recorders_registry (
   id TEXT PRIMARY KEY,
@@ -137,9 +193,10 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
 ALTER TABLE public.recorders_registry ADD COLUMN IF NOT EXISTS elevation TEXT;
 ALTER TABLE public.recorders_registry DISABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS project_name TEXT DEFAULT 'tst';
-ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS recorder_name TEXT;
-ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS recorder_id TEXT;
+ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS project_name TEXT;
+ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS project_id TEXT;
+ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS recorder_name TEXT;
+ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS recorder_id TEXT;
 
 -- 6. PROJECTS DIRECTORY TABLE (PAM & Live Projects Registry)
 CREATE TABLE IF NOT EXISTS public.projects (
@@ -158,3 +215,6 @@ CREATE TABLE IF NOT EXISTS public.projects (
 );
 ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_project_type_check;
 ALTER TABLE public.projects DISABLE ROW LEVEL SECURITY;
+
+-- Migration: move existing projects off the legacy 'TST' scope onto 'Lantana'
+UPDATE public.projects SET project_type = 'Lantana' WHERE project_type = 'TST';

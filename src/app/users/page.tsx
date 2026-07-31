@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, 
   UserPlus, 
@@ -38,6 +38,42 @@ export default function UserManagementPage() {
   const [formRole, setFormRole] = useState<UserRole>('Project Manager');
   const [formOrg, setFormOrg] = useState('IISER Tirupati Bird Lab');
   const [formProjectType, setFormProjectType] = useState<'PAM' | 'Live' | 'Both'>('Both');
+  const [formAssignedProjects, setFormAssignedProjects] = useState<string[]>([]);
+  const [formAssignedSites, setFormAssignedSites] = useState<string[]>([]);
+
+  const [projects, setProjects] = useState<any[]>([]);
+  const [sites, setSites] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadOptions() {
+      const [{ data: p }, { data: s }] = await Promise.all([
+        supabase.from('projects').select('id, name, project_type'),
+        supabase.from('sites').select('id, name, project_id')
+      ]);
+      if (p) setProjects(p);
+      if (s) setSites(s);
+    }
+    loadOptions();
+  }, []);
+
+  const filteredProjects = useMemo(() => {
+    if (formRole === 'Admin') return projects;
+    return projects.filter(p => {
+      if (formProjectType === 'Both') return true;
+      if (formProjectType === 'PAM') return p.project_type === 'PAM' || p.project_type === 'Lantana';
+      if (formProjectType === 'Live') return p.project_type === 'Live';
+      return true;
+    });
+  }, [projects, formRole, formProjectType]);
+
+  const filteredSites = useMemo(() => {
+    if (formRole === 'Site Manager') {
+      if (formAssignedProjects.length === 0) return [];
+      return sites.filter(s => formAssignedProjects.includes(s.project_id));
+    }
+    if (formRole === 'Admin') return sites;
+    return [];
+  }, [sites, formRole, formAssignedProjects]);
 
   const showNotification = (msg: string) => {
     setSuccessMsg(msg);
@@ -51,6 +87,8 @@ export default function UserManagementPage() {
     setFormRole(user.role);
     setFormOrg(user.organization || 'IISER Tirupati Bird Lab');
     setFormProjectType(user.assignedProjectType || 'Both');
+    setFormAssignedProjects(user.assignedProjects || []);
+    setFormAssignedSites(user.assignedSites || []);
   };
 
   const handleSaveUser = (e: React.FormEvent) => {
@@ -62,7 +100,9 @@ export default function UserManagementPage() {
       email: formEmail,
       role: formRole,
       organization: formOrg,
-      assignedProjectType: formProjectType
+      assignedProjectType: formProjectType,
+      assignedProjects: formAssignedProjects,
+      assignedSites: formAssignedSites
     });
 
     setEditingUser(null);
@@ -85,6 +125,8 @@ export default function UserManagementPage() {
       role: formRole,
       organization: formOrg,
       assignedProjectType: formProjectType,
+      assignedProjects: formAssignedProjects,
+      assignedSites: formAssignedSites,
       isOneTimePassword: true,
       mustChangePassword: true,
       status: 'active',
@@ -156,6 +198,8 @@ export default function UserManagementPage() {
             setFormRole('Project Manager');
             setFormOrg('IISER Tirupati Bird Lab');
             setFormProjectType('Both');
+            setFormAssignedProjects([]);
+            setFormAssignedSites([]);
             setIsCreateOpen(true);
           }}
           className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 self-start md:self-auto"
@@ -255,7 +299,7 @@ export default function UserManagementPage() {
       {/* Edit User & Permissions Modal */}
       {editingUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-[28px] border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-[28px] border border-slate-200 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5 animate-in fade-in zoom-in duration-150">
             <h3 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
               <Edit2 className="w-4 h-4 text-indigo-600" /> Edit User & Permissions ({editingUser.name})
             </h3>
@@ -311,7 +355,7 @@ export default function UserManagementPage() {
                 <label className="font-extrabold text-slate-700 block mb-1">Assigned Project Scope Permissions</label>
                 <select
                   value={formProjectType}
-                  onChange={(e) => setFormProjectType(e.target.value as any)}
+                  onChange={(e) => { setFormProjectType(e.target.value as any); setFormAssignedProjects([]); setFormAssignedSites([]); }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
                 >
                   <option value="Both">Both (PAM Data & Live Recorder Projects)</option>
@@ -319,6 +363,55 @@ export default function UserManagementPage() {
                   <option value="Live">Live Only (Realtime Streaming Nodes)</option>
                 </select>
               </div>
+
+              {formRole !== 'Public' && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Assigned Projects</label>
+                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredProjects.length === 0 && <div className="text-xs text-slate-400 p-1">No projects found.</div>}
+                  {filteredProjects.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        value={p.id}
+                        checked={formAssignedProjects.includes(p.id)}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setFormAssignedProjects(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-[10px] text-slate-400 ml-auto shrink-0">{p.project_type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+              {(formRole === 'Site Manager' || formRole === 'Admin') && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
+                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredSites.length === 0 && <div className="text-xs text-slate-400 p-1">No sites found.</div>}
+                  {filteredSites.map(s => (
+                    <label key={s.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        value={s.id}
+                        checked={formAssignedSites.includes(s.id)}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setFormAssignedSites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="truncate">{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button
@@ -343,7 +436,7 @@ export default function UserManagementPage() {
       {/* Create User Modal */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-[28px] border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-[28px] border border-slate-200 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5 animate-in fade-in zoom-in duration-150">
             <h3 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
               <UserPlus className="w-4 h-4 text-emerald-600" /> Create New User Account
             </h3>
@@ -425,7 +518,7 @@ export default function UserManagementPage() {
                 <label className="font-extrabold text-slate-700 block mb-1">Assigned Project Scope Permissions</label>
                 <select
                   value={formProjectType}
-                  onChange={(e) => setFormProjectType(e.target.value as any)}
+                  onChange={(e) => { setFormProjectType(e.target.value as any); setFormAssignedProjects([]); setFormAssignedSites([]); }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900"
                 >
                   <option value="Both">Both (PAM Data &amp; Live Recorder Projects)</option>
@@ -433,6 +526,55 @@ export default function UserManagementPage() {
                   <option value="Live">Live Only (Realtime Streaming Nodes)</option>
                 </select>
               </div>
+
+              {formRole !== 'Public' && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Assigned Projects</label>
+                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredProjects.length === 0 && <div className="text-xs text-slate-400 p-1">No projects found.</div>}
+                  {filteredProjects.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        value={p.id}
+                        checked={formAssignedProjects.includes(p.id)}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setFormAssignedProjects(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-[10px] text-slate-400 ml-auto shrink-0">{p.project_type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+              {(formRole === 'Site Manager' || formRole === 'Admin') && (
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
+                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredSites.length === 0 && <div className="text-xs text-slate-400 p-1">No sites found.</div>}
+                  {filteredSites.map(s => (
+                    <label key={s.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        value={s.id}
+                        checked={formAssignedSites.includes(s.id)}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setFormAssignedSites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="truncate">{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button

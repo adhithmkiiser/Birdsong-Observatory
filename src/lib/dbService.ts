@@ -95,7 +95,7 @@ export async function registerSiteNode(site: Partial<Station>) {
 }
 
 // ============================================================
-// 3. TST & PAM DATASETS (HISTORICAL CSV & SPECIES MATRIX)
+// 3. LANTANA & PAM DATASETS (HISTORICAL CSV & SPECIES MATRIX)
 // ============================================================
 
 export async function uploadPamBatchCsv(projectId: string, siteId: string, filename: string, recordCount: number) {

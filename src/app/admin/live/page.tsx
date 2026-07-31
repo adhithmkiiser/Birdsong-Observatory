@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Radio, 
   Cpu, 
@@ -76,8 +76,39 @@ export default function LiveAdminPage() {
   const [formOrg, setFormOrg] = useState('IISER Tirupati Bird Lab');
   const [formProjectType, setFormProjectType] = useState<'PAM' | 'Live' | 'Both'>('Live');
 
+  const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+  const STATION_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
   // 1. Live Pi Field Nodes Status & Queue Telemetry (starts empty — populated by real connected nodes)
-  const [nodesList, setNodesList] = useState<LiveNodeItem[]>([]);
+  const [recorders, setRecorders] = useState<any[]>([]);
+  const [now, setNow] = useState(Date.now());
+
+  const nodesList = useMemo<LiveNodeItem[]>(() => {
+    return recorders.map((r: any) => {
+      const lastPingAt = r.last_ping ? new Date(r.last_ping) : null;
+      const isStale = !lastPingAt || (now - lastPingAt.getTime()) >= OFFLINE_THRESHOLD_MS;
+      let status: 'online' | 'offline' | 'syncing' = isStale ? 'offline' : (r.status?.toLowerCase() || 'online');
+      return {
+        id: r.recorder_id,
+        stationName: r.site_name,
+        projectName: r.project_name || 'Bird_Lab_demo',
+        ipAddress: '192.168.1.100',
+        lastUploadedId: 0,
+        pendingQueue: 0,
+        lastSyncTime: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
+        status,
+        sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
+        audioDir: '/home/pi/BirdNET-Pi/clips/'
+      };
+    });
+  }, [recorders, now]);
+
+  // Detect recorder IDs that appear under multiple projects/sites
+  const duplicateRecorderIds = useMemo(() => {
+    const counts: Record<string, number> = {};
+    nodesList.forEach(n => { counts[n.id] = (counts[n.id] || 0) + 1; });
+    return Object.keys(counts).filter(id => counts[id] > 1);
+  }, [nodesList]);
 
   // 2. Python Daemon Script Config Generator State
   const [genStationName, setGenStationName] = useState('Inside BirdLab');
@@ -86,6 +117,8 @@ export default function LiveAdminPage() {
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
   const [genInterval, setGenInterval] = useState('10');
+  const [genLatitude, setGenLatitude] = useState('13.6288');
+  const [genLongitude, setGenLongitude] = useState('79.4192');
 
   // 3. Projects Management State (starts empty — add real projects via the form)
   const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
@@ -109,24 +142,18 @@ export default function LiveAdminPage() {
         }
 
         if (recordersData) {
-          setNodesList(recordersData.map((r: any) => ({
-            id: r.recorder_id,
-            stationName: r.site_name,
-            projectName: r.project_name || 'Bird_Lab_demo',
-            ipAddress: '192.168.1.100',
-            lastUploadedId: 0,
-            pendingQueue: 0,
-            lastSyncTime: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
-            status: (r.status?.toLowerCase() || 'online') as any,
-            sqlitePath: '/home/pi/BirdNET-Pi/scripts/birds.db',
-            audioDir: '/home/pi/BirdNET-Pi/clips/'
-          })));
+          setRecorders(recordersData);
         }
       } catch (e) {
         console.error('Failed to load Live admin data from recorders_registry:', e);
       }
     }
     loadLiveAdminData();
+    const interval = setInterval(() => {
+      setNow(Date.now());
+      loadLiveAdminData();
+    }, STATION_HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   // Forms
@@ -148,17 +175,20 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi
-ExecStart=/usr/bin/python3 /home/pi/birdnet_sync.py
+WorkingDirectory=/home/livedetector
+ExecStart=/usr/bin/python3 /home/livedetector/birdnet-sync/main.py
 Restart=always
 RestartSec=10
 Environment="SUPABASE_URL=${genSupabaseUrl}"
-Environment="SUPABASE_SERVICE_ROLE_KEY=${genSupabaseKey}"
+Environment="SUPABASE_KEY=${genSupabaseKey}"
+Environment="STATION_ID=${genRecorderId}"
 Environment="STATION_NAME=${genStationName}"
 Environment="PROJECT_NAME=${genProjectName}"
-Environment="BIRDNET_DB_PATH=/home/pi/BirdNET-Pi/scripts/birds.db"
-Environment="AUDIO_DIR=/home/pi/BirdNET-Pi/clips/"
-Environment="SYNC_INTERVAL_SECONDS=${genInterval}"
+Environment="SQLITE_DB=/home/livedetector/BirdNET-Pi/scripts/birds.db"
+Environment="AUDIO_ROOT=/home/livedetector/BirdSongs/Extracted/By_Date"
+Environment="SYNC_INTERVAL=${genInterval}"
+Environment="LATITUDE=${genLatitude}"
+Environment="LONGITUDE=${genLongitude}"
 
 [Install]
 WantedBy=multi-user.target`;
@@ -171,8 +201,42 @@ WantedBy=multi-user.target`;
   };
 
   const handleTriggerSyncNow = (nodeId: string) => {
-    setNodesList(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'syncing', lastSyncTime: 'Just now' } : n));
+    setRecorders(prev => prev.map(n => n.recorder_id === nodeId ? { ...n, status: 'syncing', last_ping: new Date().toISOString() } : n));
     showNotification(`Sync command dispatched to Raspberry Pi field node ${nodeId}`);
+  };
+
+  const handleDeleteNode = async (node: LiveNodeItem) => {
+    if (!confirm(`Delete recorder "${node.id}" from ${node.projectName}? This will also delete all of its live detections and audio files.`)) return;
+    try {
+      const { data: detections } = await supabase.from('live_detections')
+        .select('audio_url')
+        .eq('recorder_id', node.id)
+        .eq('project_name', node.projectName);
+
+      const audioPaths = ((detections || []) as any[])
+        .map(d => d.audio_url)
+        .filter(Boolean)
+        .map((url: string) => {
+          try {
+            return new URL(url).pathname.replace('/storage/v1/object/public/bird-audio/', '');
+          } catch {
+            return '';
+          }
+        })
+        .filter(Boolean);
+
+      if (audioPaths.length > 0) {
+        const { error: storageError } = await supabase.storage.from('bird-audio').remove(audioPaths);
+        if (storageError) console.error('Storage delete error:', storageError);
+      }
+
+      await supabase.from('live_detections').delete().eq('recorder_id', node.id).eq('project_name', node.projectName);
+      await supabase.from('recorders_registry').delete().eq('recorder_id', node.id).eq('project_name', node.projectName);
+      setRecorders(prev => prev.filter(r => r.recorder_id !== node.id));
+      showNotification(`Recorder ${node.id} and its data were deleted.`);
+    } catch (err: any) {
+      alert('Failed to delete recorder: ' + err.message);
+    }
   };
 
   const handleCreateLiveProject = async (e: React.FormEvent) => {
@@ -348,27 +412,6 @@ WantedBy=multi-user.target`;
           <Terminal className="w-4 h-4" /> 2. Pi Python Sync Daemon Config Generator
         </button>
 
-        <button
-          onClick={() => setActiveTab('projects')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
-            activeTab === 'projects' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
-          }`}
-        >
-          <FolderPlus className="w-4 h-4" /> 3. Live Projects Directory
-        </button>
-
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
-            activeTab === 'users' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
-          }`}
-        >
-          <Users className="w-4 h-4" /> 4. Live System Users & Technicians
-        </button>
       </div>
 
       {successMsg && (
@@ -381,6 +424,17 @@ WantedBy=multi-user.target`;
       {/* TAB 1: Pi Field Nodes & Sync Telemetry */}
       {activeTab === 'nodes' && (
         <div className="space-y-6">
+          {duplicateRecorderIds.length > 0 && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>Duplicate Recorder IDs detected: {duplicateRecorderIds.join(', ')}</span>
+              </div>
+              <p className="text-[11px] text-rose-600 font-medium">
+                Two or more Raspberry Pi nodes are using the same RECORDER_ID. Each field recorder must have a unique ID.
+              </p>
+            </div>
+          )}
           <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
@@ -420,12 +474,21 @@ WantedBy=multi-user.target`;
                         }`}>
                           {node.status === 'online' ? '● SYNC DAEMON ACTIVE' : node.status === 'syncing' ? '⚡ UPLOADING DELTA' : 'OFFLINE'}
                         </span>
-                        <button
-                          onClick={() => handleTriggerSyncNow(node.id)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] transition flex items-center gap-1.5"
-                        >
-                          <RefreshCw className="w-3 h-3" /> Sync Now
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleTriggerSyncNow(node.id)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] transition flex items-center gap-1.5"
+                          >
+                            <RefreshCw className="w-3 h-3" /> Sync Now
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteNode(node)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 font-extrabold text-[11px] transition flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 font-mono text-[11px]">
@@ -530,6 +593,30 @@ WantedBy=multi-user.target`;
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+              <div>
+                <label className="font-extrabold text-indigo-400 block mb-1">Latitude (LATITUDE)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={genLatitude}
+                  onChange={(e) => setGenLatitude(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-indigo-400 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-indigo-400 block mb-1">Longitude (LONGITUDE)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={genLongitude}
+                  onChange={(e) => setGenLongitude(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-indigo-400 font-bold"
+                />
+              </div>
+            </div>
+
             {/* Step-by-Step Workflow Guide */}
             <div className="space-y-6 pt-4 border-t border-slate-800">
               
@@ -579,7 +666,7 @@ WantedBy=multi-user.target`;
                   <span className="font-extrabold text-amber-400 text-sm">Step 3: Edit the Configuration File via Nano</span>
                   <button
                     onClick={() => {
-                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nPROJECT_NAME="${genProjectName}"\nSTATION_NAME="${genStationName}"\nSTATION_ID="${genRecorderId}"\nSYNC_INTERVAL=${genInterval}`;
+                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nPROJECT_NAME="${genProjectName}"\nSTATION_NAME="${genStationName}"\nSTATION_ID="${genRecorderId}"\nLATITUDE=${genLatitude}\nLONGITUDE=${genLongitude}\nSQLITE_DB="/home/livedetector/BirdNET-Pi/scripts/birds.db"\nAUDIO_ROOT="/home/livedetector/BirdSongs/Extracted/By_Date"\nSYNC_INTERVAL=${genInterval}`;
                       navigator.clipboard.writeText(envText);
                       showNotification('.env block copied!');
                     }}
@@ -599,6 +686,10 @@ SUPABASE_KEY="${genSupabaseKey}"
 PROJECT_NAME="${genProjectName}"
 STATION_NAME="${genStationName}"
 STATION_ID="${genRecorderId}"
+LATITUDE=${genLatitude}
+LONGITUDE=${genLongitude}
+SQLITE_DB="/home/livedetector/BirdNET-Pi/scripts/birds.db"
+AUDIO_ROOT="/home/livedetector/BirdSongs/Extracted/By_Date"
 SYNC_INTERVAL=${genInterval}`}
                 </pre>
               </div>

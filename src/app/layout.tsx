@@ -8,26 +8,36 @@ import { Header } from '@/components/layout/Header';
 import { RoleProvider, useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
 
+const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const STATION_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { currentRole } = useRole();
-  const [onlineStations, setOnlineStations] = React.useState(0);
+  const [recorders, setRecorders] = React.useState<any[]>([]);
+  const [now, setNow] = React.useState(Date.now());
 
   React.useEffect(() => {
-    supabase.from('recorders_registry')
-      .select('last_ping')
-      .eq('project_type', 'Live')
-      .then(({ data }) => {
-        if (data) {
-          const activeCount = data.filter((r: any) => {
-            if (!r.last_ping) return false;
-            const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / (1000 * 60);
-            return diffMins <= 5;
-          }).length;
-          setOnlineStations(activeCount);
-        }
-      });
+    async function loadRecorders() {
+      const { data } = await supabase.from('recorders_registry')
+        .select('status, last_ping')
+        .eq('project_type', 'Live');
+      if (data) setRecorders(data);
+    }
+    loadRecorders();
+    const interval = setInterval(() => {
+      setNow(Date.now());
+      loadRecorders();
+    }, STATION_HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
+
+  const onlineStations = React.useMemo(() => {
+    return recorders.filter((r: any) => {
+      if (!r.last_ping) return false;
+      return Date.now() - new Date(r.last_ping).getTime() < OFFLINE_THRESHOLD_MS;
+    }).length;
+  }, [recorders, now]);
 
   // Determine if current route is part of the Dashboard section where Sidebar should appear
   const dashboardRoutes = [
@@ -45,8 +55,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     '/users'
   ];
 
-  const isTstOrPamDashboard = pathname.startsWith('/dashboard/tst') || pathname.startsWith('/dashboard/common');
-  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isTstOrPamDashboard;
+  const isLantanaOrPamDashboard = pathname.startsWith('/dashboard/lantana') || pathname.startsWith('/dashboard/common');
+  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isLantanaOrPamDashboard;
 
   return (
     <div className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">

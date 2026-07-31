@@ -133,11 +133,11 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   EXACT TST DASHBOARD CSS — copied from D:\IISER-T\Dashboard\Code\src\index.css
-   Only applies inside the TST dashboard page (scoped via ancestor classes)
+   LANTANA DASHBOARD CSS
+   Only applies inside the Lantana dashboard page (scoped via ancestor classes)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Color variables used by TST dashboard components */
+/* Color variables used by Lantana dashboard components */
 :root {
   --color-lc: #16a34a;
   --color-lc-light: #dcfce7;

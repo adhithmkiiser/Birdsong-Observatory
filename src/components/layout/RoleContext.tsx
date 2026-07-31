@@ -19,6 +19,18 @@ interface RoleContextType {
   updateVisibilitySetting: (key: keyof PublicVisibilitySettings, val: boolean) => void;
 }
 
+const defaultPublicUser: User = {
+  id: 'usr-public',
+  name: 'Public Guest',
+  email: 'public@birdlab.in',
+  password: '',
+  role: 'Public',
+  organization: 'Public Network',
+  status: 'active',
+  createdAt: '2026-01-15',
+  lastLogin: 'Never'
+};
+
 const defaultVisibilitySettings: PublicVisibilitySettings = {
   showUnverifiedDetections: true,
   allowAudioDownloads: true,
@@ -48,6 +60,8 @@ const mapDbUserToUser = (dbUser: any): User => ({
   role: dbUser.role as any,
   organization: dbUser.organization || 'IISER Tirupati Bird Lab',
   projectScopePermissions: dbUser.project_scope_permissions || [],
+  assignedProjects: dbUser.assigned_projects || [],
+  assignedSites: dbUser.assigned_sites || [],
   isOneTimePassword: dbUser.is_one_time_password || false,
   mustChangePassword: dbUser.must_change_password || false,
   status: dbUser.status as any || 'active',
@@ -63,6 +77,8 @@ const mapUserToDbUser = (user: User) => ({
   role: user.role,
   organization: user.organization,
   project_scope_permissions: user.projectScopePermissions || [],
+  assigned_projects: user.assignedProjects || [],
+  assigned_sites: user.assignedSites || [],
   is_one_time_password: user.isOneTimePassword || false,
   must_change_password: user.mustChangePassword || false,
   status: user.status || 'active',
@@ -70,9 +86,9 @@ const mapUserToDbUser = (user: User) => ({
 });
 
 const RoleContext = createContext<RoleContextType>({
-  currentRole: 'Admin',
+  currentRole: 'Public',
   setCurrentRole: () => {},
-  currentUser: defaultAdminUser,
+  currentUser: defaultPublicUser,
   setCurrentUser: () => {},
   usersList: [defaultAdminUser],
   loginUser: () => ({ success: false, message: '' }),
@@ -86,8 +102,8 @@ const RoleContext = createContext<RoleContextType>({
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [usersList, setUsersList] = useState<User[]>([defaultAdminUser]);
-  const [currentUser, setCurrentUser] = useState<User>(defaultAdminUser);
-  const [currentRole, setCurrentRoleState] = useState<UserRole>('Admin');
+  const [currentUser, setCurrentUser] = useState<User>(defaultPublicUser);
+  const [currentRole, setCurrentRoleState] = useState<UserRole>('Public');
   const [visibilitySettings, setVisibilitySettings] = useState<PublicVisibilitySettings>(defaultVisibilitySettings);
 
   useEffect(() => {
@@ -98,9 +114,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
           const mappedUsers = data.map(mapDbUserToUser);
           setUsersList(mappedUsers);
           // Sync current session role with loaded db user if match exists
-          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase()) 
-            || mappedUsers.find(u => u.role === 'Admin')
-            || mappedUsers[0];
+          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
           if (match) {
             setCurrentUser(match);
             setCurrentRoleState(match.role);
@@ -184,6 +198,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     if (updates.role !== undefined) dbUpdates.role = updates.role;
     if (updates.organization !== undefined) dbUpdates.organization = updates.organization;
     if (updates.assignedProjectType !== undefined) dbUpdates.assigned_project_type = updates.assignedProjectType;
+    if (updates.assignedProjects !== undefined) dbUpdates.assigned_projects = updates.assignedProjects;
+    if (updates.assignedSites !== undefined) dbUpdates.assigned_sites = updates.assignedSites;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.lastLogin !== undefined && updates.lastLogin !== 'Never') {
       dbUpdates.last_login = updates.lastLogin;

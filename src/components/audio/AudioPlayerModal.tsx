@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Play, Pause, Download, Check, AlertTriangle, RotateCcw, Volume2, Shield } from 'lucide-react';
 import { Detection, UserRole } from '@/types/database';
 import { formatPercent } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { useRole } from '@/components/layout/RoleContext';
+import { AudioSpectrogram } from './AudioSpectrogram';
 
 interface AudioPlayerModalProps {
   detection: Detection | null;
@@ -13,8 +16,31 @@ interface AudioPlayerModalProps {
 }
 
 export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: AudioPlayerModalProps) {
+  const { currentUser } = useRole();
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
+  const [siteMap, setSiteMap] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadSites() {
+      const { data } = await supabase.from('sites').select('id, name, recorder_id, project_id');
+      if (data) setSiteMap(data);
+    }
+    loadSites();
+  }, []);
+
+  const canVerify = useMemo(() => {
+    if (currentRole !== 'Site Manager') return true;
+    if (!currentUser?.assignedSites?.length || !detection) return false;
+    const allowedSiteIds = siteMap
+      .filter(s =>
+        s.id === detection.station_id ||
+        s.recorder_id === detection.station_id ||
+        s.name === detection.station_name
+      )
+      .map(s => s.id);
+    return currentUser.assignedSites.some((id: string) => allowedSiteIds.includes(id));
+  }, [currentRole, currentUser, detection, siteMap]);
 
   // Real bioacoustic species call audio clips dictionary
   const REAL_SPECIES_AUDIO: Record<string, string> = {
@@ -24,43 +50,17 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
     'White-cheeked Barbet': 'https://upload.wikimedia.org/wikipedia/commons/b/b8/Psilopogon_viridis.ogg'
   };
 
+  const bucketUrl = detection?.common_name
+    ? `https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/bird-audio/${detection.common_name.replace(/ /g, '_').replace(/'/g, '').replace(/-/g, '_')}.wav`
+    : null;
+
+  const targetUrl = detection?.audio_url ||
+                    bucketUrl ||
+                    (detection?.common_name ? REAL_SPECIES_AUDIO[detection.common_name] : null) ||
+                    'https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3';
+
   const handlePlayToggle = () => {
-    if (isPlaying) {
-      setIsPlaying(false);
-      return;
-    }
-
-    setIsPlaying(true);
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 10;
-      setAudioProgress(current);
-      if (current >= 100) {
-        clearInterval(interval);
-        setIsPlaying(false);
-        setAudioProgress(0);
-      }
-    }, 300);
-
-    const bucketUrl = detection?.common_name
-      ? `https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/bird-audio/${detection.common_name.replace(/ /g, '_').replace(/'/g, '').replace(/-/g, '_')}.wav`
-      : null;
-
-    const targetUrl = detection?.audio_url || 
-                      bucketUrl ||
-                      (detection?.common_name ? REAL_SPECIES_AUDIO[detection.common_name] : null) || 
-                      'https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3';
-
-    try {
-      const audio = new Audio(targetUrl);
-      audio.play().catch((err) => {
-        console.log('Fallback to secondary audio stream:', err);
-        const fallback = new Audio('https://cdn.freesound.org/previews/516/516893_10825376-lq.mp3');
-        fallback.play().catch(() => {});
-      });
-    } catch (e) {
-      console.log('Audio playback error:', e);
-    }
+    setIsPlaying(prev => !prev);
   };
 
   if (!detection) return null;
@@ -89,55 +89,11 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
 
         {/* Body Content */}
         <div className="p-6 space-y-5">
-          {/* Bioacoustic Spectrogram Canvas Visualizer */}
-          <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-[#060b19] p-4 text-white shadow-inner group">
-            {detection.spectrogram_url && detection.spectrogram_url.startsWith('http') ? (
-              <img
-                src={detection.spectrogram_url}
-                alt="Spectrogram"
-                className="w-full h-44 object-cover opacity-90 group-hover:opacity-100 transition rounded-xl"
-              />
-            ) : (
-              <div className="w-full h-44 rounded-xl bg-gradient-to-b from-[#020617] via-[#0f172a] to-[#022c22] border border-slate-800 p-4 relative flex flex-col justify-between overflow-hidden">
-                {/* Simulated Frequency Waves Spectrogram Overlay */}
-                <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px]"></div>
-                
-                {/* Frequency Grid Lines */}
-                <div className="relative z-10 flex justify-between text-[10px] font-mono text-emerald-400 font-bold border-b border-emerald-900/60 pb-1">
-                  <span>12 kHz ── Upper Harmonics</span>
-                  <span>6 kHz ── Core Call Frequency</span>
-                  <span>0 kHz</span>
-                </div>
+          {/* Live Audio Spectrogram */}
+          <AudioSpectrogram audioUrl={targetUrl || ''} isPlaying={isPlaying} />
 
-                {/* Spectrogram Acoustic Energy Heat Map Simulation */}
-                <div className="relative z-10 my-auto flex items-center justify-around h-20 gap-1">
-                  {Array.from({ length: 32 }).map((_, idx) => {
-                    const h = Math.sin(idx * 0.5) * 40 + 50;
-                    return (
-                      <div
-                        key={idx}
-                        style={{ height: `${h}%` }}
-                        className={`w-2 rounded-full transition-all duration-300 ${
-                          idx > 10 && idx < 22 
-                            ? 'bg-gradient-to-t from-amber-500 via-emerald-400 to-cyan-300 shadow-[0_0_8px_#10b981]' 
-                            : 'bg-emerald-900/40'
-                        }`}
-                      ></div>
-                    );
-                  })}
-                </div>
-
-                <div className="relative z-10 flex justify-between text-[10px] font-mono text-slate-400 border-t border-slate-800 pt-1">
-                  <span>0.0s</span>
-                  <span>1.5s (kHz 0-12)</span>
-                  <span>3.0s</span>
-                </div>
-              </div>
-            )}
-
-            <div className="absolute top-6 right-6 bg-slate-900/90 backdrop-blur px-3 py-1 rounded-xl border border-emerald-500/30 text-xs font-black text-emerald-400 flex items-center gap-1.5 shadow-sm">
-              <span>Confidence: {formatPercent(detection.confidence)}</span>
-            </div>
+          <div className="absolute top-6 right-6 bg-slate-900/90 backdrop-blur px-3 py-1 rounded-xl border border-emerald-500/30 text-xs font-black text-emerald-400 flex items-center gap-1.5 shadow-sm">
+            <span>Confidence: {formatPercent(detection.confidence)}</span>
           </div>
 
           {/* Audio Controls Bar */}
@@ -173,7 +129,7 @@ export function AudioPlayerModal({ detection, onClose, currentRole, onVerify }: 
           </div>
 
           {/* Verification Panel */}
-          {currentRole !== 'Public' && (
+          {currentRole !== 'Public' && canVerify && (
             <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-indigo-900 flex items-center gap-1.5">

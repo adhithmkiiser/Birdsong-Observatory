@@ -10,10 +10,8 @@ class SupabaseDB:
 
     def insert_detection(self, payload: dict) -> bool:
         try:
-            res = self.supabase.table(self.table_name).insert(payload).execute()
-            if res.data:
-                return True
-            return False
+            self.supabase.table(self.table_name).insert(payload).execute()
+            return True
         except Exception as e:
             logger.error(f"Failed to insert detection payload into Supabase: {e}")
             return False

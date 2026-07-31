@@ -4,8 +4,16 @@
 
 # next.js build output
 /.next/
+/.next-stale-debug/
 /out/
 /build
+
+# python cache
+**/__pycache__/
+*.pyc
+
+# typescript build info
+tsconfig.tsbuildinfo
 
 # environment variables
 .env

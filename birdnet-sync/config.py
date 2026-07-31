@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 def get_birdnet_pi_coords():
-    lat, lng = 13.58, 75.64
+    lat, lng = 13.6288, 79.4192
     conf_path = "/etc/birdnet/birdnet.conf"
     if os.path.exists(conf_path):
         try:
