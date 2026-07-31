@@ -557,7 +557,7 @@ WantedBy=multi-user.target`;
                   <span className="font-extrabold text-emerald-400 text-sm">Step 2: Download the Sync Engine</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync');
+                      navigator.clipboard.writeText('wget --show-progress -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync');
                       showNotification('Step 2 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
@@ -567,8 +567,11 @@ WantedBy=multi-user.target`;
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Download ONLY the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder from GitHub into your target directory (this skips downloading the full website codebase):</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all overflow-x-auto">
-                  wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync
+                  wget --show-progress -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync
                 </div>
+                <p className="text-slate-400 text-[11px] font-medium leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-emerald-300/90">
+                  💡 <strong>Automatic Updates & Preserved Config:</strong> Running Step 2 automatically updates all engine code files (<code className="bg-slate-800 text-white px-1 rounded">main.py</code>, <code className="bg-slate-800 text-white px-1 rounded">config.py</code>, etc.) while preserving your existing <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> credentials intact! For a 100% fresh clean reinstall, run <code className="bg-slate-800 text-amber-300 px-1 rounded">rm -rf ~/birdnet-sync</code> before Step 2.
+                </p>
               </div>
 
               <div className="space-y-3">
