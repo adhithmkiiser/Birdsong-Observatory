@@ -83,6 +83,7 @@ export default function LiveAdminPage() {
   const [genStationName, setGenStationName] = useState('Inside BirdLab');
   const [genProjectName, setGenProjectName] = useState('Western Ghats Live Observatory');
   const [genRecorderId, setGenRecorderId] = useState('Test_Lab_1');
+  const [genInstallPath, setGenInstallPath] = useState('~');
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
   const [genInterval, setGenInterval] = useState('10');
@@ -508,7 +509,18 @@ WantedBy=multi-user.target`;
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-800/60">
+              <div>
+                <label className="font-extrabold text-indigo-400 block mb-1">4. Target Parent Directory Path (INSTALL_PATH)</label>
+                <input
+                  type="text"
+                  value={genInstallPath}
+                  onChange={(e) => setGenInstallPath(e.target.value)}
+                  placeholder="e.g. ~ or /home/livedetector"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-indigo-300 font-bold focus:border-indigo-500 outline-none text-[12px]"
+                />
+              </div>
+
               <div>
                 <label className="font-extrabold text-slate-400 block mb-1">Supabase Project URL (SUPABASE_URL)</label>
                 <input
@@ -538,7 +550,7 @@ WantedBy=multi-user.target`;
                   <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Installation Location</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~');
+                      navigator.clipboard.writeText(`cd ${genInstallPath}`);
                       showNotification('Step 1 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
@@ -548,7 +560,7 @@ WantedBy=multi-user.target`;
                 </div>
                 <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and navigate to your target installation directory (the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder will be created inside this location):</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
-                  cd ~
+                  cd {genInstallPath}
                 </div>
               </div>
 
@@ -565,7 +577,7 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Download ONLY the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder from GitHub into your home directory (this skips downloading the full website codebase):</p>
+                <p className="text-slate-400 text-xs font-medium">Download ONLY the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder from GitHub into your target directory (this skips downloading the full website codebase):</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all overflow-x-auto">
                   wget -qO- https://github.com/adhithmkiiser/Birdsong-Observatory/archive/main.tar.gz | tar xz --strip-components=1 Birdsong-Observatory-main/birdnet-sync
                 </div>
@@ -585,9 +597,9 @@ WantedBy=multi-user.target`;
                     <Copy className="w-3.5 h-3.5" /> Copy Variables
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Open the <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> config file in your home directory using nano:</p>
+                <p className="text-slate-400 text-xs font-medium">Open the <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> config file in your installation directory using nano:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all overflow-x-auto">
-                  nano ~/birdnet-sync/.env
+                  nano {genInstallPath}/birdnet-sync/.env
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Paste the exact block below into the file, save with <strong>Ctrl+O</strong>, Enter, then exit with <strong>Ctrl+X</strong>.</p>
                 <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
@@ -605,7 +617,7 @@ SYNC_INTERVAL=${genInterval}`}
                   <span className="font-extrabold text-indigo-400 text-sm">Step 4: Run the Auto-Installer script</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync');
+                      navigator.clipboard.writeText(`cd ${genInstallPath}/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync`);
                       showNotification('Install command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
@@ -615,7 +627,7 @@ SYNC_INTERVAL=${genInterval}`}
                 </div>
                 <p className="text-slate-400 text-xs font-medium">Navigate into the sync folder, install the systemd service, and start the daemon — all in one command:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all overflow-x-auto">
-                  cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync
+                  cd {genInstallPath}/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync
                 </div>
                 <p className="text-slate-400 text-xs font-medium mt-1">Verify it's running with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">sudo systemctl status birdnet-sync</code></p>
               </div>
