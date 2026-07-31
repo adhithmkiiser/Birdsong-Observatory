@@ -42,6 +42,7 @@ interface SiteItem {
 
 const mapDbProjectToItem = (p: any): ProjectItem => ({
   id: p.id,
+  type: p.project_type || 'PAM',
   title: p.name,
   tag: 'Bioacoustic Survey',
   collaboration: p.organization || 'IISER Tirupati Bird Lab',
