@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import logging
 
@@ -6,6 +6,9 @@ logger = logging.getLogger("birdnet_sync")
 
 class StateManager:
     def __init__(self, filepath: str = "state.json"):
+        if not os.path.isabs(filepath):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            filepath = os.path.join(base_dir, filepath)
         self.filepath = filepath
 
     def get_last_rowid(self) -> int:
