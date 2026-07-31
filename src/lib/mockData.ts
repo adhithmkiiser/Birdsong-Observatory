@@ -4,8 +4,8 @@ import { SPECIES_MASTER_LIST } from './speciesMasterData';
 export const MOCK_USERS: User[] = [
   {
     id: 'usr-001',
-    name: 'Dr. Robin Vijayan',
-    email: 'robin@birdsongobservatory.in',
+    name: 'Adhith M K',
+    email: 'adhithmk@labs.iisertirupati.ac.in',
     password: 'admin123Password!',
     role: 'Admin',
     organization: 'IISER Tirupati Bird Lab',

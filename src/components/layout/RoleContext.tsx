@@ -86,7 +86,9 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
           const mappedUsers = data.map(mapDbUserToUser);
           setUsersList(mappedUsers);
           // Sync current session role with loaded db user if match exists
-          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase()) 
+            || mappedUsers.find(u => u.role === 'Admin')
+            || mappedUsers[0];
           if (match) {
             setCurrentUser(match);
             setCurrentRoleState(match.role);
