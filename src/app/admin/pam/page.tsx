@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 interface ProjectItem {
   id: string;
   title: string;
+  type?: string;
   tag: string;
   collaboration: string;
   description: string;
@@ -195,6 +196,7 @@ export default function PamAdminPage() {
   const [editProjDesc, setEditProjDesc] = useState('');
   const [editProjCollab, setEditProjCollab] = useState('');
   const [editProjImage, setEditProjImage] = useState('');
+  const [editProjType, setEditProjType] = useState('PAM');
 
   // Edit Site Modal States
   const [editingSite, setEditingSite] = useState<SiteItem | null>(null);
@@ -440,6 +442,7 @@ export default function PamAdminPage() {
 
     const { error } = await supabase.from('projects').update({
       name: editProjTitle,
+      project_type: editProjType,
       description: editProjDesc,
       organization: editProjCollab,
       image_url: editProjImage || null
@@ -453,9 +456,10 @@ export default function PamAdminPage() {
     setProjectsList(prev => prev.map(p => p.id === editingProj.id ? {
       ...p,
       title: editProjTitle,
+      type: editProjType,
       description: editProjDesc,
       collaboration: editProjCollab,
-      image: editProjImage || 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+      image: editProjImage || p.image
     } : p));
 
     setEditingProj(null);
@@ -465,47 +469,33 @@ export default function PamAdminPage() {
   // Handler: Register Site
   const handleRegisterSite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSiteId || !newSiteName) return;
+    if (!newSiteId || !newRecorderId) return;
 
-    const siteId = normalizeSiteCode(newSiteId).toUpperCase();
-    const newSite = {
-      id: siteId,
-      project_id: newSiteProjId,
-      name: newSiteName,
-      elevation: newSiteElev,
-      status: 'Active',
-      latitude: newSiteLat !== '' ? Number(newSiteLat) : 13.58,
-      longitude: newSiteLng !== '' ? Number(newSiteLng) : 75.64,
-      expected_files: newSiteFiles !== '' ? Number(newSiteFiles) : 48
+    const siteName = normalizeSiteCode(newSiteId).toUpperCase();
+    const projName = projectsList.find(p => p.id === newSiteProjId)?.title || 'PAM Project';
+
+    const recorderRecord = {
+      id: `${projName}_${siteName}_${newRecorderId}`,
+      project_type: 'PAM',
+      project_name: projName,
+      site_name: siteName,
+      recorder_id: newRecorderId,
+      status: 'offline',
+      lat: newSiteLat !== '' ? Number(newSiteLat) : null,
+      long: newSiteLng !== '' ? Number(newSiteLng) : null,
+      elevation: newSiteElev || null
     };
 
-    if (newSiteProjId === 'tst') {
-      const tstSiteRecord = {
-        id: siteId,
-        site_name: newSiteName,
-        lat: newSiteLat !== '' ? Number(newSiteLat) : 11.41,
-        long: newSiteLng !== '' ? Number(newSiteLng) : 76.69,
-        number_of_files: newSiteFiles !== '' ? Number(newSiteFiles) : 0,
-        number_of_hours: 0.0,
-        total_size_bytes: 0
-      };
+    const { error } = await supabase.from('recorders_registry').upsert([recorderRecord], { onConflict: 'id' });
 
-      const { error } = await supabase.from('tst_sites').upsert([tstSiteRecord], { onConflict: 'id' });
-      if (error) {
-        console.error('Error inserting into tst_sites:', error);
-      }
-    }
-
-    const { error } = await supabase.from('sites').insert([newSite]);
     if (error) {
-      alert('Error registering site: ' + error.message);
+      alert('Error registering recorder: ' + error.message);
       return;
     }
 
-    setSitesList(prev => [...prev, mapDbSiteToItem(newSite)]);
     setNewSiteId('');
-    setNewSiteName('');
-    showNotification(`Site "${newSiteName}" registered with coordinates (${newSiteLat}, ${newSiteLng}).`);
+    setNewRecorderId('');
+    showNotification(`Recorder "${newRecorderId}" registered at site "${siteName}"!`);
   };
 
   const handleAddSpeciesEcology = async (e: React.FormEvent) => {
@@ -928,6 +918,7 @@ export default function PamAdminPage() {
                       onClick={() => {
                         setEditingProj(p);
                         setEditProjTitle(p.title);
+                        setEditProjType(p.type || 'PAM');
                         setEditProjDesc(p.description || '');
                         setEditProjCollab(p.collaboration || '');
                         setEditProjImage(p.image || '');
@@ -1327,6 +1318,18 @@ export default function PamAdminPage() {
                   onChange={(e) => setEditProjTitle(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
                 />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Project Network Dashboard</label>
+                <select
+                  value={editProjType}
+                  onChange={(e) => setEditProjType(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="PAM">Common PAM Dashboard</option>
+                  <option value="tst">The Shola Trust (TST) Dashboard</option>
+                </select>
               </div>
 
               <div>
