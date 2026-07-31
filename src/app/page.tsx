@@ -103,7 +103,7 @@ export default function HomePage() {
   const pamProjects = projects.filter(p => p.project_type === 'PAM');
   const liveProjects = projects.filter(p => p.project_type === 'Live');
 
-  const tstProject = projects.find(p => p.id === 'tst');
+  const tstProjects = projects.filter(p => p.project_type === 'tst' || p.id === 'tst');
   
   // Helper to compute live project stats dynamically
   const getProjectStats = (projectId: string) => {
@@ -118,7 +118,7 @@ export default function HomePage() {
     };
   };
 
-  const otherPamProjects = projects.filter(p => p.id !== 'tst' && p.project_type === 'PAM');
+  const otherPamProjects = projects.filter(p => p.project_type === 'PAM' && p.id !== 'tst');
 
   const workflowSteps = [
     {
@@ -250,8 +250,9 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Dynamically render primary TST Project Card only if it exists in the database */}
-            {tstProject && (
+            {tstProjects.map(tstProject => (
               <div 
+                key={tstProject.id}
                 className="p-8 rounded-[30px] bg-slate-900 text-white border border-slate-800 shadow-xl space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-2xl relative overflow-hidden group"
               >
                 <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/15 transition-all"></div>
@@ -302,7 +303,7 @@ export default function HomePage() {
                   <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition" />
                 </Link>
               </div>
-            )}
+            ))}
 
             {/* Custom PAM Projects dynamically created */}
             {otherPamProjects.map(p => (
