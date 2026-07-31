@@ -80,11 +80,12 @@ export default function LiveAdminPage() {
   const [nodesList, setNodesList] = useState<LiveNodeItem[]>([]);
 
   // 2. Python Daemon Script Config Generator State
-  const [genStationName, setGenStationName] = useState('WesternGhats_Node_01');
+  const [genStationName, setGenStationName] = useState('Inside BirdLab');
   const [genProjectName, setGenProjectName] = useState('Western Ghats Live Observatory');
-  const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://your-project.supabase.co');
-  const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
-  const [genInterval, setGenInterval] = useState('15');
+  const [genRecorderId, setGenRecorderId] = useState('Test_Lab_1');
+  const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
+  const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
+  const [genInterval, setGenInterval] = useState('10');
 
   // 3. Projects Management State (starts empty — add real projects via the form)
   const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
@@ -469,42 +470,57 @@ WantedBy=multi-user.target`;
             </div>
 
             <p className="text-slate-300 font-medium leading-relaxed">
-              Configure parameters below to generate the exact <code className="text-emerald-400 font-mono">birdnet-sync.service</code> file to deploy on your Raspberry Pi 4 field sensor node.
+              Enter your <strong>Project Name</strong>, <strong>Site Name</strong>, and <strong>Unique Recorder ID</strong> below. When your Raspberry Pi runs the sync daemon, it will automatically register this Project, Site, and Recorder to the website database!
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="font-extrabold text-slate-300 block mb-1">Station Node Name (STATION_NAME)</label>
-                <input
-                  type="text"
-                  value={genStationName}
-                  onChange={(e) => setGenStationName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-emerald-400 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-extrabold text-slate-300 block mb-1">Target Project Name (PROJECT_NAME)</label>
+                <label className="font-extrabold text-emerald-400 block mb-1">1. Target Project Name (PROJECT_NAME)</label>
                 <input
                   type="text"
                   value={genProjectName}
                   onChange={(e) => setGenProjectName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-bold text-white"
+                  placeholder="e.g. Western Ghats Live Observatory"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-bold text-white focus:border-emerald-500 outline-none"
                 />
               </div>
 
               <div>
-                <label className="font-extrabold text-slate-300 block mb-1">Supabase Project URL (SUPABASE_URL)</label>
+                <label className="font-extrabold text-amber-400 block mb-1">2. Site Location Name (SITE_NAME)</label>
+                <input
+                  type="text"
+                  value={genStationName}
+                  onChange={(e) => setGenStationName(e.target.value)}
+                  placeholder="e.g. Inside BirdLab"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-amber-300 font-bold focus:border-amber-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-cyan-400 block mb-1">3. Unique Recorder ID (RECORDER_ID)</label>
+                <input
+                  type="text"
+                  value={genRecorderId}
+                  onChange={(e) => setGenRecorderId(e.target.value)}
+                  placeholder="e.g. Test_Lab_1"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-cyan-300 font-bold focus:border-cyan-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+              <div>
+                <label className="font-extrabold text-slate-400 block mb-1">Supabase Project URL (SUPABASE_URL)</label>
                 <input
                   type="text"
                   value={genSupabaseUrl}
                   onChange={(e) => setGenSupabaseUrl(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-slate-300 font-bold"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 font-mono text-slate-400 text-[11px]"
                 />
               </div>
 
               <div>
-                <label className="font-extrabold text-slate-300 block mb-1">Sync Interval (Seconds)</label>
+                <label className="font-extrabold text-slate-400 block mb-1">Sync Interval (Seconds)</label>
                 <input
                   type="number"
                   value={genInterval}
@@ -560,7 +576,7 @@ WantedBy=multi-user.target`;
                   <span className="font-extrabold text-amber-400 text-sm">Step 3: Edit the Configuration File via Nano</span>
                   <button
                     onClick={() => {
-                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nSTATION_NAME="${genStationName}"\nPROJECT_NAME="${genProjectName}"\nSTATION_ID="station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"\nSYNC_INTERVAL=${genInterval}`;
+                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nPROJECT_NAME="${genProjectName}"\nSTATION_NAME="${genStationName}"\nSTATION_ID="${genRecorderId}"\nSYNC_INTERVAL=${genInterval}`;
                       navigator.clipboard.writeText(envText);
                       showNotification('.env block copied!');
                     }}
@@ -577,9 +593,9 @@ WantedBy=multi-user.target`;
                 <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
 {`SUPABASE_URL="${genSupabaseUrl}"
 SUPABASE_KEY="${genSupabaseKey}"
-STATION_NAME="${genStationName}"
 PROJECT_NAME="${genProjectName}"
-STATION_ID="station_${genStationName.toLowerCase().replace(/[^a-z0-9]/g, '_')}"
+STATION_NAME="${genStationName}"
+STATION_ID="${genRecorderId}"
 SYNC_INTERVAL=${genInterval}`}
                 </pre>
               </div>
