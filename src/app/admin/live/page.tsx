@@ -538,7 +538,7 @@ WantedBy=multi-user.target`;
                   <span className="font-extrabold text-emerald-400 text-sm">Step 1: Navigate to Target Installation Location</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~');
+                      navigator.clipboard.writeText('cd /home/livedetector');
                       showNotification('Step 1 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black hover:bg-emerald-500/30 flex items-center gap-1.5 transition"
@@ -548,7 +548,7 @@ WantedBy=multi-user.target`;
                 </div>
                 <p className="text-slate-400 text-xs font-medium">SSH into your Raspberry Pi terminal and navigate to your target installation directory (the <code className="bg-slate-800 text-emerald-300 px-1 rounded">birdnet-sync</code> folder will be created inside this location):</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-emerald-400 select-all">
-                  cd ~
+                  cd /home/livedetector
                 </div>
               </div>
 
