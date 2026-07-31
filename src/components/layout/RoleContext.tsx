@@ -160,7 +160,9 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
     // Update in Supabase
     const dbUpdates: any = {};
-    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.name !== undefined) {
+      dbUpdates.full_name = updates.name;
+    }
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.password !== undefined) dbUpdates.password_hash = updates.password;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
