@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, PublicVisibilitySettings, User } from '@/types/database';
-import { MOCK_USERS } from '@/lib/mockData';
 import { supabase } from '@/lib/supabase';
 
 interface RoleContextType {
@@ -26,6 +25,19 @@ const defaultVisibilitySettings: PublicVisibilitySettings = {
   showExactGPSCoordinates: true,
   showTelemetryMetrics: true,
   allowPublicReports: false,
+};
+
+const defaultAdminUser: User = {
+  id: 'usr-001',
+  name: 'Adhith M K',
+  email: 'adhithmk@labs.iisertirupati.ac.in',
+  password: 'pass123',
+  role: 'Admin',
+  organization: 'IISER Tirupati Bird Lab',
+  assignedProjectType: 'Both',
+  status: 'active',
+  createdAt: '2026-01-15',
+  lastLogin: 'Just now'
 };
 
 const mapDbUserToUser = (dbUser: any): User => ({
@@ -60,9 +72,9 @@ const mapUserToDbUser = (user: User) => ({
 const RoleContext = createContext<RoleContextType>({
   currentRole: 'Admin',
   setCurrentRole: () => {},
-  currentUser: MOCK_USERS[0],
+  currentUser: defaultAdminUser,
   setCurrentUser: () => {},
-  usersList: MOCK_USERS,
+  usersList: [defaultAdminUser],
   loginUser: () => ({ success: false, message: '' }),
   logoutUser: () => {},
   updateUserCredentials: () => {},
@@ -73,9 +85,9 @@ const RoleContext = createContext<RoleContextType>({
 });
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [usersList, setUsersList] = useState<User[]>(MOCK_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
-  const [currentRole, setCurrentRoleState] = useState<UserRole>(MOCK_USERS[0].role);
+  const [usersList, setUsersList] = useState<User[]>([defaultAdminUser]);
+  const [currentUser, setCurrentUser] = useState<User>(defaultAdminUser);
+  const [currentRole, setCurrentRoleState] = useState<UserRole>('Admin');
   const [visibilitySettings, setVisibilitySettings] = useState<PublicVisibilitySettings>(defaultVisibilitySettings);
 
   useEffect(() => {
@@ -133,14 +145,16 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logoutUser = () => {
-    const publicUser = usersList.find(u => u.role === 'Public') || MOCK_USERS[3] || {
+    const publicUser = usersList.find(u => u.role === 'Public') || {
       id: 'usr-public',
       name: 'Public Guest',
       email: 'public@birdlab.in',
+      password: 'pass',
       role: 'Public',
       organization: 'Public Network',
       status: 'active',
-      createdAt: '2026-01-15'
+      createdAt: '2026-01-15',
+      lastLogin: 'Never'
     };
     setCurrentUser(publicUser);
     setCurrentRoleState('Public');
