@@ -472,9 +472,10 @@ export default function PamAdminPage() {
     if (!newSiteId || !newRecorderId) return;
 
     const siteName = normalizeSiteCode(newSiteId).toUpperCase();
-    const projName = projectsList.find(p => p.id === newSiteProjId)?.title || 'PAM Project';
+    const proj = projectsList.find(p => p.id === newSiteProjId);
+    const projName = proj?.title || 'PAM Project';
 
-    const recorderRecord = {
+    const recorderRecord: any = {
       id: `${projName}_${siteName}_${newRecorderId}`,
       project_type: 'PAM',
       project_name: projName,
@@ -482,9 +483,12 @@ export default function PamAdminPage() {
       recorder_id: newRecorderId,
       status: 'offline',
       lat: newSiteLat !== '' ? Number(newSiteLat) : null,
-      long: newSiteLng !== '' ? Number(newSiteLng) : null,
-      elevation: newSiteElev || null
+      long: newSiteLng !== '' ? Number(newSiteLng) : null
     };
+
+    if (proj?.type !== 'tst') {
+      recorderRecord.elevation = newSiteElev || null;
+    }
 
     const { error } = await supabase.from('recorders_registry').upsert([recorderRecord], { onConflict: 'id' });
 
