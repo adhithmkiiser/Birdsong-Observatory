@@ -11,12 +11,22 @@ import { supabase } from '@/lib/supabase';
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { currentRole } = useRole();
-  const [onlineStations, setOnlineStations] = React.useState(1);
+  const [onlineStations, setOnlineStations] = React.useState(0);
 
   React.useEffect(() => {
-    supabase.from('stations').select('id', { count: 'exact' }).eq('status', 'online').then(({ count }) => {
-      setOnlineStations(count && count > 0 ? count : 1);
-    });
+    supabase.from('recorders_registry')
+      .select('last_ping')
+      .eq('project_type', 'Live')
+      .then(({ data }) => {
+        if (data) {
+          const activeCount = data.filter((r: any) => {
+            if (!r.last_ping) return false;
+            const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / (1000 * 60);
+            return diffMins <= 5;
+          }).length;
+          setOnlineStations(activeCount);
+        }
+      });
   }, []);
 
   // Determine if current route is part of the Dashboard section where Sidebar should appear

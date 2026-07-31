@@ -152,33 +152,39 @@ export default function LiveDashboardPage() {
     .sort((a, b) => b.detections - a.detections)
     .slice(0, 10);
 
+  // Active Nodes calculation (last_ping <= 5 minutes)
+  const activeNodesCount = availableStations.filter((s: any) => {
+    if (!s.last_ping) return false;
+    const diffMins = (Date.now() - new Date(s.last_ping).getTime()) / (1000 * 60);
+    return diffMins <= 5;
+  }).length;
+
   return (
-    <div className="space-y-8 pb-12 font-sans">
-      {/* Hero Banner */}
-      <div className="relative overflow-hidden p-8 md:p-10 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#064e3b] text-white shadow-2xl border border-emerald-800/80">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 font-black text-[10px] uppercase tracking-wider flex items-center gap-2">
-                <Radio className="w-3.5 h-3.5 animate-pulse" /> Live Recorders Stream Format
-              </span>
-              <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Realtime Telemetry & Stream
-              </span>
-            </div>
-
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
-              Live Bioacoustic Recorders Dashboard
-            </h1>
-
-            <p className="text-emerald-400 text-sm font-bold tracking-wide">
-              Realtime Species Vocalization Ingestion & Automated Hardware Telemetry
-            </p>
-
-            <p className="text-slate-300 text-xs max-w-2xl leading-relaxed font-medium">
-              Continuous bioacoustic stream monitoring directly from Raspberry Pi field daemons running BirdNET-Pi.
-            </p>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Top Banner Header */}
+      <div className="p-8 rounded-[32px] bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 border border-emerald-800/30 text-white shadow-2xl relative overflow-hidden">
+        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-black tracking-wide border border-emerald-500/30 flex items-center gap-1.5 uppercase">
+              <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-400" /> Live Recorders Stream Format
+            </span>
+            <span className="text-slate-400 text-xs font-semibold flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Realtime Telemetry & Stream
+            </span>
           </div>
+
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+            Live Bioacoustic Recorders Dashboard
+          </h1>
+
+          <p className="text-sm font-bold text-emerald-400/90">
+            Realtime Species Vocalization Ingestion & Automated Hardware Telemetry
+          </p>
+
+          <p className="text-xs text-slate-400 max-w-2xl font-medium leading-relaxed pt-1">
+            Continuous bioacoustic stream monitoring directly from Raspberry Pi field daemons running BirdNET-Pi.
+          </p>
         </div>
       </div>
 
@@ -261,11 +267,15 @@ export default function LiveDashboardPage() {
         <div className="premium-card p-5 rounded-[22px] border border-slate-200 flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-400">Active Field Nodes</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{availableStations.length} Node</div>
-            <p className="text-[11px] text-emerald-600 font-bold mt-0.5">Online stream daemon</p>
+            <div className="text-2xl font-black text-slate-900 mt-1">
+              {activeNodesCount} {activeNodesCount === 1 ? 'Node' : 'Nodes'}
+            </div>
+            <p className={`text-[11px] font-bold mt-0.5 ${activeNodesCount > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+              {activeNodesCount > 0 ? 'Online stream daemon' : 'All Nodes Offline (>5m)'}
+            </p>
           </div>
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <Radio className="w-5 h-5 animate-pulse" />
+          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${activeNodesCount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
+            <Radio className={`w-5 h-5 ${activeNodesCount > 0 ? 'animate-pulse' : ''}`} />
           </div>
         </div>
 

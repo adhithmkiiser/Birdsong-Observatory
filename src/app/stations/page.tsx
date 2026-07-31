@@ -17,19 +17,27 @@ export default function StationsPage() {
           .eq('project_type', 'Live')
           .order('created_at', { ascending: false });
 
-        const mapped = (recordersData || []).map((r: any) => ({
-          id: r.recorder_id,
-          station_name: r.site_name,
-          description: `Live Recorder Node ${r.recorder_id}`,
-          project_name: r.project_name || 'Bird_Lab_demo',
-          status: (r.status?.toLowerCase() || 'online'),
-          last_seen: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : 'Just now',
-          battery_level: r.battery_level ?? 100,
-          cpu_temperature: r.cpu_temperature ?? 42.5,
-          storage_used_percent: r.storage_used_percent ?? 18,
-          firmware_version: r.firmware_version || 'v2.4.1',
-          birdnet_version: 'BirdNET V2.4'
-        }));
+        const mapped = (recordersData || []).map((r: any) => {
+          const lastPingDate = r.last_ping ? new Date(r.last_ping) : null;
+          const minutesAgo = lastPingDate ? (Date.now() - lastPingDate.getTime()) / (1000 * 60) : 999;
+          const isOnline = minutesAgo <= 5;
+
+          return {
+            id: r.recorder_id,
+            station_name: r.site_name,
+            description: `Live Recorder Node ${r.recorder_id}`,
+            project_name: r.project_name || 'Bird_Lab_demo',
+            status: isOnline ? 'online' : 'offline',
+            last_seen: lastPingDate ? (minutesAgo < 1 ? 'Just now' : `${Math.round(minutesAgo)} min ago (${lastPingDate.toLocaleTimeString()})`) : 'Never',
+            battery_level: r.battery_level ?? 100,
+            cpu_temperature: r.cpu_temperature ? Math.round(r.cpu_temperature * 10) / 10 : 45.0,
+            disk_usage: r.storage_used_percent ? Math.round(r.storage_used_percent) : 0,
+            latitude: r.lat ? r.lat.toFixed(4) : '13.6288',
+            longitude: r.long ? r.long.toFixed(4) : '79.4192',
+            firmware_version: r.firmware_version || 'v2.4 (Live)',
+            birdnet_version: 'BirdNET-Pi'
+          };
+        });
 
         setStations(mapped);
       } catch (err) {
