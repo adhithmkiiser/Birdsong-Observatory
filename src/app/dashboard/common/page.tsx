@@ -32,13 +32,15 @@ export default function CommonDashboardPage() {
   const { currentRole } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
-  // Scope filter state: Project, Site, Confidence Threshold
+  // Scope filter state: Project, Site, Recorder, Confidence Threshold
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
+  const [selectedRecorderId, setSelectedRecorderId] = useState<string>('ALL_RECORDERS');
   const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0.70);
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [recordersRegistryList, setRecordersRegistryList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Raw Detections List from DB
@@ -321,13 +323,13 @@ export default function CommonDashboardPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
           <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">Select Research Project</label>
+            <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Research Project</label>
             <select
               value={selectedProjectId}
               onChange={(e) => handleProjectChange(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
               {projectsList.map((p) => (
@@ -337,37 +339,58 @@ export default function CommonDashboardPage() {
           </div>
 
           <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">Select Field Site Node</label>
+            <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site Node</label>
             <select
               value={selectedStationId}
               onChange={(e) => setSelectedStationId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL_SITES">All Sites in Chosen Project</option>
+              <option value="ALL_SITES">All Sites in Chosen Project ({availableStations.length})</option>
               {availableStations.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.station_name} ({s.description})
+                  {s.station_name}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="font-extrabold text-slate-700">Confidence Threshold</label>
-              <span className="font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
+            <label className="font-extrabold text-slate-700 block mb-1.5">3. Select Recorder Hardware</label>
+            <select
+              value={selectedRecorderId}
+              onChange={(e) => setSelectedRecorderId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+            >
+              <option value="ALL_RECORDERS">All Recorders in Site</option>
+              {recordersRegistryList
+                .filter(r => (selectedStationId === 'ALL_SITES' || r.site_name === selectedStationId))
+                .map(r => (
+                  <option key={r.id || r.recorder_id} value={r.recorder_id}>
+                    {r.recorder_id} ({r.site_name})
+                  </option>
+                ))
+              }
+            </select>
+          </div>
+
+          <div>
+            <label className="font-extrabold text-slate-700 flex items-center justify-between mb-1.5">
+              <span>4. Min Confidence Filter</span>
+              <span className="font-mono text-[10px] text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-md border border-indigo-200 font-bold">
                 {(confidenceThreshold * 100).toFixed(0)}%
               </span>
+            </label>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 h-[42px] flex items-center">
+              <input
+                type="range"
+                min="0.2"
+                max="0.99"
+                step="0.05"
+                value={confidenceThreshold}
+                onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+                className="w-full accent-indigo-600"
+              />
             </div>
-            <input
-              type="range"
-              min="0.10"
-              max="0.95"
-              step="0.05"
-              value={confidenceThreshold}
-              onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
-              className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-            />
           </div>
         </div>
       </div>

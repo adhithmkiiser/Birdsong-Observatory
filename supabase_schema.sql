@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   status TEXT DEFAULT 'online' CHECK (status IN ('online', 'offline')),
   lat DOUBLE PRECISION,
   long DOUBLE PRECISION,
+  elevation TEXT,
   battery_level DOUBLE PRECISION DEFAULT 100.0,
   cpu_temperature DOUBLE PRECISION,
   storage_used_percent DOUBLE PRECISION,
@@ -133,7 +134,12 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   last_ping TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.recorders_registry ADD COLUMN IF NOT EXISTS elevation TEXT;
 ALTER TABLE public.recorders_registry DISABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS project_name TEXT DEFAULT 'tst';
+ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS recorder_name TEXT;
+ALTER TABLE public.tst_detections ADD COLUMN IF NOT EXISTS recorder_id TEXT;
 
 -- 6. PROJECTS DIRECTORY TABLE (PAM & Live Projects Registry)
 CREATE TABLE IF NOT EXISTS public.projects (

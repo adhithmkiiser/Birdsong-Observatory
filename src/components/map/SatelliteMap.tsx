@@ -53,46 +53,66 @@ export default function SatelliteMap() {
   useEffect(() => {
     async function loadStationsData() {
       try {
-        const [{ data: stns }, { data: liveDets }] = await Promise.all([
-          supabase.from('stations').select('*'),
-          supabase.from('live_detections').select('*').limit(50)
+        const [{ data: stns }, { data: recRegistry }, { data: tstSites }] = await Promise.all([
+          supabase.from('sites').select('*'),
+          supabase.from('recorders_registry').select('*'),
+          supabase.from('tst_sites').select('*')
         ]);
 
-        let combined = [...(stns || [])];
+        let combined: any[] = [];
 
-        // Collect unique station IDs from live_detections
-        const liveStationIds = Array.from(new Set((liveDets || []).map(d => d.station_id || d.station_name))).filter(Boolean);
-
-        liveStationIds.forEach(id => {
-          if (!combined.some(s => s.id === id || s.station_name === id)) {
+        if (recRegistry && recRegistry.length > 0) {
+          recRegistry.forEach((r: any) => {
             combined.push({
-              id: id,
-              station_name: id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id,
-              description: 'Realtime Bioacoustic Field Daemon Node',
-              project_name: 'Live Observatory',
-              latitude: 13.5804,
-              longitude: 75.6432,
-              status: 'online',
-              battery_level: 100,
-              cpu_temperature: 42.5,
-              disk_usage: 18
+              id: r.id || `${r.site_name}_${r.recorder_id}`,
+              station_name: `${r.site_name} - Recorder ${r.recorder_id}`,
+              description: `Project: ${r.project_name} | Site: ${r.site_name} | Recorder: ${r.recorder_id}`,
+              project_name: r.project_name,
+              latitude: r.lat || 13.58,
+              longitude: r.long || 75.64,
+              status: r.status || 'online',
+              battery_level: r.battery_level ?? 100,
+              cpu_temperature: r.cpu_temperature ?? 42.5,
+              disk_usage: r.storage_used_percent ?? 18
             });
-          }
-        });
+          });
+        }
 
-        // Ensure Test_Lab_1 is present
-        if (!combined.some(s => s.id === 'Test_Lab_1')) {
-          combined.push({
-            id: 'Test_Lab_1',
-            station_name: 'Inside BirdLab (Test_Lab_1)',
-            description: 'Raspberry Pi Live Stream Engine',
-            project_name: 'Live Observatory',
-            latitude: 13.5804,
-            longitude: 75.6432,
-            status: 'online',
-            battery_level: 100,
-            cpu_temperature: 41.2,
-            disk_usage: 14
+        if (tstSites && tstSites.length > 0) {
+          tstSites.forEach((s: any) => {
+            if (!combined.some(c => c.station_name.includes(s.site_name))) {
+              combined.push({
+                id: s.id,
+                station_name: `TST Site ${s.site_name}`,
+                description: `TST Bioacoustic Survey Site ${s.site_name}`,
+                project_name: 'tst',
+                latitude: s.lat || 11.41,
+                longitude: s.long || 76.69,
+                status: 'online',
+                battery_level: 100,
+                cpu_temperature: 41.0,
+                disk_usage: 25
+              });
+            }
+          });
+        }
+
+        if (stns && stns.length > 0) {
+          stns.forEach((s: any) => {
+            if (!combined.some(c => c.id === s.id)) {
+              combined.push({
+                id: s.id,
+                station_name: s.name,
+                description: `Field Site ${s.name}`,
+                project_name: s.project_id || 'PAM',
+                latitude: s.latitude || 13.58,
+                longitude: s.longitude || 75.64,
+                status: 'online',
+                battery_level: 100,
+                cpu_temperature: 42.0,
+                disk_usage: 20
+              });
+            }
           });
         }
 

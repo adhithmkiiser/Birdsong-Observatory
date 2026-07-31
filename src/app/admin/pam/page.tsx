@@ -74,6 +74,7 @@ export default function PamAdminPage() {
   // 1. Batch Upload States
   const [selectedUploadProjId, setSelectedUploadProjId] = useState<string>('prj-01');
   const [selectedUploadSiteId, setSelectedUploadSiteId] = useState<string>('stn-01');
+  const [selectedUploadRecorderId, setSelectedUploadRecorderId] = useState<string>('LC_01');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [parsedSiteCode, setParsedSiteCode] = useState<string>('');
   const [csvSiteAction, setCsvSiteAction] = useState<'existing' | 'create'>('existing');
@@ -87,6 +88,7 @@ export default function PamAdminPage() {
   // 2. Projects & Sites Management States
   const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
   const [sitesList, setSitesList] = useState<SiteItem[]>([]);
+  const [recordersList, setRecordersList] = useState<any[]>([]);
   const [tstSitesList, setTstSitesList] = useState<any[]>([]);
 
   // 3. Species Ecology Curator States
@@ -105,6 +107,11 @@ export default function PamAdminPage() {
   const [newImgLink, setNewImgLink] = useState('');
   const [newAudioLink, setNewAudioLink] = useState('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+
+  // Form: Register New Site & Recorder
+  const [newSiteProjId, setNewSiteProjId] = useState('');
+  const [newSiteId, setNewSiteId] = useState('');
+  const [newRecorderId, setNewRecorderId] = useState('LC_01');
 
   const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -196,10 +203,6 @@ export default function PamAdminPage() {
   const [editSiteLat, setEditSiteLat] = useState<number | ''>(13.58);
   const [editSiteLng, setEditSiteLng] = useState<number | ''>(75.64);
   const [editSiteProjId, setEditSiteProjId] = useState('');
-
-  // Form: Register New Site
-  const [newSiteProjId, setNewSiteProjId] = useState('');
-  const [newSiteId, setNewSiteId] = useState('');
 
   // Synchronize newSiteProjId and selectedUploadProjId with first project ID on projectsList load
   useEffect(() => {
@@ -337,7 +340,10 @@ export default function PamAdminPage() {
 
             if (selectedUploadProjId === 'tst') {
               detectionsToInsert.push({
+                project_name: selectedUploadProjId,
                 site_name: effectiveSiteName,
+                recorder_name: selectedUploadRecorderId,
+                recorder_id: selectedUploadRecorderId,
                 date: dateStr,
                 time: timeStr,
                 start_time: 0.0,
@@ -351,7 +357,7 @@ export default function PamAdminPage() {
               detectionsToInsert.push({
                 project_name: selectedUploadProjId,
                 site_name: effectiveSiteName,
-                recorder_name: effectiveSiteId,
+                recorder_name: selectedUploadRecorderId,
                 date: dateStr,
                 time: timeStr,
                 start_time: 0.0,
@@ -700,9 +706,9 @@ export default function PamAdminPage() {
           </div>
 
           <form onSubmit={handleBatchUploadSubmit} className="space-y-5 text-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1.5">Target Project Scope</label>
+                <label className="font-extrabold text-slate-700 block mb-1.5">1. Target Project Scope</label>
                 <select
                   value={selectedUploadProjId}
                   onChange={(e) => setSelectedUploadProjId(e.target.value)}
@@ -715,19 +721,31 @@ export default function PamAdminPage() {
               </div>
 
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1.5">Target Site Node</label>
+                <label className="font-extrabold text-slate-700 block mb-1.5">2. Target Site Node</label>
                 <select
                   value={selectedUploadSiteId}
                   onChange={(e) => setSelectedUploadSiteId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
                 >
                   {sitesList
-                    .filter(s => s.projectId === selectedUploadProjId)
+                    .filter(s => s.projectId === selectedUploadProjId || selectedUploadProjId === 'tst')
                     .map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
                     ))
                   }
                 </select>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1.5">3. Target Recorder Hardware</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. LC_01 or 1"
+                  value={selectedUploadRecorderId}
+                  onChange={(e) => setSelectedUploadRecorderId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                />
               </div>
             </div>
 
@@ -932,10 +950,10 @@ export default function PamAdminPage() {
             </div>
           </div>
 
-          {/* Register Site Coordinates Card */}
+          {/* Register Site & Recorder Coordinates Card */}
           <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <MapPin className="w-4 h-4 text-indigo-600" /> Register Site Coordinates under Project
+              <MapPin className="w-4 h-4 text-indigo-600" /> Register Recorder Hardware GPS Coordinates under Site & Project
             </h3>
 
             <form onSubmit={handleRegisterSite} className="space-y-4">
@@ -954,11 +972,11 @@ export default function PamAdminPage() {
                 </div>
 
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Site ID Code</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Site ID Code / Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. LC_03"
+                    placeholder="e.g. A11_01 or ATR_01"
                     value={newSiteId}
                     onChange={(e) => setNewSiteId(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
@@ -966,21 +984,21 @@ export default function PamAdminPage() {
                 </div>
 
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Site Description Name</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Recorder Hardware ID</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Stream Valley Corridor"
-                    value={newSiteName}
-                    onChange={(e) => setNewSiteName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold"
+                    placeholder="e.g. LC_01 or 1"
+                    value={newRecorderId}
+                    onChange={(e) => setNewRecorderId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Latitude (°N)</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Recorder Latitude (°N)</label>
                   <input
                     type="number"
                     step="0.0001"
@@ -991,7 +1009,7 @@ export default function PamAdminPage() {
                   />
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Longitude (°E)</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Recorder Longitude (°E)</label>
                   <input
                     type="number"
                     step="0.0001"
@@ -1017,7 +1035,7 @@ export default function PamAdminPage() {
                   type="submit"
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
                 >
-                  Register Site Coordinates
+                  Register Recorder GPS Coordinates
                 </button>
               </div>
             </form>
