@@ -15,13 +15,19 @@ CREATE TABLE IF NOT EXISTS public.users (
   assigned_project_type TEXT DEFAULT 'Both',
   is_one_time_password BOOLEAN DEFAULT FALSE,
   must_change_password BOOLEAN DEFAULT FALSE,
+  last_login TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
 -- Safe migration: add missing columns if they don't already exist
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT 'pass123';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS assigned_project_type TEXT DEFAULT 'Both';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_one_time_password BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE;
+
+-- Disable RLS on users table for application queries
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 
 -- 2. TST PAM OFFLINE SURVEY PROJECT TABLES
 
@@ -39,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.tst_detections (
   file_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.tst_detections DISABLE ROW LEVEL SECURITY;
 
 -- b) TST Site Metadata & Recording Telemetry
 CREATE TABLE IF NOT EXISTS public.tst_sites (
@@ -51,6 +58,7 @@ CREATE TABLE IF NOT EXISTS public.tst_sites (
   total_size_bytes BIGINT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.tst_sites DISABLE ROW LEVEL SECURITY;
 
 -- c) Species Ecology Matrix
 CREATE TABLE IF NOT EXISTS public.tst_species_ecology (
@@ -61,8 +69,11 @@ CREATE TABLE IF NOT EXISTS public.tst_species_ecology (
   habitat TEXT,
   foraging_stratum TEXT,
   endemic_status TEXT DEFAULT 'Non-endemic',
+  audio_link TEXT,
+  image_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.tst_species_ecology DISABLE ROW LEVEL SECURITY;
 
 -- 3. COMMON PAM OFFLINE SURVEY DETECTIONS TABLE
 CREATE TABLE IF NOT EXISTS public.pam_detections (
@@ -80,6 +91,7 @@ CREATE TABLE IF NOT EXISTS public.pam_detections (
   file_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.pam_detections DISABLE ROW LEVEL SECURITY;
 
 -- 4. REALTIME LIVE RECORDER TABLE
 CREATE TABLE IF NOT EXISTS public.live_detections (
@@ -102,6 +114,7 @@ CREATE TABLE IF NOT EXISTS public.live_detections (
   verification_status TEXT DEFAULT 'PENDING' CHECK (verification_status IN ('PENDING', 'YES', 'NO')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.live_detections DISABLE ROW LEVEL SECURITY;
 
 -- 5. MASTER SCOPE REGISTRY TABLE (Connecting PAM vs Live Projects, Sites, and Recorders)
 CREATE TABLE IF NOT EXISTS public.recorders_registry (
@@ -120,6 +133,7 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   last_ping TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.recorders_registry DISABLE ROW LEVEL SECURITY;
 
 -- 6. PROJECTS DIRECTORY TABLE (PAM & Live Projects Registry)
 CREATE TABLE IF NOT EXISTS public.projects (
@@ -136,3 +150,4 @@ CREATE TABLE IF NOT EXISTS public.projects (
   total_detections INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.projects DISABLE ROW LEVEL SECURITY;
