@@ -405,7 +405,7 @@ export default function PamAdminPage() {
       name: newProjTitle,
       description: newProjDesc || 'Project details pending data updates.',
       organization: newProjCollab || 'IISER Tirupati Bird Lab',
-      project_type: newProjCategory,
+      project_type: 'PAM', // Set project_type to 'PAM' to satisfy database constraint projects_project_type_check ('PAM', 'Live')
       stations_count: 0,
       species_count: 0,
       total_detections: 0,

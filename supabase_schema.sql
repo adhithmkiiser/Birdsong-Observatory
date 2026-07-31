@@ -139,7 +139,7 @@ ALTER TABLE public.recorders_registry DISABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS public.projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  project_type TEXT NOT NULL DEFAULT 'PAM' CHECK (project_type IN ('PAM', 'Live')),
+  project_type TEXT NOT NULL DEFAULT 'PAM',
   description TEXT,
   organization TEXT DEFAULT 'IISER Tirupati',
   manager_id UUID REFERENCES public.users(id),
@@ -150,4 +150,5 @@ CREATE TABLE IF NOT EXISTS public.projects (
   total_detections INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_project_type_check;
 ALTER TABLE public.projects DISABLE ROW LEVEL SECURITY;
