@@ -34,6 +34,14 @@ export default function MapPage() {
       ]);
 
       setProjectsList(projs || []);
+
+      // Pre-select project from query param
+      const queryProject = new URLSearchParams(window.location.search).get('project');
+      const projectIds = new Set((projs || []).map((p: any) => p.id));
+      if (queryProject && projectIds.has(queryProject)) {
+        setSelectedProjectId(queryProject);
+      }
+
       setSitesList(sitesData || []);
       setStationsList(stnData || []);
     }

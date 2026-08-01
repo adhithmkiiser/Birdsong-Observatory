@@ -41,7 +41,7 @@ export default function ReviewQueuePage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'confidence'>('newest');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'confidence' | 'lowest'>('newest');
 
   // Supabase Data
   const [projectsList, setProjectsList] = useState<any[]>([]);
@@ -106,6 +106,9 @@ export default function ReviewQueuePage() {
 
   // Filter Detections
   let filtered = detections.filter((det) => {
+    // Reviewed (confirmed/rejected) items leave the queue
+    if (det.reviewed) return false;
+
     const common = det.common_name || '';
     const sci = det.scientific_name || '';
     const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -136,6 +139,8 @@ export default function ReviewQueuePage() {
     filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   } else if (sortOrder === 'confidence') {
     filtered.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  } else if (sortOrder === 'lowest') {
+    filtered.sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
   }
 
   // Handle Verification Decision
@@ -259,6 +264,7 @@ export default function ReviewQueuePage() {
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
               <option value="confidence">Highest Confidence</option>
+              <option value="lowest">Lowest Confidence</option>
             </select>
           </div>
         </div>

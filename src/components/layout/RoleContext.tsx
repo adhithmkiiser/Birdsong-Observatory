@@ -81,7 +81,6 @@ const mapUserToDbUser = (user: User) => ({
   assigned_sites: user.assignedSites || [],
   is_one_time_password: user.isOneTimePassword || false,
   must_change_password: user.mustChangePassword || false,
-  status: user.status || 'active',
   created_at: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString()
 });
 
@@ -113,8 +112,12 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         if (!error && data && data.length > 0) {
           const mappedUsers = data.map(mapDbUserToUser);
           setUsersList(mappedUsers);
-          // Sync current session role with loaded db user if match exists
-          const match = mappedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+          // Restore logged-in session from localStorage if present
+          const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
+          const sessionEmail = stored ? JSON.parse(stored).email : null;
+          const match = sessionEmail
+            ? mappedUsers.find(u => u.email.toLowerCase() === sessionEmail.toLowerCase())
+            : null;
           if (match) {
             setCurrentUser(match);
             setCurrentRoleState(match.role);
@@ -149,6 +152,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(updated);
     setCurrentRoleState(updated.role);
 
+    // Persist session
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('birdlab-session', JSON.stringify({ email: updated.email }));
+    }
+
     // Update in user list
     setUsersList(prev => prev.map(u => u.id === found.id ? updated : u));
     
@@ -159,6 +167,9 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logoutUser = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('birdlab-session');
+    }
     const publicUser = usersList.find(u => u.role === 'Public') || {
       id: 'usr-public',
       name: 'Public Guest',

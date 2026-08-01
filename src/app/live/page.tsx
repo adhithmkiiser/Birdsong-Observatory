@@ -24,6 +24,8 @@ import dynamic from 'next/dynamic';
 function dedupeDetections(list: any[]) {
   const seen = new Set<string>();
   return list.filter((d) => {
+    // Rejected detections should not appear in the analysis
+    if (d.verification_status === 'NO') return false;
     const key = `${d.recorder_id || d.station_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -64,6 +66,13 @@ export default function LiveDetectionsPage() {
         const liveProjectIds = new Set((projData || []).map(p => p.id));
         const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
         setLiveProjects(projData || []);
+
+        // Pre-select project from query param
+        const queryProject = new URLSearchParams(window.location.search).get('project');
+        if (queryProject && liveProjectIds.has(queryProject)) {
+          setSelectedProjectId(queryProject);
+        }
+
         setStationsList(recordersData || []);
         setSitesList(liveSites);
         setDetections(dedupeDetections(detData || []));

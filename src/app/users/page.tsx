@@ -133,20 +133,9 @@ export default function UserManagementPage() {
       createdAt: new Date().toISOString().split('T')[0]
     };
 
-    addUser(newUser);
+    await addUser(newUser);
 
     try {
-      await supabase.from('users').insert([{
-        full_name: formName,
-        email: formEmail,
-        password_hash: otpToUse,
-        role: formRole,
-        organization: formOrg,
-        project_scope_permissions: [formProjectType === 'Live' ? 'bird_lab_demo' : 'tst'],
-        is_one_time_password: true,
-        must_change_password: true
-      }]);
-
       await sendOneTimePasswordEmail({
         email: formEmail,
         name: formName,
@@ -154,7 +143,7 @@ export default function UserManagementPage() {
         isNewUser: true
       });
     } catch (err) {
-      console.error('Error inserting user into Supabase:', err);
+      console.error('Error sending OTP email:', err);
     }
 
     setIsCreateOpen(false);

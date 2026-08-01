@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 const LantanaMap = dynamic(() => import('@/components/map/LantanaMap'), { ssr: false });
 import AnalysisCharts from './AnalysisCharts';
+import DashboardLoader from '@/components/ui/DashboardLoader';
 
 // ─── Exact Audio Player replication from BirdSearch.tsx ──────────────────────
 const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, speciesName }) => {
@@ -150,7 +151,12 @@ export default function LantanaDashboardPage() {
 
         const lantanaProjects = (projs.data || []).filter((p: any) => p.project_type === 'Lantana');
         setProjectsList(lantanaProjects);
-        if (lantanaProjects.length > 0) setSelectedProjectId(lantanaProjects[0].id);
+
+        // Pre-select project from query param, otherwise first project
+        const queryProject = new URLSearchParams(window.location.search).get('project');
+        const queryMatch = lantanaProjects.find((p: any) => p.id === queryProject);
+        if (queryMatch) setSelectedProjectId(queryMatch.id);
+        else if (lantanaProjects.length > 0) setSelectedProjectId(lantanaProjects[0].id);
 
         const speciesList: string[] = [];
         const speciesMetadata: Record<string, any> = {};
@@ -693,14 +699,7 @@ export default function LantanaDashboardPage() {
     triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `lantana_matrix_${selectedSiteGroup}.csv`);
   };
 
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner" />
-        <p style={{ fontSize: '0.875rem', color: '#64748b', fontWeight: 600 }}>Loading Lantana Bioacoustics Dataset…</p>
-      </div>
-    );
-  }
+  if (loading) return <DashboardLoader message="Loading Lantana bioacoustics..." />;
 
   return (
     <div style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>

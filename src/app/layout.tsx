@@ -51,8 +51,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     '/analytics',
     '/review',
     '/reports',
-    '/settings',
-    '/users'
+    '/settings'
   ];
 
   const isLantanaOrPamDashboard = pathname.startsWith('/dashboard/lantana') || pathname.startsWith('/dashboard/common');

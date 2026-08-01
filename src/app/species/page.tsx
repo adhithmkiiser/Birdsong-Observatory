@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Bird, Search, RefreshCw, TreePine } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Bird, Search, RefreshCw, TreePine, ArrowUpDown } from 'lucide-react';
 
 interface APISpecies {
   id: string;
@@ -22,7 +22,11 @@ interface APISpecies {
   first_seen?: string;
   last_seen?: string;
   by_recorder: { recorder_id: string; count: number }[];
+  by_project: { project_name: string; count: number }[];
+  by_site: { site_name: string; count: number }[];
   top_recorder: { recorder_id: string; count: number } | null;
+  top_project: { project_name: string; count: number } | null;
+  top_site: { site_name: string; count: number } | null;
 }
 
 export default function SpeciesPage() {
@@ -33,6 +37,7 @@ export default function SpeciesPage() {
   const [searchingSuggestions, setSearchingSuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sortBy, setSortBy] = useState<'detections' | 'project' | 'site' | 'recorder'>('detections');
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
@@ -103,6 +108,18 @@ export default function SpeciesPage() {
     fetchAPISpecies(debouncedSearch);
   }, [debouncedSearch]);
 
+  const sortedSpecies = useMemo(() => {
+    const list = [...speciesList];
+    list.sort((a, b) => {
+      if (sortBy === 'detections') return (b.total_detections || 0) - (a.total_detections || 0);
+      if (sortBy === 'project') return (a.top_project?.project_name || '').localeCompare(b.top_project?.project_name || '');
+      if (sortBy === 'site') return (a.top_site?.site_name || '').localeCompare(b.top_site?.site_name || '');
+      if (sortBy === 'recorder') return (a.top_recorder?.recorder_id || '').localeCompare(b.top_recorder?.recorder_id || '');
+      return 0;
+    });
+    return list;
+  }, [speciesList, sortBy]);
+
   const handleSelectSuggestion = (spc: APISpecies) => {
     setSearchQuery(spc.common_name);
     setShowDropdown(false);
@@ -134,6 +151,19 @@ export default function SpeciesPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+            >
+              <option value="detections">Most Detections</option>
+              <option value="project">Project</option>
+              <option value="site">Site</option>
+              <option value="recorder">Recorder</option>
+            </select>
+          </div>
           <button
             onClick={() => fetchAPISpecies(debouncedSearch)}
             className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 text-xs font-bold"
@@ -210,7 +240,7 @@ export default function SpeciesPage() {
       ) : (
         /* Species Cards */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {speciesList.map((spc) => (
+          {sortedSpecies.map((spc) => (
             <div key={spc.id} className="premium-card rounded-3xl overflow-hidden flex flex-col justify-between group">
               <div>
                 {/* Photo Banner */}

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   // Fetch live detections
   const { data: dets, error } = await supabase
     .from('live_detections')
-    .select('common_name, scientific_name, recorder_id, timestamp')
+    .select('common_name, scientific_name, recorder_id, project_name, site_name, timestamp')
     .order('timestamp', { ascending: false })
     .limit(1000);
 
@@ -48,12 +48,16 @@ export async function GET(request: NextRequest) {
         first_seen: r.timestamp,
         last_seen: r.timestamp,
         recorders: {} as Record<string, number>,
+        projects: {} as Record<string, number>,
+        sites: {} as Record<string, number>,
         count: 0
       };
     }
     const s = speciesMap[key];
     s.count++;
     s.recorders[r.recorder_id] = (s.recorders[r.recorder_id] || 0) + 1;
+    s.projects[r.project_name || 'Unknown'] = (s.projects[r.project_name || 'Unknown'] || 0) + 1;
+    s.sites[r.site_name || 'Unknown'] = (s.sites[r.site_name || 'Unknown'] || 0) + 1;
     const t = new Date(r.timestamp).getTime();
     if (new Date(s.first_seen).getTime() > t) s.first_seen = r.timestamp;
     if (new Date(s.last_seen).getTime() < t) s.last_seen = r.timestamp;
@@ -64,6 +68,12 @@ export async function GET(request: NextRequest) {
     const sciKey = String(s.scientific_name).toLowerCase();
     const commKey = String(s.common_name).toLowerCase();
     const master = byScientific[sciKey] || byCommon[commKey] || {};
+    const byProject = Object.entries(s.projects)
+      .map(([project_name, count]) => ({ project_name, count: Number(count) }))
+      .sort((a: any, b: any) => b.count - a.count);
+    const bySite = Object.entries(s.sites)
+      .map(([site_name, count]) => ({ site_name, count: Number(count) }))
+      .sort((a: any, b: any) => b.count - a.count);
     const byRecorder = Object.entries(s.recorders)
       .map(([recorder_id, count]) => ({ recorder_id, count: Number(count) }))
       .sort((a: any, b: any) => b.count - a.count);
@@ -86,7 +96,11 @@ export async function GET(request: NextRequest) {
       total_detections: s.count,
       first_seen: s.first_seen,
       last_seen: s.last_seen,
+      by_project: byProject,
+      by_site: bySite,
       by_recorder: byRecorder,
+      top_project: byProject[0] || null,
+      top_site: bySite[0] || null,
       top_recorder: byRecorder[0] || null
     };
   });

@@ -12,7 +12,8 @@ import {
   Square, 
   RefreshCw, 
   Activity, 
-  FolderPlus, 
+  FolderPlus,
+  Image as ImageIcon, 
   MapPin, 
   Users, 
   ShieldCheck, 
@@ -54,6 +55,7 @@ interface LiveProjectItem {
   description: string;
   organization: string;
   stationsCount: number;
+  image_url?: string;
 }
 
 export default function LiveAdminPage() {
@@ -122,6 +124,7 @@ export default function LiveAdminPage() {
 
   // 3. Projects Management State (starts empty — add real projects via the form)
   const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   useEffect(() => {
     async function loadLiveAdminData() {
@@ -137,7 +140,8 @@ export default function LiveAdminPage() {
             name: p.name,
             description: p.description || '',
             organization: p.organization || 'IISER Tirupati Bird Lab',
-            stationsCount: p.stations_count || 0
+            stationsCount: p.stations_count || 0,
+            image_url: p.image_url || ''
           })));
         }
 
@@ -155,6 +159,12 @@ export default function LiveAdminPage() {
     }, STATION_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (liveProjects.length > 0 && !liveProjects.find(p => p.id === selectedProjectId)) {
+      setSelectedProjectId(liveProjects[0].id);
+    }
+  }, [liveProjects, selectedProjectId]);
 
   // Forms
   const [newProjId, setNewProjId] = useState('');
@@ -286,6 +296,28 @@ WantedBy=multi-user.target`;
     }
   };
 
+  const handleUpdateLiveProject = async (updated: LiveProjectItem) => {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          description: updated.description,
+          image_url: updated.image_url,
+          stations_count: Number(updated.stationsCount) || 0,
+          organization: updated.organization
+        })
+        .eq('id', updated.id);
+      if (error) {
+        alert('Error updating project: ' + error.message);
+        return;
+      }
+      setLiveProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+      showNotification(`Project "${updated.name}" card details saved.`);
+    } catch (err: any) {
+      alert('Failed to update project: ' + err.message);
+    }
+  };
+
   // User Management Handlers
   const handleEditUserClick = (u: User) => {
     setEditingUser(u);
@@ -410,6 +442,17 @@ WantedBy=multi-user.target`;
           }`}
         >
           <Terminal className="w-4 h-4" /> 2. Pi Python Sync Daemon Config Generator
+        </button>
+
+        <button
+          onClick={() => setActiveTab('projects')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'projects' 
+              ? 'border-emerald-600 text-emerald-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4" /> 3. Project Card Image & Description
         </button>
 
       </div>
@@ -727,52 +770,103 @@ SYNC_INTERVAL=${genInterval}`}
         </div>
       )}
 
-      {/* TAB 3: Live Projects Directory */}
+      {/* TAB 3: Project Card Image & Description */}
       {activeTab === 'projects' && (
         <div className="space-y-6">
-          {/* Active Live Streaming Projects Directory */}
           <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
             <h3 className="text-sm font-black text-slate-900 flex items-center justify-between border-b border-slate-100 pb-3">
               <span className="flex items-center gap-2">
-                <FolderPlus className="w-4 h-4 text-emerald-600" /> Active Live Streaming Observatory Projects ({liveProjects.length})
+                <ImageIcon className="w-4 h-4 text-emerald-600" /> Edit Live Project Card Details
               </span>
+              <span className="text-[10px] font-mono text-slate-500">{liveProjects.length} project(s)</span>
             </h3>
 
             <div className="space-y-3">
-              {liveProjects.map((p: any) => (
-                <div key={p.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    {p.image_url && (
-                      <img src={p.image_url} alt={p.name} className="w-16 h-16 rounded-xl object-cover border border-slate-200 shadow-sm flex-shrink-0" />
-                    )}
-                    <div>
-                      <strong className="text-sm font-black text-slate-900">{p.name}</strong>
-                      <p className="text-slate-500 font-medium text-[11px] mt-0.5">{p.organization}</p>
-                      {p.description && (
-                        <p className="text-slate-600 text-[11px] mt-1 line-clamp-2 max-w-xl">{p.description}</p>
+              <label className="font-extrabold text-slate-700 block">Choose Live Project</label>
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:border-emerald-500 focus:outline-none"
+              >
+                {liveProjects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const p = liveProjects.find(proj => proj.id === selectedProjectId);
+              if (!p) return <p className="text-[11px] text-slate-500">Select a project above to edit its card details.</p>;
+              return (
+                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-start gap-4">
+                    <div className="w-full md:w-40 h-28 rounded-xl border border-slate-200 bg-white overflow-hidden flex-shrink-0">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px] font-bold">No Image</div>
                       )}
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">{p.id}</span>
-                      <h4 className="font-extrabold text-slate-900 text-sm">{p.name}</h4>
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <label className="font-extrabold text-slate-700 block mb-1">Image Link (URL)</label>
+                        <input
+                          type="text"
+                          value={p.image_url || ''}
+                          onChange={(e) => setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, image_url: e.target.value } : proj))}
+                          placeholder="https://example.com/project-image.jpg"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-[11px] text-slate-900 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-extrabold text-slate-700 block mb-1">Project Description</label>
+                        <textarea
+                          value={p.description || ''}
+                          onChange={(e) => setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, description: e.target.value } : proj))}
+                          placeholder="Short description shown on the project card..."
+                          rows={3}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:border-emerald-500 focus:outline-none resize-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-extrabold text-slate-700 block mb-1">Organization</label>
+                          <input
+                            type="text"
+                            value={p.organization || ''}
+                            onChange={(e) => setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, organization: e.target.value } : proj))}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-extrabold text-slate-700 block mb-1">Active Nodes</label>
+                          <input
+                            type="number"
+                            value={p.stationsCount || 0}
+                            onChange={(e) => setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, stationsCount: Number(e.target.value) } : proj))}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-slate-500 text-[11px] font-medium">{p.description}</p>
-                    <div className="text-[10px] text-slate-400 font-mono">Organization: {p.organization || 'IISER Tirupati Bird Lab'}</div>
                   </div>
-                  <div className="flex items-center gap-2 self-end md:self-center">
+                  <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
                     <button
                       onClick={() => handleDeleteLiveProject(p.id)}
                       className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200 hover:border-rose-600"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Project</span>
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                    <button
+                      onClick={() => handleUpdateLiveProject(p)}
+                      className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center gap-1.5 transition shadow-md shadow-emerald-600/20"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Save Changes
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}

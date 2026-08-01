@@ -342,7 +342,7 @@ export default function HomePage() {
                 </div>
 
                 <Link
-                  href="/dashboard"
+                  href={`/live_dashboard?project=${p.id}`}
                   className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs text-center transition flex items-center justify-center gap-2 group/btn"
                 >
                   <span>Open Live Streaming Dashboard</span>

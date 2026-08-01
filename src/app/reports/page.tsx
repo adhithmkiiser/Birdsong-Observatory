@@ -38,6 +38,14 @@ export default function ReportsPage() {
       ]);
 
       setProjectsList(projs || []);
+
+      // Pre-select project from query param
+      const queryProject = new URLSearchParams(window.location.search).get('project');
+      const projectIds = new Set((projs || []).map((p: any) => p.id));
+      if (queryProject && projectIds.has(queryProject)) {
+        setSelectedProjectId(queryProject);
+      }
+
       setStationsList([{ id: 'Test_Lab_1', station_name: 'Inside BirdLab (Test_Lab_1)', description: 'Raspberry Pi Live Stream Node' }]);
     }
 

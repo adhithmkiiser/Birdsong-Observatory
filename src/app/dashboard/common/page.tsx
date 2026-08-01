@@ -21,7 +21,9 @@ import {
 } from 'lucide-react';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
+import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
+import DashboardLoader from '@/components/ui/DashboardLoader';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -84,6 +86,12 @@ export default function CommonDashboardPage() {
         const pamProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
         const pamProjectIds = new Set(pamProjects.map((p: any) => p.id));
         setProjectsList(pamProjects);
+
+        // Pre-select project from query param
+        const queryProject = new URLSearchParams(window.location.search).get('project');
+        if (queryProject && pamProjectIds.has(queryProject)) {
+          setSelectedProjectId(queryProject);
+        }
 
         // Include ONLY PAM sites (Never Live stations)
         const pamSites: any[] = (sitesRes.data || [])
@@ -502,6 +510,8 @@ export default function CommonDashboardPage() {
     };
   }, [rawDetections, selectedSpecies, diversityYear, diversityMonth, diurnalDate, radialDate, hourLabels, chartColors]);
 
+  if (loading) return <DashboardLoader message="Loading PAM dashboard..." />;
+
   return (
     <div className="space-y-8 pb-12 font-sans">
       {/* Hero Banner */}
@@ -756,7 +766,29 @@ export default function CommonDashboardPage() {
           <ReactECharts option={trendOption} style={{ height: '320px' }} />
         </div>
 
-        {/* Chart 2: Species Diversity Over Time */}
+        {/* Chart 2: Detection Patterns by Time of Day (24-Hour Diurnal) */}
+        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
+          <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-600" /> Detection Patterns by Time of Day (24-Hour Diurnal)
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium">Use the species selector above; pick a date to see hourly detections</p>
+            </div>
+            <select
+              value={diurnalDate}
+              onChange={(e) => setDiurnalDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+            >
+              {availableDates.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <ReactECharts option={diurnalOption} style={{ height: '280px' }} />
+        </div>
+
+        {/* Chart 3: Species Diversity Over Time */}
         <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
           <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
@@ -789,28 +821,6 @@ export default function CommonDashboardPage() {
             </div>
           </div>
           <ReactECharts option={diversityOption} style={{ height: '280px' }} />
-        </div>
-
-        {/* Chart 3: Detection Patterns by Time of Day (24-Hour Diurnal) */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-600" /> Detection Patterns by Time of Day (24-Hour Diurnal)
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">Use the species selector above; pick a date to see hourly detections</p>
-            </div>
-            <select
-              value={diurnalDate}
-              onChange={(e) => setDiurnalDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
-            >
-              {availableDates.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <ReactECharts option={diurnalOption} style={{ height: '280px' }} />
         </div>
 
         {/* Chart 4: Month by Month Abundance Bar Chart */}
@@ -846,6 +856,9 @@ export default function CommonDashboardPage() {
           <ReactECharts option={radialOption} style={{ height: '360px' }} />
         </div>
       </div>
+
+      {/* Species Detection Matrix by Hour of Day */}
+      <CommonSpeciesHourMatrix detections={rawDetections} />
 
       {selectedDetection && (
         <AudioPlayerModal
