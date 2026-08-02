@@ -105,17 +105,19 @@ def compile_and_upload(folder_path, project_id, project_type='PAM'):
                         file_value = values[file_idx].strip() if file_idx >= 0 and file_idx < len(values) and values[file_idx] else filename
 
                         # Extract base timestamp from audio path or filename, then add detection offset
-                        timestamp = datetime.utcnow()
                         date_match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', file_value)
                         if not date_match:
                             date_match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', filename)
-                        if date_match:
-                            try:
-                                y, m, d, hh, mm, ss = date_match.groups()
-                                timestamp = datetime(int(y), int(m), int(d), int(hh), int(mm), int(ss))
-                                timestamp += timedelta(seconds=start_s)
-                            except Exception:
-                                pass
+                        if not date_match:
+                            print(f"  ⚠️ Warning: Skipping row in {filename} - could not parse YYYYMMDD_HHMMSS timestamp from '{file_value}'.")
+                            continue
+                        try:
+                            y, m, d, hh, mm, ss = date_match.groups()
+                            timestamp = datetime(int(y), int(m), int(d), int(hh), int(mm), int(ss))
+                            timestamp += timedelta(seconds=start_s)
+                        except Exception as e:
+                            print(f"  ⚠️ Warning: Skipping row in {filename} - invalid timestamp values: {e}")
+                            continue
 
                         if is_lantana:
                             all_detections.append({
@@ -165,6 +167,20 @@ def compile_and_upload(folder_path, project_id, project_type='PAM'):
                     print(f"  ⚠️ Warning: Skipping {filename} - missing 'Common Name' or 'Confidence' columns.")
                     continue
 
+                # Extract the base timestamp once from the selection table's filename
+                base_timestamp = None
+                date_match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', filename)
+                if date_match:
+                    try:
+                        y, m, d, hh, mm, ss = date_match.groups()
+                        base_timestamp = datetime(int(y), int(m), int(d), int(hh), int(mm), int(ss))
+                    except Exception as e:
+                        print(f"  ⚠️ Warning: Skipping {filename} - invalid timestamp values: {e}")
+                        continue
+                if base_timestamp is None:
+                    print(f"  ⚠️ Warning: Skipping {filename} - could not parse YYYYMMDD_HHMMSS timestamp from filename.")
+                    continue
+
                 for line in lines[1:]:
                     cols = line.strip().split('\t')
                     if len(cols) <= max(common_name_idx, confidence_idx):
@@ -178,16 +194,8 @@ def compile_and_upload(folder_path, project_id, project_type='PAM'):
                         
                     if not common_name or confidence <= 0.0:
                         continue
-                        
-                    # Extract timestamp from filename
-                    timestamp = datetime.utcnow()
-                    date_match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', filename)
-                    if date_match:
-                        try:
-                            y, m, d, hh, mm, ss = date_match.groups()
-                            timestamp = datetime(int(y), int(m), int(d), int(hh), int(mm), int(ss))
-                        except Exception:
-                            pass
+
+                    timestamp = base_timestamp
                     
                     if is_lantana:
                         all_detections.append({

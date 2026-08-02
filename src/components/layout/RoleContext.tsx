@@ -241,13 +241,14 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addUser = async (newUser: User) => {
-    setUsersList(prev => [newUser, ...prev]);
     try {
       const dbUser = mapUserToDbUser(newUser);
       const { error } = await supabase.from('users').insert([dbUser]);
       if (error) {
         console.error('Supabase error adding user:', error);
         alert('Error adding user in database: ' + error.message);
+      } else {
+        setUsersList(prev => [newUser, ...prev]);
       }
     } catch (e) {
       console.error('Supabase error adding user:', e);

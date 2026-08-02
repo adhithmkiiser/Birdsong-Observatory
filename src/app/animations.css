@@ -1,0 +1,136 @@
+/* Jitter-style reveal animations for the temp /home page */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.96) translateY(16px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.reveal.is-visible,
+.reveal-scale.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.delay-100 { transition-delay: 100ms; }
+.delay-200 { transition-delay: 200ms; }
+.delay-300 { transition-delay: 300ms; }
+.delay-400 { transition-delay: 400ms; }
+.delay-500 { transition-delay: 500ms; }
+
+/* Gentle floating animation for key visual accents */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-float {
+  animation: floaty 4s ease-in-out infinite;
+}
+
+/* Subtle pulse ring like Jitter loading/active dots */
+@keyframes pulseRing {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: pulseRing 1.6s ease-out infinite;
+}
+
+/* Jitter-style line-drawing animation for What We Provide chart */
+@keyframes draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.draw {
+  animation: draw 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.draw-delay-1 { animation-delay: 0ms; }
+.draw-delay-2 { animation-delay: 150ms; }
+.draw-delay-3 { animation-delay: 300ms; }
+
+/* Complex scroll-reveal keyframes for the full-screen What We Provide section */
+.reveal-text {
+  opacity: 0;
+  transform: translateY(30px);
+  filter: blur(10px);
+  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  animation: revealTextIn 1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.reveal-chart {
+  opacity: 0;
+  transform: scale(0.9);
+  filter: blur(8px);
+  clip-path: circle(0% at 50% 50%);
+  animation: revealChartIn 1s cubic-bezier(0.22, 0.61, 0.36, 1) 0.15s forwards;
+}
+
+@keyframes revealTextIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+    filter: blur(10px);
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes revealChartIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(8px);
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+    clip-path: circle(150% at 50% 50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-scale {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .reveal-text,
+  .reveal-chart {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    clip-path: none;
+    animation: none;
+  }
+
+  .animate-float,
+  .pulse-ring::after {
+    animation: none;
+  }
+}

@@ -353,7 +353,7 @@ WantedBy=multi-user.target`;
     const otpToUse = formOtpPassword || `TempPass_${Math.floor(1000 + Math.random() * 9000)}!`;
 
     const newUser: User = {
-      id: `usr-${Date.now().toString().slice(-4)}`,
+      id: crypto.randomUUID(),
       name: formName,
       email: formEmail,
       password: otpToUse,
@@ -366,21 +366,9 @@ WantedBy=multi-user.target`;
       createdAt: new Date().toISOString().split('T')[0]
     };
 
-    addUser(newUser);
+    await addUser(newUser);
 
-    // Save to Supabase users table
     try {
-      await supabase.from('users').insert([{
-        full_name: formName,
-        email: formEmail,
-        password_hash: otpToUse,
-        role: formRole,
-        organization: formOrg,
-        project_scope_permissions: [formProjectType === 'Live' ? 'bird_lab_demo' : 'tst'],
-        is_one_time_password: true,
-        must_change_password: true
-      }]);
-
       await sendOneTimePasswordEmail({
         email: formEmail,
         name: formName,
@@ -388,7 +376,7 @@ WantedBy=multi-user.target`;
         isNewUser: true
       });
     } catch (err) {
-      console.error('Error creating user in Supabase:', err);
+      console.error('Error sending OTP email:', err);
     }
 
     setIsCreateUserOpen(false);

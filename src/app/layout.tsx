@@ -56,6 +56,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
   const isLantanaOrPamDashboard = pathname.startsWith('/dashboard/lantana') || pathname.startsWith('/dashboard/common');
   const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isLantanaOrPamDashboard;
+  const isFullBleedRoute = pathname === '/home' || pathname === '/';
 
   return (
     <div className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">
@@ -67,9 +68,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
           <Sidebar currentRole={currentRole} onlineStationsCount={onlineStations} />
         )}
         
-        <main className={`flex-1 p-6 overflow-y-auto w-full mx-auto space-y-6 ${
-          isDashboardRoute ? 'max-w-7xl' : 'max-w-7xl'
-        }`}>
+        <main className={isFullBleedRoute ? "flex-1 w-full min-w-0" : `flex-1 p-6 overflow-y-auto w-full mx-auto space-y-6 max-w-7xl`}>
           {children}
         </main>
       </div>

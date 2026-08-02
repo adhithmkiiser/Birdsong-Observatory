@@ -33,7 +33,7 @@ function dedupeDetections(list: any[]) {
 }
 
 export default function ReviewQueuePage() {
-  const { currentRole } = useRole();
+  const { currentRole, currentUser } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<any | null>(null);
 
   // Filters State
@@ -104,10 +104,27 @@ export default function ReviewQueuePage() {
     setSelectedStationId('ALL');
   };
 
+  // Role-based permissions
+  const isAdmin = currentUser.role === 'Admin';
+  const canAccessLive = isAdmin || !currentUser.assignedProjectType || currentUser.assignedProjectType === 'Live' || currentUser.assignedProjectType === 'Both';
+  const allowedProjectNames = !isAdmin && currentUser.assignedProjects?.length
+    ? new Set(projectsList.filter((p: any) => currentUser.assignedProjects!.includes(p.id)).map((p: any) => p.name))
+    : null;
+  const allowedSiteNames = !isAdmin && currentUser.assignedSites?.length
+    ? new Set(sitesList.filter((s: any) => currentUser.assignedSites!.includes(s.id)).map((s: any) => s.name))
+    : null;
+
   // Filter Detections
   let filtered = detections.filter((det) => {
     // Reviewed (confirmed/rejected) items leave the queue
     if (det.reviewed) return false;
+
+    // Scope / permission guard
+    if (!isAdmin) {
+      if (!canAccessLive) return false;
+      if (allowedProjectNames && allowedProjectNames.size && det.project_name && !allowedProjectNames.has(det.project_name)) return false;
+      if (allowedSiteNames && allowedSiteNames.size && det.site_name && !allowedSiteNames.has(det.site_name)) return false;
+    }
 
     const common = det.common_name || '';
     const sci = det.scientific_name || '';

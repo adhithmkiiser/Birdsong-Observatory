@@ -46,12 +46,34 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     async function loadOptions() {
-      const [{ data: p }, { data: s }] = await Promise.all([
-        supabase.from('projects').select('id, name, project_type'),
-        supabase.from('sites').select('id, name, project_id')
-      ]);
-      if (p) setProjects(p);
-      if (s) setSites(s);
+      try {
+        const [projRes, sitesRes, liveSitesRes, lantanaSitesRes] = await Promise.all([
+          supabase.from('projects').select('id, name, project_type'),
+          supabase.from('sites').select('id, name, project_id'),
+          supabase.from('live_sites').select('id, name, project_id'),
+          supabase.from('lantana_sites').select('id, site_name, project_id')
+        ]);
+
+        const p = projRes.data || [];
+        const common = (sitesRes.data || []).map((s: any) => ({ ...s, source: 'PAM' }));
+        const live = (liveSitesRes.data || []).map((s: any) => ({ ...s, source: 'Live' }));
+        const lantana = (lantanaSitesRes.data || []).map((s: any) => ({
+          id: s.id,
+          name: s.site_name,
+          project_id: s.project_id,
+          source: 'Lantana'
+        }));
+
+        setProjects(p);
+        setSites([...common, ...live, ...lantana]);
+
+        if (projRes.error) console.error('Projects load error:', projRes.error);
+        if (sitesRes.error) console.error('Sites load error:', sitesRes.error);
+        if (liveSitesRes.error) console.error('Live sites load error:', liveSitesRes.error);
+        if (lantanaSitesRes.error) console.error('Lantana sites load error:', lantanaSitesRes.error);
+      } catch (err) {
+        console.error('Failed to load project/site options:', err);
+      }
     }
     loadOptions();
   }, []);
@@ -118,7 +140,7 @@ export default function UserManagementPage() {
     const otpToUse = formOtpPassword || `TempPass_${Math.floor(1000 + Math.random() * 9000)}!`;
 
     const newUser: User = {
-      id: `usr-${Date.now().toString().slice(-4)}`,
+      id: crypto.randomUUID(),
       name: formName,
       email: formEmail,
       password: otpToUse,

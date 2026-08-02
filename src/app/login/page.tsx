@@ -57,7 +57,7 @@ export default function SignInPage() {
         })
         .eq('email', targetUser.email);
 
-      await sendOneTimePasswordEmail({
+      const emailResult = await sendOneTimePasswordEmail({
         email: targetUser.email,
         name: targetUser.name,
         otpCode: generatedOTP,
@@ -65,8 +65,11 @@ export default function SignInPage() {
       });
 
       setLoading(false);
-      setOtpCode(generatedOTP);
-      setSuccessMsg(`One-Time Password sent to ${targetUser.email}! Use temporary OTP: ${generatedOTP}`);
+      setSuccessMsg(
+        emailResult.dispatched
+          ? `One-Time Password sent to ${targetUser.email}. Please check your inbox.`
+          : 'Password reset request received, but email delivery is not configured. Contact an administrator.'
+      );
       setMode('login');
     } catch (err) {
       setLoading(false);
