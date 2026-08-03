@@ -164,4 +164,4 @@ python python-sync/pam_data_compiler.py "C:\Path\To\Your\Recordings" "nilgiri"
 
 ---
 
-© 2026 IISER Tirupati Bird Ecology Lab & The Shola Trust. All Rights Reserved.
+© 2026 IISER Tirupati Bird Ecology Lab. All Rights Reserved.

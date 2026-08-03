@@ -568,7 +568,7 @@ WantedBy=multi-user.target
           <div className="p-6 rounded-[24px] bg-slate-900 text-white border border-slate-800 shadow-xl space-y-5 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-emerald-400" /> Raspberry Pi <code className="bg-slate-800 text-emerald-400 px-1.5 py-0.5 rounded font-mono">birdnet_sync.py</code> Systemd Config Generator
+                <Terminal className="w-4 h-4 text-emerald-400" /> Pi Python Sync Daemon Config Generator
               </h3>
               <span className="text-[10px] font-mono text-slate-400">Daemon Environment Setup</span>
             </div>
