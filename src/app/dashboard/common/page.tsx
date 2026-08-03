@@ -261,7 +261,14 @@ export default function CommonDashboardPage() {
     setSpeciesOptions(sortedSpeciesOptions);
     setSelectedSpecies(prev => prev.length > 0 ? prev : sortedSpeciesOptions.slice(0, 5));
 
-    const formattedMapSites = stationsList.map((s) => {
+    const projectStations = selectedProjectId === 'ALL_PROJECTS'
+      ? stationsList
+      : stationsList.filter(s => s.project_id === selectedProjectId);
+    const visibleStations = selectedStationId !== 'ALL_SITES'
+      ? projectStations.filter(s => s.id === selectedStationId)
+      : projectStations;
+
+    const formattedMapSites = visibleStations.map((s) => {
       const siteName = s.station_name;
       const uSpecies = new Set([...(siteSpeciesMap[siteName] || new Set())].filter(n => n && n.toLowerCase() !== 'nocall')).size;
       const totalD = siteDetMap[siteName] || 0;
@@ -276,7 +283,7 @@ export default function CommonDashboardPage() {
     });
 
     setMapSites(formattedMapSites);
-  }, [allDetections, confidenceThreshold, stationsList, recordersRegistryList, selectedStationId, selectedRecorderId]);
+  }, [allDetections, confidenceThreshold, stationsList, recordersRegistryList, selectedStationId, selectedRecorderId, selectedProjectId]);
 
   // Set default date selectors to the latest available detection date
   useEffect(() => {
@@ -776,7 +783,7 @@ export default function CommonDashboardPage() {
             </h3>
             <p className="text-[11px] text-slate-500 font-medium">Auto-binned by day, week, or month based on the date range</p>
           </div>
-          <ReactECharts option={trendOption} style={{ height: '320px' }} />
+          <ReactECharts option={trendOption} notMerge={true} style={{ height: '320px' }} />
         </div>
 
         {/* Chart 2: Detection Patterns by Time of Day (24-Hour Diurnal) */}
@@ -798,7 +805,7 @@ export default function CommonDashboardPage() {
               ))}
             </select>
           </div>
-          <ReactECharts option={diurnalOption} style={{ height: '280px' }} />
+          <ReactECharts option={diurnalOption} notMerge={true} style={{ height: '280px' }} />
         </div>
 
         {/* Chart 3: Species Diversity Over Time */}
@@ -833,7 +840,7 @@ export default function CommonDashboardPage() {
               </select>
             </div>
           </div>
-          <ReactECharts option={diversityOption} style={{ height: '280px' }} />
+          <ReactECharts option={diversityOption} notMerge={true} style={{ height: '280px' }} />
         </div>
 
         {/* Chart 4: Month by Month Abundance Bar Chart */}
@@ -844,7 +851,7 @@ export default function CommonDashboardPage() {
             </h3>
             <p className="text-[11px] text-slate-500 font-medium">Monthly total bioacoustic call detections across the survey period</p>
           </div>
-          <ReactECharts option={monthlyOption} style={{ height: '280px' }} />
+          <ReactECharts option={monthlyOption} notMerge={true} style={{ height: '280px' }} />
         </div>
 
         {/* Chart 5: Diurnal Activity Pattern (24-Hour Radial Clock - Total) */}
@@ -866,7 +873,7 @@ export default function CommonDashboardPage() {
               ))}
             </select>
           </div>
-          <ReactECharts option={radialOption} style={{ height: '360px' }} />
+          <ReactECharts option={radialOption} notMerge={true} style={{ height: '360px' }} />
         </div>
       </div>
 

@@ -43,13 +43,17 @@ function RecenterMap({
   return null;
 }
 
-// Compute gradient color based on species count
-function getGradientColor(count: number, maxCount: number): string {
-  const ratio = maxCount > 0 ? Math.min(count / maxCount, 1) : 0;
-  if (ratio < 0.25) return '#3b82f6'; // Bright Blue
-  if (ratio < 0.50) return '#10b981'; // Emerald Green
-  if (ratio < 0.75) return '#f59e0b'; // Amber Gold
-  return '#8b5cf6'; // Violet Purple
+// Compute a continuous blue (low) -> violet (high) gradient based on species count
+function getGradientColor(count: number, minCount: number, maxCount: number): string {
+  const range = maxCount - minCount;
+  let ratio = 0;
+  if (range > 0) {
+    ratio = Math.min(Math.max((count - minCount) / range, 0), 1);
+  } else if (maxCount > 0) {
+    ratio = 1;
+  }
+  const hue = 220 + Math.round(50 * ratio); // blue (220) -> violet (270)
+  return `hsl(${hue}, 80%, 58%)`;
 }
 
 export default function LightMap({
@@ -60,7 +64,9 @@ export default function LightMap({
   markerRadius = 10,
   heightClass = 'h-[380px]'
 }: LightMapProps) {
-  const maxSpecies = Math.max(...sites.map(s => s.speciesCount), 1);
+  const counts = sites.map(s => s.speciesCount);
+  const minSpecies = counts.length ? Math.min(...counts) : 0;
+  const maxSpecies = counts.length ? Math.max(...counts) : 1;
 
   return (
     <div className={`w-full rounded-3xl overflow-hidden border border-slate-200 shadow-sm relative ${heightClass}`}>
@@ -74,7 +80,7 @@ export default function LightMap({
         <RecenterMap center={center} zoom={zoom} sites={sites} />
 
         {sites.map((site) => {
-          const color = getGradientColor(site.speciesCount, maxSpecies);
+          const color = getGradientColor(site.speciesCount, minSpecies, maxSpecies);
           const radius = uniformSize ? markerRadius : Math.max(12, Math.min(24, 10 + site.speciesCount * 0.8));
 
           return (
