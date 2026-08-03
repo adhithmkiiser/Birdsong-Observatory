@@ -8,18 +8,18 @@ It continuously uploads new bird call detections and extracted MP3 clips to your
 ## ⚡ Setup Instructions (via SSH)
 
 ### Step 1: Copy folder to Raspberry Pi
-Transfer the `birdnet-sync` directory to your Raspberry Pi home folder: `/home/livedetector/birdnet-sync`.
 
-Alternatively, directly via SCP from your computer:
+Transfer the `birdnet-sync` directory to your Raspberry Pi home folder, e.g. `/home/pi/birdnet-sync`.
+
 ```bash
-scp -r birdnet-sync livedetector@<PI_IP_ADDRESS>:/home/livedetector/
+scp -r birdnet-sync <your-pi-username>@<PI_IP_ADDRESS>:~/
 ```
 
 ---
 
-### Step 2: Pi Python Sync Daemon Config Generator
+### Step 2: Run the Pi Python Sync Daemon Config Generator
 
-The `birdnet-sync.service` file uses the old Pi username `livedetector`. If your new Pi has a different username, run the config generator from the `birdnet-sync` folder. It auto-detects the current user, installs Python dependencies, creates `.env` from `.env.example` if missing, and installs the correct systemd service:
+The `birdnet-sync.service` file uses the old `livedetector` username as an example. The config generator auto-detects the current user, installs Python dependencies, creates `.env` interactively, and installs the correct systemd service.
 
 ```bash
 ssh <your-pi-username>@<PI_IP_ADDRESS>
@@ -27,51 +27,30 @@ cd ~/birdnet-sync
 bash config-generator.sh
 ```
 
-After it finishes, move on to Step 3 to edit the generated `.env` file.
+It will ask you for:
 
-### Step 3: Install Python dependencies
-If you did not run the config generator, SSH into your Pi and install the Python requirements manually:
-```bash
-ssh <your-pi-username>@<PI_IP_ADDRESS>
-cd ~/birdnet-sync
-pip3 install -r requirements.txt
-```
+1. **Project Name** — must match the website project (e.g. `Test`)
+2. **Site Name** — must match the website site (e.g. `BirdLab`)
+3. **Unique Recorder ID** — the recorder node shown on the live dashboard (e.g. `BirdLab (Test Lab 2)`)
+4. **Supabase URL**
+5. **Supabase Key** (service role key recommended)
+6. **Sync Interval**, **Latitude**, **Longitude**
 
----
+Use the same project and site names as shown in the Birdsong Observatory live dashboard.
 
-### Step 4: Configure Environment Variables
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-nano .env
-```
+### Step 3: Test manually (optional)
 
-Set your station ID and Supabase credentials:
-```env
-SUPABASE_URL=https://ktihcjfxxxazohimtiav.supabase.co
-SUPABASE_KEY=your_supabase_anon_key
-STATION_ID=node-shola-01
-STATION_NAME=Shola Canopy Recorder Node 01
-```
-
----
-
-### Step 5: Test Manually First
-Run a manual test cycle to verify everything connects:
 ```bash
 python3 main.py
 ```
-You will see output indicating detected calls being synced and uploaded to Supabase. Press `Ctrl + C` to stop.
 
----
+Press `Ctrl + C` to stop.
 
-### Step 6: Install as 24/7 Systemd Service (Auto-Start on Boot)
-Execute these 3 commands to register and start the background service:
+### Step 4: Verify the 24/7 systemd service
+
 ```bash
-sudo cp birdnet-sync.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable birdnet-sync
-sudo systemctl start birdnet-sync
+sudo systemctl status birdnet-sync
+journalctl -u birdnet-sync -f
 ```
 
 ---
