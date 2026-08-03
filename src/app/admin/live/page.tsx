@@ -704,44 +704,64 @@ WantedBy=multi-user.target
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-amber-400 text-sm">Step 3: Run the Config Generator</span>
+                  <span className="font-extrabold text-amber-400 text-sm">Step 3: Edit the .env File via Nano</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/birdnet-sync && bash config-generator.sh');
-                      showNotification('Step 3 command copied!');
+                      const envText = `SUPABASE_URL="${genSupabaseUrl}"
+SUPABASE_KEY="${genSupabaseKey}"
+PROJECT_NAME="${genProjectName}"
+STATION_NAME="${genStationName}"
+STATION_ID="${genRecorderId}"
+LATITUDE=${genLatitude}
+LONGITUDE=${genLongitude}
+SQLITE_DB="/home/<your-pi-username>/BirdNET-Pi/scripts/birds.db"
+AUDIO_ROOT="/home/<your-pi-username>/BirdSongs/Extracted/By_Date"
+SYNC_INTERVAL=${genInterval}`;
+                      navigator.clipboard.writeText(envText);
+                      showNotification('.env block copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black hover:bg-amber-500/30 flex items-center gap-1.5 transition"
                   >
-                    <Copy className="w-3.5 h-3.5" /> Copy Code
+                    <Copy className="w-3.5 h-3.5" /> Copy Variables
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Run the interactive config generator. It will ask for your Project, Site, Recorder, Supabase URL/Key, coordinates, and sync interval, then create <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> and install the systemd service.</p>
+                <p className="text-slate-400 text-xs font-medium">Open the <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> config file in your installation directory using nano:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all overflow-x-auto">
-                  cd ~/birdnet-sync && bash config-generator.sh
+                  nano ~/birdnet-sync/.env
                 </div>
-                <p className="text-slate-400 text-[11px] font-medium leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-amber-300/90">
-                  If a <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> already exists, choose <strong>Y</strong> to keep and only fix the username, or <strong>N</strong> to reconfigure all values.
-                </p>
+                <p className="text-slate-400 text-xs font-medium">Paste the block below, replace <code className="bg-slate-800 text-amber-300 px-1 rounded">&lt;your-pi-username&gt;</code> with the actual Pi username, then save with <strong>Ctrl+O</strong>, Enter, and exit with <strong>Ctrl+X</strong>.</p>
+                <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
+{`SUPABASE_URL="${genSupabaseUrl}"
+SUPABASE_KEY="${genSupabaseKey}"
+PROJECT_NAME="${genProjectName}"
+STATION_NAME="${genStationName}"
+STATION_ID="${genRecorderId}"
+LATITUDE=${genLatitude}
+LONGITUDE=${genLongitude}
+SQLITE_DB="/home/<your-pi-username>/BirdNET-Pi/scripts/birds.db"
+AUDIO_ROOT="/home/<your-pi-username>/BirdSongs/Extracted/By_Date"
+SYNC_INTERVAL=${genInterval}`}
+                </pre>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-indigo-400 text-sm">Step 4: Verify the Service</span>
+                  <span className="font-extrabold text-indigo-400 text-sm">Step 4: Install & Start the Daemon</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('sudo systemctl status birdnet-sync');
-                      showNotification('Status command copied!');
+                      navigator.clipboard.writeText('cd ~/birdnet-sync && bash config-generator.sh');
+                      showNotification('Install command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Command
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">The config generator already installed and started the daemon. Check that it is active:</p>
+                <p className="text-slate-400 text-xs font-medium">Run the config generator. When it asks if you want to keep the existing <code className="bg-slate-800 text-indigo-300 px-1 rounded">.env</code>, choose <strong>Y</strong> — this keeps the file you just pasted and installs the correct systemd service for your Pi user.</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all overflow-x-auto">
-                  sudo systemctl status birdnet-sync
+                  cd ~/birdnet-sync && bash config-generator.sh
                 </div>
-                <p className="text-slate-400 text-xs font-medium mt-1">If it failed, view the logs with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">journalctl -u birdnet-sync -f</code></p>
+                <p className="text-slate-400 text-xs font-medium mt-1">Verify it's running with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">sudo systemctl status birdnet-sync</code></p>
               </div>
 
               <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
