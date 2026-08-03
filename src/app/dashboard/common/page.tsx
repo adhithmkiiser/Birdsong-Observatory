@@ -135,11 +135,7 @@ export default function CommonDashboardPage() {
           if (selectedProjectId !== 'ALL_PROJECTS') {
             const selectedProj = projectsList.find(p => p.id === selectedProjectId);
             if (selectedProj) {
-              const siteNames = stationsList
-                .filter((s: any) => s.project_id === selectedProj.id)
-                .map((s: any) => s.station_name)
-                .filter(Boolean);
-              q = q.in('project_name', siteNames.length > 0 ? siteNames : ['']);
+              q = q.eq('project_name', selectedProj.name);
             }
           }
           return q;
