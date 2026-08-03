@@ -704,55 +704,44 @@ WantedBy=multi-user.target
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-amber-400 text-sm">Step 3: Edit the Configuration File via Nano</span>
+                  <span className="font-extrabold text-amber-400 text-sm">Step 3: Run the Config Generator</span>
                   <button
                     onClick={() => {
-                      const envText = `SUPABASE_URL="${genSupabaseUrl}"\nSUPABASE_KEY="${genSupabaseKey}"\nPROJECT_NAME="${genProjectName}"\nSTATION_NAME="${genStationName}"\nSTATION_ID="${genRecorderId}"\nLATITUDE=${genLatitude}\nLONGITUDE=${genLongitude}\nSQLITE_DB="/home/livedetector/BirdNET-Pi/scripts/birds.db"\nAUDIO_ROOT="/home/livedetector/BirdSongs/Extracted/By_Date"\nSYNC_INTERVAL=${genInterval}`;
-                      navigator.clipboard.writeText(envText);
-                      showNotification('.env block copied!');
+                      navigator.clipboard.writeText('cd ~/birdnet-sync && bash config-generator.sh');
+                      showNotification('Step 3 command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black hover:bg-amber-500/30 flex items-center gap-1.5 transition"
                   >
-                    <Copy className="w-3.5 h-3.5" /> Copy Variables
+                    <Copy className="w-3.5 h-3.5" /> Copy Code
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Open the <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> config file in your installation directory using nano:</p>
+                <p className="text-slate-400 text-xs font-medium">Run the interactive config generator. It will ask for your Project, Site, Recorder, Supabase URL/Key, coordinates, and sync interval, then create <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> and install the systemd service.</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-slate-300 select-all overflow-x-auto">
-                  nano ~/birdnet-sync/.env
+                  cd ~/birdnet-sync && bash config-generator.sh
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Paste the exact block below into the file, save with <strong>Ctrl+O</strong>, Enter, then exit with <strong>Ctrl+X</strong>.</p>
-                <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed whitespace-pre">
-{`SUPABASE_URL="${genSupabaseUrl}"
-SUPABASE_KEY="${genSupabaseKey}"
-PROJECT_NAME="${genProjectName}"
-STATION_NAME="${genStationName}"
-STATION_ID="${genRecorderId}"
-LATITUDE=${genLatitude}
-LONGITUDE=${genLongitude}
-SQLITE_DB="/home/livedetector/BirdNET-Pi/scripts/birds.db"
-AUDIO_ROOT="/home/livedetector/BirdSongs/Extracted/By_Date"
-SYNC_INTERVAL=${genInterval}`}
-                </pre>
+                <p className="text-slate-400 text-[11px] font-medium leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-amber-300/90">
+                  If a <code className="bg-slate-800 text-amber-300 px-1 rounded">.env</code> already exists, choose <strong>Y</strong> to keep and only fix the username, or <strong>N</strong> to reconfigure all values.
+                </p>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-indigo-400 text-sm">Step 4: Run the Auto-Installer script</span>
+                  <span className="font-extrabold text-indigo-400 text-sm">Step 4: Verify the Service</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync');
-                      showNotification('Install command copied!');
+                      navigator.clipboard.writeText('sudo systemctl status birdnet-sync');
+                      showNotification('Status command copied!');
                     }}
                     className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-black hover:bg-indigo-500/30 flex items-center gap-1.5 transition"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Command
                   </button>
                 </div>
-                <p className="text-slate-400 text-xs font-medium">Navigate into the sync folder, install the systemd service, and start the daemon — all in one command:</p>
+                <p className="text-slate-400 text-xs font-medium">The config generator already installed and started the daemon. Check that it is active:</p>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[12px] text-indigo-300 select-all overflow-x-auto">
-                  cd ~/birdnet-sync && sudo cp birdnet-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable birdnet-sync && sudo systemctl start birdnet-sync
+                  sudo systemctl status birdnet-sync
                 </div>
-                <p className="text-slate-400 text-xs font-medium mt-1">Verify it's running with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">sudo systemctl status birdnet-sync</code></p>
+                <p className="text-slate-400 text-xs font-medium mt-1">If it failed, view the logs with: <code className="bg-slate-800 text-emerald-300 px-1 rounded">journalctl -u birdnet-sync -f</code></p>
               </div>
 
               <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
