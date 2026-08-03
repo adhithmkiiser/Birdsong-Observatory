@@ -177,31 +177,41 @@ export default function LiveAdminPage() {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  const generatedSystemdScript = `[Unit]
+  const generatedSystemdScript = `# Step 1: Create /home/<your-pi-username>/birdnet-sync/.env on the Pi
+#    Replace <your-pi-username> with the actual Pi username (e.g. birdlab, pi)
+SUPABASE_URL=${genSupabaseUrl}
+SUPABASE_KEY=${genSupabaseKey}
+PROJECT_NAME=${genProjectName}
+SITE_NAME=${genStationName}
+RECORDER_ID=${genRecorderId}
+SQLITE_DB=/home/<your-pi-username>/BirdNET-Pi/scripts/birds.db
+AUDIO_ROOT=/home/<your-pi-username>/BirdSongs/Extracted/By_Date
+LATITUDE=${genLatitude}
+LONGITUDE=${genLongitude}
+SYNC_INTERVAL=${genInterval}
+
+# Step 2: Save as /etc/systemd/system/birdnet-sync.service
+[Unit]
 Description=BirdNET-Pi Cloud Sync Daemon (IISER Tirupati Bird Lab)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/livedetector
-ExecStart=/usr/bin/python3 /home/livedetector/birdnet-sync/main.py
+User=<your-pi-username>
+WorkingDirectory=/home/<your-pi-username>/birdnet-sync
+ExecStart=/usr/bin/python3 /home/<your-pi-username>/birdnet-sync/main.py
 Restart=always
 RestartSec=10
-Environment="SUPABASE_URL=${genSupabaseUrl}"
-Environment="SUPABASE_KEY=${genSupabaseKey}"
-Environment="STATION_ID=${genRecorderId}"
-Environment="STATION_NAME=${genStationName}"
-Environment="PROJECT_NAME=${genProjectName}"
-Environment="SQLITE_DB=/home/livedetector/BirdNET-Pi/scripts/birds.db"
-Environment="AUDIO_ROOT=/home/livedetector/BirdSongs/Extracted/By_Date"
-Environment="SYNC_INTERVAL=${genInterval}"
-Environment="LATITUDE=${genLatitude}"
-Environment="LONGITUDE=${genLongitude}"
+EnvironmentFile=/home/<your-pi-username>/birdnet-sync/.env
 
 [Install]
-WantedBy=multi-user.target`;
+WantedBy=multi-user.target
+
+# Step 3: On the Pi, run:
+# sudo systemctl daemon-reload
+# sudo systemctl enable birdnet-sync
+# sudo systemctl start birdnet-sync`
 
   const handleCopySystemd = () => {
     navigator.clipboard.writeText(generatedSystemdScript);
