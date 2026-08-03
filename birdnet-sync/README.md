@@ -17,17 +17,29 @@ scp -r birdnet-sync livedetector@<PI_IP_ADDRESS>:/home/livedetector/
 
 ---
 
-### Step 2: Install Python dependencies
-SSH into your Raspberry Pi and install requirements:
+### Step 2: Pi Python Sync Daemon Config Generator
+
+The `birdnet-sync.service` file uses the old Pi username `livedetector`. If your new Pi has a different username, run the config generator from the `birdnet-sync` folder. It auto-detects the current user, installs Python dependencies, creates `.env` from `.env.example` if missing, and installs the correct systemd service:
+
 ```bash
-ssh livedetector@<PI_IP_ADDRESS>
-cd /home/livedetector/birdnet-sync
+ssh <your-pi-username>@<PI_IP_ADDRESS>
+cd ~/birdnet-sync
+bash config-generator.sh
+```
+
+After it finishes, move on to Step 3 to edit the generated `.env` file.
+
+### Step 3: Install Python dependencies
+If you did not run the config generator, SSH into your Pi and install the Python requirements manually:
+```bash
+ssh <your-pi-username>@<PI_IP_ADDRESS>
+cd ~/birdnet-sync
 pip3 install -r requirements.txt
 ```
 
 ---
 
-### Step 3: Configure Environment Variables
+### Step 4: Configure Environment Variables
 Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
@@ -44,7 +56,7 @@ STATION_NAME=Shola Canopy Recorder Node 01
 
 ---
 
-### Step 4: Test Manually First
+### Step 5: Test Manually First
 Run a manual test cycle to verify everything connects:
 ```bash
 python3 main.py
@@ -53,7 +65,7 @@ You will see output indicating detected calls being synced and uploaded to Supab
 
 ---
 
-### Step 5: Install as 24/7 Systemd Service (Auto-Start on Boot)
+### Step 6: Install as 24/7 Systemd Service (Auto-Start on Boot)
 Execute these 3 commands to register and start the background service:
 ```bash
 sudo cp birdnet-sync.service /etc/systemd/system/

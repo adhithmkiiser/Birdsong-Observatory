@@ -48,6 +48,7 @@ export default function CommonDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // Raw Detections List from DB
+  const [allDetections, setAllDetections] = useState<any[]>([]);
   const [rawDetections, setRawDetections] = useState<any[]>([]);
 
   // Aggregated stats & insights
@@ -76,10 +77,10 @@ export default function CommonDashboardPage() {
   useEffect(() => {
     async function initData() {
       try {
-        const [projectsRes, stationsRes, sitesRes] = await Promise.all([
+        const [projectsRes, sitesRes, recordersRes] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('stations').select('*').order('station_name'),
-          supabase.from('sites').select('*').order('name')
+          supabase.from('sites').select('*').order('name'),
+          supabase.from('recorders_registry').select('*').order('recorder_id')
         ]);
 
         // Filter strictly to PAM projects
@@ -107,6 +108,13 @@ export default function CommonDashboardPage() {
           }));
 
         setStationsList(pamSites);
+
+        const pamProjectNames = new Set(pamProjects.map((p: any) => p.name));
+        setRecordersRegistryList(
+          (recordersRes.data || []).filter(
+            (r: any) => r.project_type === 'PAM' && pamProjectNames.has(r.project_name)
+          )
+        );
       } catch (err) {
         console.error('Error loading projects/sites:', err);
       }
@@ -114,12 +122,12 @@ export default function CommonDashboardPage() {
     initData();
   }, []);
 
-  // Re-fetch aggregated stats & recalculate whenever project/station/threshold changes
+  // Load detection data once when project changes
   useEffect(() => {
-    async function loadAggregatedStats() {
+    async function loadAllDetections() {
       setLoading(true);
       try {
-        const baseFields = 'id,date,time,common_name,confidence,site_name,project_name';
+        const baseFields = 'id,date,time,common_name,confidence,site_name,project_name,recorder_name';
         const makeQuery = (withCount: 'exact' | 'none' = 'none') => {
           const options: any = withCount === 'exact' ? { count: 'exact', head: true } : undefined;
           let q = supabase.from('pam_detections').select(baseFields, options).order('id', { ascending: true });
@@ -134,27 +142,18 @@ export default function CommonDashboardPage() {
               q = q.in('project_name', siteNames.length > 0 ? siteNames : ['']);
             }
           }
-          if (selectedStationId !== 'ALL_SITES') {
-            const selectedSite = stationsList.find(s => s.id === selectedStationId);
-            if (selectedSite) {
-              q = q.eq('site_name', selectedSite.station_name);
-            }
-          }
-
           return q;
         };
 
-        // Get exact count without rows, then fetch all pages in parallel
         const { count: totalCount, error: countError } = await makeQuery('exact');
         if (countError) {
           console.error('Error counting pam_detections:', countError);
-          setLoading(false);
+          setAllDetections([]);
           return;
         }
         const total = Number(totalCount) || 0;
         if (total === 0) {
-          setRawDetections([]);
-          setLoading(false);
+          setAllDetections([]);
           return;
         }
 
@@ -181,87 +180,7 @@ export default function CommonDashboardPage() {
           if (hasError) break;
         }
 
-        const filteredDets = allDets.filter(d => (d.confidence || 0.8) >= confidenceThreshold);
-        setRawDetections(filteredDets);
-        setTotalDetections(filteredDets.length);
-
-        const speciesCounts: Record<string, number> = {};
-        const siteSpeciesMap: Record<string, Set<string>> = {};
-        const siteDetMap: Record<string, number> = {};
-        const dateCounts: Record<string, number> = {};
-        let nightOwlCount = 0;
-        let nightOwlSpecies = 'Brown Hawk-Owl';
-        const allBirdSpecies = new Set<string>();
-
-        filteredDets.forEach(d => {
-          const sp = d.common_name || 'Unknown Species';
-          if (sp && sp.toLowerCase() !== 'nocall') {
-            allBirdSpecies.add(sp);
-          }
-          speciesCounts[sp] = (speciesCounts[sp] || 0) + 1;
-
-          const site = d.site_name || 'Unknown';
-          if (!siteSpeciesMap[site]) siteSpeciesMap[site] = new Set();
-          siteSpeciesMap[site].add(sp);
-          siteDetMap[site] = (siteDetMap[site] || 0) + 1;
-
-          if (d.date) {
-            dateCounts[d.date] = (dateCounts[d.date] || 0) + 1;
-          }
-
-          if (d.time) {
-            const hour = parseInt(d.time.split(':')[0], 10);
-            if (hour >= 20 || hour < 5) {
-              nightOwlCount++;
-              if (sp && sp.toLowerCase() !== 'nocall') {
-                nightOwlSpecies = sp;
-              }
-            }
-          }
-        });
-
-        setUniqueSpecies(allBirdSpecies.size);
-
-        const birdCounts = Object.entries(speciesCounts)
-          .filter(([name]) => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
-          .sort((a, b) => b[1] - a[1]);
-        if (birdCounts.length > 0) {
-          setBirdOfTheYear({ name: birdCounts[0][0], count: birdCounts[0][1] });
-          setRarestFind({ name: birdCounts[birdCounts.length - 1][0], count: birdCounts[birdCounts.length - 1][1] });
-        } else {
-          setBirdOfTheYear({ name: 'Indian Roller', count: 0 });
-          setRarestFind({ name: 'Nilgiri Laughingthrush', count: 1 });
-        }
-
-        const sortedDates = Object.entries(dateCounts).sort((a, b) => b[1] - a[1]);
-        if (sortedDates.length > 0) {
-          setBusiestDay({ date: sortedDates[0][0], count: sortedDates[0][1] });
-        }
-
-        setDawnChampion({ name: birdCounts[0]?.[0] || 'Indian Roller', time: '05:15 AM' });
-        setNightOwl({ name: nightOwlSpecies, count: nightOwlCount });
-
-        const sortedSpeciesOptions = Object.keys(speciesCounts)
-          .filter(name => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
-          .sort((a, b) => (speciesCounts[b] || 0) - (speciesCounts[a] || 0));
-        setSpeciesOptions(sortedSpeciesOptions);
-        setSelectedSpecies(prev => prev.length > 0 ? prev : sortedSpeciesOptions.slice(0, 5));
-
-        const formattedMapSites = stationsList.map((s) => {
-          const siteName = s.station_name;
-          const uSpecies = new Set([...(siteSpeciesMap[siteName] || new Set())].filter(n => n && n.toLowerCase() !== 'nocall')).size;
-          const totalD = siteDetMap[siteName] || 0;
-          return {
-            id: s.id,
-            name: siteName,
-            lat: Number(s.latitude) || 11.40,
-            lng: Number(s.longitude) || 76.65,
-            detectionsCount: totalD,
-            speciesCount: uSpecies
-          };
-        });
-
-        setMapSites(formattedMapSites);
+        setAllDetections(allDets);
       } catch (err) {
         console.error('Error loading aggregated stats:', err);
       } finally {
@@ -269,8 +188,99 @@ export default function CommonDashboardPage() {
       }
     }
 
-    loadAggregatedStats();
-  }, [selectedProjectId, selectedStationId, confidenceThreshold, projectsList, stationsList]);
+    loadAllDetections();
+  }, [selectedProjectId, projectsList, stationsList]);
+
+  // Filter and recalc stats client-side on threshold changes (no re-fetch, no loader)
+  useEffect(() => {
+    const selectedSite = selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId) : null;
+    const selectedRecorder = selectedRecorderId !== 'ALL_RECORDERS' ? recordersRegistryList.find(r => r.recorder_id === selectedRecorderId) : null;
+    const filteredDets = allDetections.filter(d =>
+      (d.confidence || 0.8) >= confidenceThreshold &&
+      (!selectedSite || d.site_name === selectedSite.station_name) &&
+      (!selectedRecorder || d.recorder_name === selectedRecorder.recorder_id)
+    );
+    setRawDetections(filteredDets);
+    setTotalDetections(filteredDets.length);
+
+    const speciesCounts: Record<string, number> = {};
+    const siteSpeciesMap: Record<string, Set<string>> = {};
+    const siteDetMap: Record<string, number> = {};
+    const dateCounts: Record<string, number> = {};
+    let nightOwlCount = 0;
+    let nightOwlSpecies = 'Brown Hawk-Owl';
+    const allBirdSpecies = new Set<string>();
+
+    filteredDets.forEach(d => {
+      const sp = d.common_name || 'Unknown Species';
+      if (sp && sp.toLowerCase() !== 'nocall') {
+        allBirdSpecies.add(sp);
+      }
+      speciesCounts[sp] = (speciesCounts[sp] || 0) + 1;
+
+      const site = d.site_name || 'Unknown';
+      if (!siteSpeciesMap[site]) siteSpeciesMap[site] = new Set();
+      siteSpeciesMap[site].add(sp);
+      siteDetMap[site] = (siteDetMap[site] || 0) + 1;
+
+      if (d.date) {
+        dateCounts[d.date] = (dateCounts[d.date] || 0) + 1;
+      }
+
+      if (d.time) {
+        const hour = parseInt(d.time.split(':')[0], 10);
+        if (hour >= 20 || hour < 5) {
+          nightOwlCount++;
+          if (sp && sp.toLowerCase() !== 'nocall') {
+            nightOwlSpecies = sp;
+          }
+        }
+      }
+    });
+
+    setUniqueSpecies(allBirdSpecies.size);
+
+    const birdCounts = Object.entries(speciesCounts)
+      .filter(([name]) => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
+      .sort((a, b) => b[1] - a[1]);
+    if (birdCounts.length > 0) {
+      setBirdOfTheYear({ name: birdCounts[0][0], count: birdCounts[0][1] });
+      setRarestFind({ name: birdCounts[birdCounts.length - 1][0], count: birdCounts[birdCounts.length - 1][1] });
+    } else {
+      setBirdOfTheYear({ name: 'Indian Roller', count: 0 });
+      setRarestFind({ name: 'Nilgiri Laughingthrush', count: 1 });
+    }
+
+    const sortedDates = Object.entries(dateCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedDates.length > 0) {
+      setBusiestDay({ date: sortedDates[0][0], count: sortedDates[0][1] });
+    }
+
+    setDawnChampion({ name: birdCounts[0]?.[0] || 'Indian Roller', time: '05:15 AM' });
+    setNightOwl({ name: nightOwlSpecies, count: nightOwlCount });
+
+    const sortedSpeciesOptions = Object.keys(speciesCounts)
+      .filter(name => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
+      .sort((a, b) => (speciesCounts[b] || 0) - (speciesCounts[a] || 0));
+    setSpeciesOptions(sortedSpeciesOptions);
+    setSelectedSpecies(prev => prev.length > 0 ? prev : sortedSpeciesOptions.slice(0, 5));
+
+    const formattedMapSites = stationsList.map((s) => {
+      const siteName = s.station_name;
+      const uSpecies = new Set([...(siteSpeciesMap[siteName] || new Set())].filter(n => n && n.toLowerCase() !== 'nocall')).size;
+      const totalD = siteDetMap[siteName] || 0;
+      return {
+        id: s.id,
+        name: siteName,
+        lat: Number(s.latitude) || 11.40,
+        lng: Number(s.longitude) || 76.65,
+        detectionsCount: totalD,
+        speciesCount: uSpecies
+      };
+    });
+
+    setMapSites(formattedMapSites);
+  }, [allDetections, confidenceThreshold, stationsList, recordersRegistryList, selectedStationId, selectedRecorderId]);
 
   // Set default date selectors to the latest available detection date
   useEffect(() => {
@@ -289,10 +299,13 @@ export default function CommonDashboardPage() {
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
     ? stationsList
     : stationsList.filter(s => s.project_id === selectedProjectId);
+  const selectedProject = selectedProjectId !== 'ALL_PROJECTS' ? projectsList.find(p => p.id === selectedProjectId) : null;
+  const selectedStation = selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId) : null;
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
     setSelectedStationId('ALL_SITES');
+    setSelectedRecorderId('ALL_RECORDERS');
   };
 
   const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#a855f7', '#06b6d4', '#f43f5e', '#8b5cf6'];
@@ -573,7 +586,7 @@ export default function CommonDashboardPage() {
             <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site Node</label>
             <select
               value={selectedStationId}
-              onChange={(e) => setSelectedStationId(e.target.value)}
+              onChange={(e) => { setSelectedStationId(e.target.value); setSelectedRecorderId('ALL_RECORDERS'); }}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL_SITES">All Sites in Chosen Project ({availableStations.length})</option>
@@ -594,7 +607,11 @@ export default function CommonDashboardPage() {
             >
               <option value="ALL_RECORDERS">All Recorders in Site</option>
               {recordersRegistryList
-                .filter(r => (selectedStationId === 'ALL_SITES' || r.site_name === selectedStationId))
+                .filter(r => {
+                  if (selectedProject && r.project_name !== selectedProject.name) return false;
+                  if (selectedStation && r.site_name !== selectedStation.station_name) return false;
+                  return true;
+                })
                 .map(r => (
                   <option key={r.id || r.recorder_id} value={r.recorder_id}>
                     {r.recorder_id} ({r.site_name})

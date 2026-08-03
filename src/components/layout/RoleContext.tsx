@@ -206,6 +206,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     }
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.password !== undefined) dbUpdates.password_hash = updates.password;
+    if (updates.isOneTimePassword !== undefined) dbUpdates.is_one_time_password = updates.isOneTimePassword;
+    if (updates.mustChangePassword !== undefined) dbUpdates.must_change_password = updates.mustChangePassword;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
     if (updates.organization !== undefined) dbUpdates.organization = updates.organization;
     if (updates.assignedProjectType !== undefined) dbUpdates.assigned_project_type = updates.assignedProjectType;

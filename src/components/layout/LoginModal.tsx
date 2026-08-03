@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, ShieldCheck, Key, LogIn, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
-import { supabase } from '@/lib/supabase';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 interface LoginModalProps {
@@ -12,7 +11,7 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
-  const { loginUser, usersList } = useRole();
+  const { loginUser, usersList, updateUserCredentials } = useRole();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -41,14 +40,11 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
     const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
     try {
-      await supabase
-        .from('users')
-        .update({
-          password_hash: generatedOTP,
-          is_one_time_password: true,
-          must_change_password: true
-        })
-        .eq('email', targetUser.email);
+      await updateUserCredentials(targetUser.id, {
+        password: generatedOTP,
+        isOneTimePassword: true,
+        mustChangePassword: true
+      });
 
       // Trigger automated email dispatch
       await sendOneTimePasswordEmail({
@@ -83,15 +79,18 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
 
     setLoading(true);
+    const user = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+    if (!user) {
+      setLoading(false);
+      setErrorMsg('User not found.');
+      return;
+    }
     try {
-      await supabase
-        .from('users')
-        .update({
-          password_hash: newPassword,
-          is_one_time_password: false,
-          must_change_password: false
-        })
-        .eq('email', email);
+      await updateUserCredentials(user.id, {
+        password: newPassword,
+        isOneTimePassword: false,
+        mustChangePassword: false
+      });
 
       setLoading(false);
       setSuccessMsg('Password updated successfully! Logging you in...');

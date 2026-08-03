@@ -15,11 +15,10 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
-import { supabase } from '@/lib/supabase';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 export default function SignInPage() {
-  const { loginUser, usersList } = useRole();
+  const { loginUser, usersList, updateUserCredentials } = useRole();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -48,14 +47,11 @@ export default function SignInPage() {
 
     const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
     try {
-      await supabase
-        .from('users')
-        .update({
-          password_hash: generatedOTP,
-          is_one_time_password: true,
-          must_change_password: true
-        })
-        .eq('email', targetUser.email);
+      await updateUserCredentials(targetUser.id, {
+        password: generatedOTP,
+        isOneTimePassword: true,
+        mustChangePassword: true
+      });
 
       const emailResult = await sendOneTimePasswordEmail({
         email: targetUser.email,
@@ -92,15 +88,18 @@ export default function SignInPage() {
     }
 
     setLoading(true);
+    const user = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+    if (!user) {
+      setLoading(false);
+      setErrorMsg('User not found.');
+      return;
+    }
     try {
-      await supabase
-        .from('users')
-        .update({
-          password_hash: newPassword,
-          is_one_time_password: false,
-          must_change_password: false
-        })
-        .eq('email', email);
+      await updateUserCredentials(user.id, {
+        password: newPassword,
+        isOneTimePassword: false,
+        mustChangePassword: false
+      });
 
       setLoading(false);
       setSuccessMsg('Password updated successfully! Redirecting...');
