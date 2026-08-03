@@ -33,7 +33,7 @@ fi
 
 # Make sure Python deps are present
 if [ -f "requirements.txt" ]; then
-  pip3 install -q -r requirements.txt
+  pip3 install -q -r requirements.txt --break-system-packages
   echo "Python dependencies installed."
 else
   echo "requirements.txt not found — skipping dependency install."
