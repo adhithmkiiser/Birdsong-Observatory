@@ -135,40 +135,27 @@ export default function LiveAdminPage() {
   const [liveFilterRecorder, setLiveFilterRecorder] = useState('All');
   const [liveSortDateDesc, setLiveSortDateDesc] = useState(true);
 
-  const filteredLiveDetections = useMemo(() => {
-    let result = liveDetections.filter(d => {
-      const proj = d.project_name || 'N/A';
-      const site = d.site_name || d.station_name || 'N/A';
-      const rec = d.recorder_id || d.station_id || 'N/A';
-      if (liveFilterProject !== 'All' && proj !== liveFilterProject) return false;
-      if (liveFilterSite !== 'All' && site !== liveFilterSite) return false;
-      if (liveFilterRecorder !== 'All' && rec !== liveFilterRecorder) return false;
-      return true;
-    });
-    
-    result.sort((a, b) => {
-      const da = new Date(a.timestamp).getTime();
-      const db = new Date(b.timestamp).getTime();
-      return liveSortDateDesc ? db - da : da - db;
-    });
-    
-    return result;
-  }, [liveDetections, liveFilterProject, liveFilterSite, liveFilterRecorder, liveSortDateDesc]);
-
   const liveFilterOptions = useMemo(() => {
-    const projects = Array.from(new Set(liveDetections.map(d => d.project_name || 'N/A'))).sort();
-    const sites = Array.from(new Set(liveDetections.map(d => d.site_name || d.station_name || 'N/A'))).sort();
-    const recorders = Array.from(new Set(liveDetections.map(d => d.recorder_id || d.station_id || 'N/A'))).sort();
-    return { projects, sites, recorders };
-  }, [liveDetections]);
+    const projects = Array.from(new Set(liveProjects.map(p => p.name || 'N/A'))).sort();
+    const sites = Array.from(new Set(recorders.map(r => r.site_name || 'N/A'))).sort();
+    const recs = Array.from(new Set(recorders.map(r => r.recorder_id || 'N/A'))).sort();
+    return { projects, sites, recorders: recs };
+  }, [liveProjects, recorders]);
+
+
 
   useEffect(() => {
     async function loadLiveAdminData() {
       try {
+        let detQuery = supabase.from('live_detections').select('*').order('timestamp', { ascending: !liveSortDateDesc }).limit(100);
+        if (liveFilterProject !== 'All') detQuery = detQuery.eq('project_name', liveFilterProject);
+        if (liveFilterSite !== 'All') detQuery = detQuery.eq('site_name', liveFilterSite);
+        if (liveFilterRecorder !== 'All') detQuery = detQuery.eq('recorder_id', liveFilterRecorder);
+
         const [{ data: projs }, { data: recordersData }, { data: detectionsData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
+          detQuery
         ]);
 
         if (projs) {
@@ -199,7 +186,8 @@ export default function LiveAdminPage() {
       loadLiveAdminData();
     }, STATION_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveFilterProject, liveFilterSite, liveFilterRecorder, liveSortDateDesc]);
 
   useEffect(() => {
     if (liveProjects.length > 0 && !liveProjects.find(p => p.id === selectedProjectId)) {
@@ -1267,7 +1255,7 @@ SYNC_INTERVAL=${genInterval}`}
                 <span className="flex items-center gap-2">
                   <Database className="w-4 h-4 text-emerald-600" /> Live Detections Database
                 </span>
-                <span className="text-[10px] font-mono text-slate-500">Showing {filteredLiveDetections.length} of {liveDetections.length} rows</span>
+                <span className="text-[10px] font-mono text-slate-500">Showing latest {liveDetections.length} rows</span>
               </h3>
               
               <div className="flex flex-wrap items-center gap-2 text-[10px]">
@@ -1303,12 +1291,12 @@ SYNC_INTERVAL=${genInterval}`}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                  {filteredLiveDetections.length === 0 ? (
+                  {liveDetections.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-slate-400">No detections found.</td>
                     </tr>
                   ) : (
-                    filteredLiveDetections.map(det => (
+                    liveDetections.map(det => (
                       <tr key={det.id} className="hover:bg-slate-50 transition">
                         <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
                         <td className="py-2.5 px-4 font-mono text-[10px]">{new Date(det.timestamp).toLocaleString()}</td>
