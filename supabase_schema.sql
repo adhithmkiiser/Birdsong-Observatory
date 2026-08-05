@@ -26,8 +26,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_one_time_password BOOLEAN D
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE;
 
--- Disable RLS on users table for application queries
-ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+-- Enable RLS on users table
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 -- 2. LANTANA PAM OFFLINE SURVEY PROJECT TABLES
 
@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS public.lantana_detections (
   file_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.lantana_detections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_detections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on lantana_detections" ON public.lantana_detections FOR SELECT USING (true);
 
 -- b) Lantana Site Metadata & Recording Telemetry
 CREATE TABLE IF NOT EXISTS public.lantana_sites (
@@ -84,7 +85,8 @@ CREATE TABLE IF NOT EXISTS public.lantana_sites (
 ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS recorder_id TEXT;
 ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS project_id TEXT;
 ALTER TABLE public.lantana_sites ADD COLUMN IF NOT EXISTS project_name TEXT;
-ALTER TABLE public.lantana_sites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_sites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on lantana_sites" ON public.lantana_sites FOR SELECT USING (true);
 
 -- c) Common PAM project sites (kept separate from Lantana sites)
 CREATE TABLE IF NOT EXISTS public.sites (
@@ -99,7 +101,8 @@ CREATE TABLE IF NOT EXISTS public.sites (
   expected_files INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.sites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on sites" ON public.sites FOR SELECT USING (true);
 
 -- d) Species Ecology Matrix
 CREATE TABLE IF NOT EXISTS public.lantana_species_ecology (
@@ -115,7 +118,8 @@ CREATE TABLE IF NOT EXISTS public.lantana_species_ecology (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 ALTER TABLE public.lantana_species_ecology ADD COLUMN IF NOT EXISTS indicator_group TEXT;
-ALTER TABLE public.lantana_species_ecology DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lantana_species_ecology ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on lantana_species_ecology" ON public.lantana_species_ecology FOR SELECT USING (true);
 
 -- 3. COMMON PAM OFFLINE SURVEY DETECTIONS TABLE
 CREATE TABLE IF NOT EXISTS public.pam_detections (
@@ -133,7 +137,8 @@ CREATE TABLE IF NOT EXISTS public.pam_detections (
   file_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.pam_detections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pam_detections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on pam_detections" ON public.pam_detections FOR SELECT USING (true);
 
 -- 4. REALTIME LIVE RECORDER TABLE
 CREATE TABLE IF NOT EXISTS public.live_detections (
@@ -156,7 +161,8 @@ CREATE TABLE IF NOT EXISTS public.live_detections (
   verification_status TEXT DEFAULT 'PENDING' CHECK (verification_status IN ('PENDING', 'YES', 'NO')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.live_detections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_detections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on live_detections" ON public.live_detections FOR SELECT USING (true);
 
 -- 4b) Live Recorder Sites (kept separate from PAM sites)
 CREATE TABLE IF NOT EXISTS public.live_sites (
@@ -170,7 +176,8 @@ CREATE TABLE IF NOT EXISTS public.live_sites (
   status TEXT DEFAULT 'Active',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-ALTER TABLE public.live_sites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_sites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on live_sites" ON public.live_sites FOR SELECT USING (true);
 
 -- 5. MASTER SCOPE REGISTRY TABLE (Connecting PAM vs Live Projects, Sites, and Recorders)
 CREATE TABLE IF NOT EXISTS public.recorders_registry (
@@ -191,7 +198,8 @@ CREATE TABLE IF NOT EXISTS public.recorders_registry (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 ALTER TABLE public.recorders_registry ADD COLUMN IF NOT EXISTS elevation TEXT;
-ALTER TABLE public.recorders_registry DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recorders_registry ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on recorders_registry" ON public.recorders_registry FOR SELECT USING (true);
 
 ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS project_name TEXT;
 ALTER TABLE public.lantana_detections ADD COLUMN IF NOT EXISTS project_id TEXT;
@@ -214,7 +222,8 @@ CREATE TABLE IF NOT EXISTS public.projects (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_project_type_check;
-ALTER TABLE public.projects DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on projects" ON public.projects FOR SELECT USING (true);
 
 -- Migration: move existing projects off the legacy 'TST' scope onto 'Lantana'
 UPDATE public.projects SET project_type = 'Lantana' WHERE project_type = 'TST';
