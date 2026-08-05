@@ -131,41 +131,46 @@ export default function PamAdminPage() {
 
 
 
+  const filteredPamDetections = useMemo(() => {
+    let result = pamDetectionsList.filter(d => {
+      const proj = d.project_name || 'N/A';
+      const site = d.site_name || 'N/A';
+      const rec = d.recorder_name || d.recorder_id || 'N/A';
+      if (pamFilterProject !== 'All' && proj !== pamFilterProject) return false;
+      if (pamFilterSite !== 'All' && site !== pamFilterSite) return false;
+      if (pamFilterRecorder !== 'All' && rec !== pamFilterRecorder) return false;
+      return true;
+    });
+    
+    result.sort((a, b) => {
+      const timeStrA = a.date && a.time ? `${a.date}T${a.time}` : (a.created_at || '0');
+      const timeStrB = b.date && b.time ? `${b.date}T${b.time}` : (b.created_at || '0');
+      const da = new Date(timeStrA).getTime();
+      const db = new Date(timeStrB).getTime();
+      return pamSortDateDesc ? db - da : da - db;
+    });
+    
+    return result;
+  }, [pamDetectionsList, pamFilterProject, pamFilterSite, pamFilterRecorder, pamSortDateDesc]);
+
   const pamFilterOptions = useMemo(() => {
-    const scopedProjects = projectsList.filter(p => detectionsTabScope === 'Lantana' ? p.type === 'Lantana' : p.type !== 'Lantana');
-    const projects = Array.from(new Set(scopedProjects.map(p => p.title || 'N/A'))).sort();
-    
-    const scopedSites = detectionsTabScope === 'Lantana' ? lantanaSitesList : sitesList;
-    const sites = Array.from(new Set(scopedSites.map(s => s.name || s.id || 'N/A'))).sort();
-    
-    const recorders = Array.from(new Set(scopedSites.map(s => s.recorderId || 'N/A').filter(Boolean))).sort();
+    const projects = Array.from(new Set(pamDetectionsList.map(d => d.project_name || 'N/A'))).sort();
+    const sites = Array.from(new Set(pamDetectionsList.map(d => d.site_name || 'N/A'))).sort();
+    const recorders = Array.from(new Set(pamDetectionsList.map(d => d.recorder_name || d.recorder_id || 'N/A'))).sort();
     return { projects, sites, recorders };
-  }, [projectsList, sitesList, lantanaSitesList, detectionsTabScope]);
+  }, [pamDetectionsList]);
 
   // Fetch detections based on scope when tab is active
   useEffect(() => {
     if (activeTab === 'detections') {
       const fetchDetections = async () => {
         const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
-        let query = supabase.from(table).select('*');
-        if (pamFilterProject !== 'All') query = query.eq('project_name', pamFilterProject);
-        if (pamFilterSite !== 'All') query = query.eq('site_name', pamFilterSite);
-        if (pamFilterRecorder !== 'All') {
-          if (detectionsTabScope === 'Lantana') {
-            query = query.eq('recorder_id', pamFilterRecorder);
-          } else {
-            query = query.eq('recorder_name', pamFilterRecorder);
-          }
-        }
-        
-        query = query.order('id', { ascending: !pamSortDateDesc }).limit(100);
-        
-        const { data } = await query;
+        const { data } = await supabase.from(table).select('*').order('id', { ascending: false }).limit(2000);
         if (data) setPamDetectionsList(data);
       };
       fetchDetections();
     }
-  }, [activeTab, detectionsTabScope, pamFilterProject, pamFilterSite, pamFilterRecorder, pamSortDateDesc]);
+  }, [activeTab, detectionsTabScope]);
 
   const handleDeletePamDetection = async (id: number) => {
     if (confirm('Are you sure you want to delete this detection row?')) {
@@ -1880,7 +1885,7 @@ export default function PamAdminPage() {
                 </h3>
                 
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-slate-500">Showing latest {pamDetectionsList.length} rows</span>
+                  <span className="text-[10px] font-mono text-slate-500">Showing {filteredPamDetections.length} of {pamDetectionsList.length} rows</span>
                   <select
                     value={detectionsTabScope}
                     onChange={(e) => setDetectionsTabScope(e.target.value as 'Lantana' | 'Common')}
@@ -1925,12 +1930,12 @@ export default function PamAdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                  {pamDetectionsList.length === 0 ? (
+                  {filteredPamDetections.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-slate-400">No detections found.</td>
                     </tr>
                   ) : (
-                    pamDetectionsList.map(det => (
+                    filteredPamDetections.map(det => (
                       <tr key={det.id} className="hover:bg-slate-50 transition">
                         <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
                         <td className="py-2.5 px-4 font-mono text-[10px]">
