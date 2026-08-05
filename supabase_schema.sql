@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS public.lantana_detections (
 );
 ALTER TABLE public.lantana_detections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read on lantana_detections" ON public.lantana_detections FOR SELECT USING (true);
+CREATE POLICY "Allow public delete on lantana_detections" ON public.lantana_detections FOR DELETE USING (true);
 
 -- b) Lantana Site Metadata & Recording Telemetry
 CREATE TABLE IF NOT EXISTS public.lantana_sites (
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS public.pam_detections (
 );
 ALTER TABLE public.pam_detections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read on pam_detections" ON public.pam_detections FOR SELECT USING (true);
+CREATE POLICY "Allow public delete on pam_detections" ON public.pam_detections FOR DELETE USING (true);
 
 -- 4. REALTIME LIVE RECORDER TABLE
 CREATE TABLE IF NOT EXISTS public.live_detections (
@@ -163,6 +165,7 @@ CREATE TABLE IF NOT EXISTS public.live_detections (
 );
 ALTER TABLE public.live_detections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read on live_detections" ON public.live_detections FOR SELECT USING (true);
+CREATE POLICY "Allow public delete on live_detections" ON public.live_detections FOR DELETE USING (true);
 
 -- 4b) Live Recorder Sites (kept separate from PAM sites)
 CREATE TABLE IF NOT EXISTS public.live_sites (

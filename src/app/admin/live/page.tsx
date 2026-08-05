@@ -61,8 +61,8 @@ interface LiveProjectItem {
 export default function LiveAdminPage() {
   const { usersList, updateUserCredentials, deleteUser, addUser } = useRole();
 
-  // Active Tab: 'nodes' | 'generator' | 'projects' | 'users'
-  const [activeTab, setActiveTab] = useState<'nodes' | 'generator' | 'projects' | 'users'>('nodes');
+  // Active Tab: 'nodes' | 'generator' | 'projects' | 'users' | 'detections'
+  const [activeTab, setActiveTab] = useState<'nodes' | 'generator' | 'projects' | 'users' | 'detections'>('nodes');
   const [successMsg, setSuccessMsg] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -126,12 +126,49 @@ export default function LiveAdminPage() {
   const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
+  // 4. Live Detections State
+  const [liveDetections, setLiveDetections] = useState<any[]>([]);
+  
+  // Sorting & Filtering for Live Detections
+  const [liveFilterProject, setLiveFilterProject] = useState('All');
+  const [liveFilterSite, setLiveFilterSite] = useState('All');
+  const [liveFilterRecorder, setLiveFilterRecorder] = useState('All');
+  const [liveSortDateDesc, setLiveSortDateDesc] = useState(true);
+
+  const filteredLiveDetections = useMemo(() => {
+    let result = liveDetections.filter(d => {
+      const proj = d.project_name || 'N/A';
+      const site = d.site_name || d.station_name || 'N/A';
+      const rec = d.recorder_id || d.station_id || 'N/A';
+      if (liveFilterProject !== 'All' && proj !== liveFilterProject) return false;
+      if (liveFilterSite !== 'All' && site !== liveFilterSite) return false;
+      if (liveFilterRecorder !== 'All' && rec !== liveFilterRecorder) return false;
+      return true;
+    });
+    
+    result.sort((a, b) => {
+      const da = new Date(a.timestamp).getTime();
+      const db = new Date(b.timestamp).getTime();
+      return liveSortDateDesc ? db - da : da - db;
+    });
+    
+    return result;
+  }, [liveDetections, liveFilterProject, liveFilterSite, liveFilterRecorder, liveSortDateDesc]);
+
+  const liveFilterOptions = useMemo(() => {
+    const projects = Array.from(new Set(liveDetections.map(d => d.project_name || 'N/A'))).sort();
+    const sites = Array.from(new Set(liveDetections.map(d => d.site_name || d.station_name || 'N/A'))).sort();
+    const recorders = Array.from(new Set(liveDetections.map(d => d.recorder_id || d.station_id || 'N/A'))).sort();
+    return { projects, sites, recorders };
+  }, [liveDetections]);
+
   useEffect(() => {
     async function loadLiveAdminData() {
       try {
-        const [{ data: projs }, { data: recordersData }] = await Promise.all([
+        const [{ data: projs }, { data: recordersData }, { data: detectionsData }] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false })
+          supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
+          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
         ]);
 
         if (projs) {
@@ -147,6 +184,10 @@ export default function LiveAdminPage() {
 
         if (recordersData) {
           setRecorders(recordersData);
+        }
+
+        if (detectionsData) {
+          setLiveDetections(detectionsData);
         }
       } catch (e) {
         console.error('Failed to load Live admin data from recorders_registry:', e);
@@ -256,6 +297,18 @@ WantedBy=multi-user.target
       showNotification(`Recorder ${node.id} and its data were deleted.`);
     } catch (err: any) {
       alert('Failed to delete recorder: ' + err.message);
+    }
+  };
+
+  const handleDeleteLiveDetection = async (id: number) => {
+    if (confirm('Are you sure you want to delete this detection row?')) {
+      const { error } = await supabase.from('live_detections').delete().eq('id', id);
+      if (error) {
+        alert('Error deleting detection: ' + error.message);
+        return;
+      }
+      setLiveDetections(prev => prev.filter(d => d.id !== id));
+      showNotification('Detection row deleted successfully.');
     }
   };
 
@@ -451,6 +504,17 @@ WantedBy=multi-user.target
           }`}
         >
           <ImageIcon className="w-4 h-4" /> 3. Project Card Image & Description
+        </button>
+
+        <button
+          onClick={() => setActiveTab('detections')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'detections' 
+              ? 'border-emerald-600 text-emerald-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Database className="w-4 h-4" /> 4. Detections Data Management
         </button>
 
       </div>
@@ -1189,6 +1253,96 @@ SYNC_INTERVAL=${genInterval}`}
               >
                 Yes, Delete User
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: Detections Management */}
+      {activeTab === 'detections' && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <div className="flex flex-col gap-3 pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-black text-slate-900 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-600" /> Live Detections Database
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">Showing {filteredLiveDetections.length} of {liveDetections.length} rows</span>
+              </h3>
+              
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <select value={liveFilterProject} onChange={e => setLiveFilterProject(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Projects</option>
+                  {liveFilterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                
+                <select value={liveFilterSite} onChange={e => setLiveFilterSite(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Sites</option>
+                  {liveFilterOptions.sites.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                
+                <select value={liveFilterRecorder} onChange={e => setLiveFilterRecorder(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Recorders</option>
+                  {liveFilterOptions.recorders.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-black">
+                    <th className="py-3 px-4">ID</th>
+                    <th className="py-3 px-4 cursor-pointer hover:text-emerald-600 select-none transition" onClick={() => setLiveSortDateDesc(!liveSortDateDesc)}>
+                      Date & Time {liveSortDateDesc ? '↓' : '↑'}
+                    </th>
+                    <th className="py-3 px-4">Station / Recorder</th>
+                    <th className="py-3 px-4">Species</th>
+                    <th className="py-3 px-4 text-center">Confidence</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                  {filteredLiveDetections.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">No detections found.</td>
+                    </tr>
+                  ) : (
+                    filteredLiveDetections.map(det => (
+                      <tr key={det.id} className="hover:bg-slate-50 transition">
+                        <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
+                        <td className="py-2.5 px-4 font-mono text-[10px]">{new Date(det.timestamp).toLocaleString()}</td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-bold text-slate-900">{det.site_name || det.station_name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{det.recorder_id || det.station_id}</div>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-bold text-slate-900">{det.common_name}</div>
+                          <div className="text-[10px] text-slate-400 italic">{det.scientific_name}</div>
+                        </td>
+                        <td className="py-2.5 px-4 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            det.confidence > 0.8 ? 'bg-emerald-100 text-emerald-700' :
+                            det.confidence > 0.5 ? 'bg-amber-100 text-amber-700' :
+                            'bg-rose-100 text-rose-700'
+                          }`}>
+                            {(det.confidence * 100).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            onClick={() => handleDeleteLiveDetection(det.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Delete Row"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

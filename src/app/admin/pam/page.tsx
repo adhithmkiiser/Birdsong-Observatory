@@ -69,8 +69,8 @@ const mapDbSiteToItem = (s: any): SiteItem => ({
 export default function PamAdminPage() {
   const { currentRole, currentUser } = useRole();
 
-  // Active Tab: 'upload' | 'projects' | 'species'
-  const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'species'>('upload');
+  // Active Tab: 'upload' | 'projects' | 'species' | 'detections'
+  const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'species' | 'detections'>('upload');
   const [successMsg, setSuccessMsg] = useState('');
   
   // Loading states for data ingestion
@@ -118,6 +118,70 @@ export default function PamAdminPage() {
   const [newImgLink, setNewImgLink] = useState('');
   const [newAudioLink, setNewAudioLink] = useState('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+
+  // 4. Detections Data Management States
+  const [detectionsTabScope, setDetectionsTabScope] = useState<'Lantana' | 'Common'>('Lantana');
+  const [pamDetectionsList, setPamDetectionsList] = useState<any[]>([]);
+  
+  // Sorting & Filtering for PAM Detections
+  const [pamFilterProject, setPamFilterProject] = useState('All');
+  const [pamFilterSite, setPamFilterSite] = useState('All');
+  const [pamFilterRecorder, setPamFilterRecorder] = useState('All');
+  const [pamSortDateDesc, setPamSortDateDesc] = useState(true);
+
+  const filteredPamDetections = useMemo(() => {
+    let result = pamDetectionsList.filter(d => {
+      const proj = d.project_name || 'N/A';
+      const site = d.site_name || 'N/A';
+      const rec = d.recorder_name || d.recorder_id || 'N/A';
+      if (pamFilterProject !== 'All' && proj !== pamFilterProject) return false;
+      if (pamFilterSite !== 'All' && site !== pamFilterSite) return false;
+      if (pamFilterRecorder !== 'All' && rec !== pamFilterRecorder) return false;
+      return true;
+    });
+    
+    result.sort((a, b) => {
+      const timeStrA = a.date && a.time ? `${a.date}T${a.time}` : (a.created_at || '0');
+      const timeStrB = b.date && b.time ? `${b.date}T${b.time}` : (b.created_at || '0');
+      const da = new Date(timeStrA).getTime();
+      const db = new Date(timeStrB).getTime();
+      return pamSortDateDesc ? db - da : da - db;
+    });
+    
+    return result;
+  }, [pamDetectionsList, pamFilterProject, pamFilterSite, pamFilterRecorder, pamSortDateDesc]);
+
+  const pamFilterOptions = useMemo(() => {
+    const projects = Array.from(new Set(pamDetectionsList.map(d => d.project_name || 'N/A'))).sort();
+    const sites = Array.from(new Set(pamDetectionsList.map(d => d.site_name || 'N/A'))).sort();
+    const recorders = Array.from(new Set(pamDetectionsList.map(d => d.recorder_name || d.recorder_id || 'N/A'))).sort();
+    return { projects, sites, recorders };
+  }, [pamDetectionsList]);
+
+  // Fetch detections based on scope when tab is active
+  useEffect(() => {
+    if (activeTab === 'detections') {
+      const fetchDetections = async () => {
+        const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
+        const { data } = await supabase.from(table).select('*').order('created_at', { ascending: false }).limit(100);
+        if (data) setPamDetectionsList(data);
+      };
+      fetchDetections();
+    }
+  }, [activeTab, detectionsTabScope]);
+
+  const handleDeletePamDetection = async (id: number) => {
+    if (confirm('Are you sure you want to delete this detection row?')) {
+      const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) {
+        alert('Error deleting detection: ' + error.message);
+        return;
+      }
+      setPamDetectionsList(prev => prev.filter(d => d.id !== id));
+      showNotification('Detection row deleted successfully.');
+    }
+  };
 
   // Form: Register New Site & Recorder
   const [newSiteProjId, setNewSiteProjId] = useState('');
@@ -910,6 +974,17 @@ export default function PamAdminPage() {
           }`}
         >
           <Bird className="w-4 h-4" /> 3. Species Ecology Curator
+        </button>
+
+        <button
+          onClick={() => setActiveTab('detections')}
+          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'detections' 
+              ? 'border-indigo-600 text-indigo-700' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Database className="w-4 h-4" /> 4. Detections Data Management
         </button>
       </div>
 
@@ -1793,6 +1868,110 @@ export default function PamAdminPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: Detections Management */}
+      {activeTab === 'detections' && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
+            <div className="flex flex-col gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-600" /> Offline Detections Database
+                </h3>
+                
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-slate-500">Showing {filteredPamDetections.length} of {pamDetectionsList.length} rows</span>
+                  <select
+                    value={detectionsTabScope}
+                    onChange={(e) => setDetectionsTabScope(e.target.value as 'Lantana' | 'Common')}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+                  >
+                    <option value="Lantana">Lantana Offline Data</option>
+                    <option value="Common">Common PAM Offline Data</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <select value={pamFilterProject} onChange={e => setPamFilterProject(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Projects</option>
+                  {pamFilterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                
+                <select value={pamFilterSite} onChange={e => setPamFilterSite(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Sites</option>
+                  {pamFilterOptions.sites.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                
+                <select value={pamFilterRecorder} onChange={e => setPamFilterRecorder(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
+                  <option value="All">All Recorders</option>
+                  {pamFilterOptions.recorders.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-black">
+                    <th className="py-3 px-4">ID</th>
+                    <th className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition" onClick={() => setPamSortDateDesc(!pamSortDateDesc)}>
+                      Date & Time {pamSortDateDesc ? '↓' : '↑'}
+                    </th>
+                    <th className="py-3 px-4">Project & Site</th>
+                    <th className="py-3 px-4">Species</th>
+                    <th className="py-3 px-4 text-center">Confidence</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                  {filteredPamDetections.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">No detections found.</td>
+                    </tr>
+                  ) : (
+                    filteredPamDetections.map(det => (
+                      <tr key={det.id} className="hover:bg-slate-50 transition">
+                        <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
+                        <td className="py-2.5 px-4 font-mono text-[10px]">
+                          <div>{det.date}</div>
+                          <div>{det.time}</div>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-bold text-slate-900">{det.project_name || 'N/A'}</div>
+                          <div className="text-[10px] text-slate-400">{det.site_name}</div>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-bold text-slate-900">{det.common_name}</div>
+                          <div className="text-[10px] text-slate-400 italic">{det.scientific_name}</div>
+                        </td>
+                        <td className="py-2.5 px-4 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            (det.confidence ?? det.threshold ?? 0) > 0.8 ? 'bg-emerald-100 text-emerald-700' :
+                            (det.confidence ?? det.threshold ?? 0) > 0.5 ? 'bg-amber-100 text-amber-700' :
+                            'bg-rose-100 text-rose-700'
+                          }`}>
+                            {((det.confidence ?? det.threshold ?? 0) * 100).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            onClick={() => handleDeletePamDetection(det.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Delete Row"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
