@@ -123,25 +123,24 @@ export default function PamAdminPage() {
   const [detectionsTabScope, setDetectionsTabScope] = useState<'Lantana' | 'Common'>('Lantana');
   const [pamDetectionsList, setPamDetectionsList] = useState<any[]>([]);
   
-  // Sorting & Filtering for PAM Detections
-  const [pamFilterProject, setPamFilterProject] = useState('All');
-  const [pamFilterSite, setPamFilterSite] = useState('All');
-  const [pamFilterRecorder, setPamFilterRecorder] = useState('All');
+  const [pamSelectedProject, setPamSelectedProject] = useState('Select Project');
+  const [pamSelectedSite, setPamSelectedSite] = useState('Select Site');
+  const [isDetectionsLoading, setIsDetectionsLoading] = useState(false);
+  const [selectedDetectionIds, setSelectedDetectionIds] = useState<Set<number>>(new Set());
   const [pamSortDateDesc, setPamSortDateDesc] = useState(true);
 
+  const scopedProjects = useMemo(() => {
+    return projectsList.filter(p => detectionsTabScope === 'Lantana' ? p.type === 'Lantana' : p.type !== 'Lantana');
+  }, [projectsList, detectionsTabScope]);
 
+  const scopedSites = useMemo(() => {
+    const list = detectionsTabScope === 'Lantana' ? lantanaSitesList : sitesList;
+    if (pamSelectedProject === 'Select Project') return [];
+    return list.filter(s => s.projectId === pamSelectedProject);
+  }, [sitesList, lantanaSitesList, detectionsTabScope, pamSelectedProject]);
 
   const filteredPamDetections = useMemo(() => {
-    let result = pamDetectionsList.filter(d => {
-      const proj = d.project_name || 'N/A';
-      const site = d.site_name || 'N/A';
-      const rec = d.recorder_name || d.recorder_id || 'N/A';
-      if (pamFilterProject !== 'All' && proj !== pamFilterProject) return false;
-      if (pamFilterSite !== 'All' && site !== pamFilterSite) return false;
-      if (pamFilterRecorder !== 'All' && rec !== pamFilterRecorder) return false;
-      return true;
-    });
-    
+    let result = [...pamDetectionsList];
     result.sort((a, b) => {
       const timeStrA = a.date && a.time ? `${a.date}T${a.time}` : (a.created_at || '0');
       const timeStrB = b.date && b.time ? `${b.date}T${b.time}` : (b.created_at || '0');
@@ -149,28 +148,28 @@ export default function PamAdminPage() {
       const db = new Date(timeStrB).getTime();
       return pamSortDateDesc ? db - da : da - db;
     });
-    
     return result;
-  }, [pamDetectionsList, pamFilterProject, pamFilterSite, pamFilterRecorder, pamSortDateDesc]);
+  }, [pamDetectionsList, pamSortDateDesc]);
 
-  const pamFilterOptions = useMemo(() => {
-    const projects = Array.from(new Set(pamDetectionsList.map(d => d.project_name || 'N/A'))).sort();
-    const sites = Array.from(new Set(pamDetectionsList.map(d => d.site_name || 'N/A'))).sort();
-    const recorders = Array.from(new Set(pamDetectionsList.map(d => d.recorder_name || d.recorder_id || 'N/A'))).sort();
-    return { projects, sites, recorders };
-  }, [pamDetectionsList]);
+  const handleLoadDetections = async () => {
+    if (pamSelectedSite === 'Select Site') return;
+    setIsDetectionsLoading(true);
+    setPamDetectionsList([]);
+    setSelectedDetectionIds(new Set());
+    
+    const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
+    const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+    const siteName = siteItem ? siteItem.name : pamSelectedSite;
 
-  // Fetch detections based on scope when tab is active
-  useEffect(() => {
-    if (activeTab === 'detections') {
-      const fetchDetections = async () => {
-        const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
-        const { data } = await supabase.from(table).select('*').order('id', { ascending: false }).limit(2000);
-        if (data) setPamDetectionsList(data);
-      };
-      fetchDetections();
+    const { data, error } = await supabase.from(table).select('*').eq('site_name', siteName).limit(10000);
+    
+    if (error) {
+      alert('Error loading detections: ' + error.message);
+    } else if (data) {
+      setPamDetectionsList(data);
     }
-  }, [activeTab, detectionsTabScope]);
+    setIsDetectionsLoading(false);
+  };
 
   const handleDeletePamDetection = async (id: number) => {
     if (confirm('Are you sure you want to delete this detection row?')) {
@@ -181,7 +180,31 @@ export default function PamAdminPage() {
         return;
       }
       setPamDetectionsList(prev => prev.filter(d => d.id !== id));
+      setSelectedDetectionIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       showNotification('Detection row deleted successfully.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDetectionIds.size === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedDetectionIds.size} selected rows?`)) {
+      const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
+      const idsToDelete = Array.from(selectedDetectionIds);
+      
+      const { error } = await supabase.from(table).delete().in('id', idsToDelete);
+      
+      if (error) {
+        alert('Error deleting rows: ' + error.message);
+        return;
+      }
+      
+      setPamDetectionsList(prev => prev.filter(d => !selectedDetectionIds.has(d.id)));
+      setSelectedDetectionIds(new Set());
+      showNotification(`${idsToDelete.length} rows deleted successfully.`);
     }
   };
 
@@ -1897,28 +1920,85 @@ export default function PamAdminPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                <select value={pamFilterProject} onChange={e => setPamFilterProject(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
-                  <option value="All">All Projects</option>
-                  {pamFilterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-                
-                <select value={pamFilterSite} onChange={e => setPamFilterSite(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
-                  <option value="All">All Sites</option>
-                  {pamFilterOptions.sites.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                
-                <select value={pamFilterRecorder} onChange={e => setPamFilterRecorder(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-700">
-                  <option value="All">All Recorders</option>
-                  {pamFilterOptions.recorders.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[200px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">1. Select Project</label>
+                    <select 
+                      value={pamSelectedProject} 
+                      onChange={e => {
+                        setPamSelectedProject(e.target.value);
+                        setPamSelectedSite('Select Site');
+                        setPamDetectionsList([]);
+                        setSelectedDetectionIds(new Set());
+                      }} 
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm"
+                    >
+                      <option value="Select Project" disabled>Select a Project</option>
+                      {scopedProjects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                    </select>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[200px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">2. Select Site</label>
+                    <select 
+                      value={pamSelectedSite} 
+                      onChange={e => {
+                        setPamSelectedSite(e.target.value);
+                        setPamDetectionsList([]);
+                        setSelectedDetectionIds(new Set());
+                      }} 
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                      disabled={pamSelectedProject === 'Select Project'}
+                    >
+                      <option value="Select Site" disabled>Select a Site</option>
+                      {scopedSites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto mt-auto pt-[2px]">
+                    <button
+                      onClick={handleLoadDetections}
+                      disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading}
+                      className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md disabled:opacity-50 transition-colors"
+                    >
+                      {isDetectionsLoading ? 'Loading...' : 'Load Data'}
+                    </button>
+                  </div>
+                </div>
+
+                {selectedDetectionIds.size > 0 && (
+                  <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-100 rounded-xl animate-fade-in">
+                    <span className="text-xs font-bold text-red-700">{selectedDetectionIds.size} rows selected</span>
+                    <button
+                      onClick={handleBulkDelete}
+                      className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-sm ml-auto transition-colors"
+                    >
+                      Delete Selected
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto min-h-[300px]">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-black">
+                  <tr className="text-[9px] font-black tracking-widest text-slate-400 uppercase border-b border-slate-100">
+                    <th className="py-3 px-4 w-10">
+                      <input 
+                        type="checkbox"
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        checked={filteredPamDetections.length > 0 && selectedDetectionIds.size === filteredPamDetections.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDetectionIds(new Set(filteredPamDetections.map(d => d.id)));
+                          } else {
+                            setSelectedDetectionIds(new Set());
+                          }
+                        }}
+                      />
+                    </th>
                     <th className="py-3 px-4">ID</th>
                     <th className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition" onClick={() => setPamSortDateDesc(!pamSortDateDesc)}>
                       Date & Time {pamSortDateDesc ? '↓' : '↑'}
@@ -1936,7 +2016,20 @@ export default function PamAdminPage() {
                     </tr>
                   ) : (
                     filteredPamDetections.map(det => (
-                      <tr key={det.id} className="hover:bg-slate-50 transition">
+                      <tr key={det.id} className={`hover:bg-slate-50 transition ${selectedDetectionIds.has(det.id) ? 'bg-indigo-50/50' : ''}`}>
+                        <td className="py-2.5 px-4">
+                          <input 
+                            type="checkbox"
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            checked={selectedDetectionIds.has(det.id)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedDetectionIds);
+                              if (e.target.checked) newSet.add(det.id);
+                              else newSet.delete(det.id);
+                              setSelectedDetectionIds(newSet);
+                            }}
+                          />
+                        </td>
                         <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
                         <td className="py-2.5 px-4 font-mono text-[10px]">
                           <div>{det.date}</div>
