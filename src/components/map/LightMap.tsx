@@ -115,10 +115,9 @@ export default function LightMap({
       <div className="absolute bottom-3 right-3 z-[400] bg-white/90 backdrop-blur-md border border-slate-200 p-2.5 rounded-2xl text-[10px] font-bold text-slate-700 shadow-md flex items-center gap-3">
         <span className="text-slate-900 font-extrabold">Species Richness Gradient:</span>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> Low
-          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> Mid
-          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> High
-          <span className="w-3 h-3 rounded-full bg-purple-600 inline-block"></span> Highest
+          <span>Low</span>
+          <div className="w-24 h-2.5 rounded-full shadow-inner" style={{ background: 'linear-gradient(to right, hsl(220, 80%, 58%), hsl(270, 80%, 58%))' }}></div>
+          <span>High</span>
         </div>
       </div>
     </div>

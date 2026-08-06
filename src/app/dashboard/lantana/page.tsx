@@ -211,6 +211,7 @@ export default function LantanaDashboardPage() {
   useEffect(() => {
     async function loadProject() {
       setLoading(true);
+      setLoadingProgress(0);
       try {
         let siteQuery = supabase.from('lantana_sites').select('*').order('site_name');
         
@@ -1154,7 +1155,7 @@ export default function LantanaDashboardPage() {
             {/* Indicator Summary Side Panel */}
             <div className="stats-summary-panel">
               <span className="stats-summary-title">Indicator Detections Summary</span>
-              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recovery Category</span>
                   <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>Choice</span>

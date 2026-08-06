@@ -2,17 +2,17 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { 
-  ArrowRight, 
-  BarChart3, 
-  Cpu, 
-  Database, 
-  FileText, 
-  Map, 
-  Mic, 
-  Radio, 
-  Layers, 
-  ChevronRight, 
+import {
+  ArrowRight,
+  BarChart3,
+  Cpu,
+  Database,
+  FileText,
+  Map,
+  Mic,
+  Radio,
+  Layers,
+  ChevronRight,
   Volume2,
   CheckCircle2,
   Sparkles
@@ -57,7 +57,7 @@ export default function HomePage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
-  
+
   // Interactive Pipeline Switcher state
   const [selectedPipeline, setSelectedPipeline] = useState<'pam' | 'live'>('pam');
   const [hoveredStep, setHoveredStep] = useState<number>(0);
@@ -69,10 +69,10 @@ export default function HomePage() {
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('sites').select('id, project_id, name')
         ]);
-        
+
         const projData = projRes.data || [];
         const sitesData = sitesRes.data || [];
-        
+
         if (projRes.data) setProjects(projData);
         if (sitesRes.data) setSitesList(sitesData);
 
@@ -109,7 +109,7 @@ export default function HomePage() {
         console.error('Failed to load dynamic projects:', err);
       }
     }
-    
+
     loadStats();
   }, []);
 
@@ -153,13 +153,13 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-start">
           <div className={`space-y-5 ${lora.variable}`}>
             <h2 className="reveal font-sans text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-              Ecological Field Studies, Powered by AI
+              Ecological Field Studies
             </h2>
             <p className="font-serif text-base md:text-lg text-slate-600 leading-relaxed">
               Birdsong Observatory combines long-term acoustic monitoring, bioacoustic machine learning, and conservation science to deliver verifiable evidence for forest restoration, biodiversity assessments, and environmental impact studies.
             </p>
             <p className="font-serif text-sm md:text-base text-slate-500 leading-relaxed">
-              We handle deployment, data ingestion, AI classification, statistical analysis, and reporting — so your team can focus on action.
+              We handle deployment, data ingestion, AI classification, statistical analysis, and reporting.
             </p>
           </div>
         </div>
@@ -168,7 +168,7 @@ export default function HomePage() {
       {/* Dynamic Projects section matching main homepage */}
       <section id="projects" className="py-20 px-6 md:px-12 bg-white border-t border-slate-100">
         <div className="max-w-6xl mx-auto space-y-16">
-          
+
           {/* --- CATEGORY 1: PAM BIOACOUSTICS PROJECTS --- */}
           <div className="space-y-8">
             <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ export default function HomePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {pamProjects.map(p => (
-                <div 
+                <div
                   key={p.id}
                   className="p-8 rounded-[30px] bg-white border border-slate-200 shadow-xs space-y-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-md"
                 >
@@ -305,7 +305,7 @@ export default function HomePage() {
       {/* Unified Interactive Pipeline Switcher */}
       <section id="pipeline" className="py-24 px-6 md:px-12 bg-white border-t border-slate-100">
         <div className="max-w-6xl mx-auto space-y-12">
-          
+
           <div className="text-center space-y-3">
             <h2 className="font-sans text-3xl md:text-4xl font-black text-slate-900 tracking-tight">Ecoacoustics Pipelines</h2>
             <p className="text-sm text-slate-500 font-medium max-w-xl mx-auto">
@@ -318,22 +318,20 @@ export default function HomePage() {
             <div className="bg-slate-100 p-1.5 rounded-[22px] inline-flex gap-1 border border-slate-200 shadow-inner">
               <button
                 onClick={() => { setSelectedPipeline('pam'); setHoveredStep(0); }}
-                className={`px-8 py-3 rounded-[18px] text-xs font-black transition-all duration-300 flex items-center gap-2 ${
-                  selectedPipeline === 'pam'
+                className={`px-8 py-3 rounded-[18px] text-xs font-black transition-all duration-300 flex items-center gap-2 ${selectedPipeline === 'pam'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-500 hover:text-slate-950'
-                }`}
+                  }`}
               >
                 <Layers className="w-4 h-4" />
                 PAM (Offline Surveys)
               </button>
               <button
                 onClick={() => { setSelectedPipeline('live'); setHoveredStep(0); }}
-                className={`px-8 py-3 rounded-[18px] text-xs font-black transition-all duration-300 flex items-center gap-2 ${
-                  selectedPipeline === 'live'
+                className={`px-8 py-3 rounded-[18px] text-xs font-black transition-all duration-300 flex items-center gap-2 ${selectedPipeline === 'live'
                     ? 'bg-emerald-500 text-slate-950 shadow-md'
                     : 'text-slate-500 hover:text-slate-950'
-                }`}
+                  }`}
               >
                 <Radio className="w-4 h-4" />
                 Live Recorder (Real-time AI)
@@ -343,34 +341,32 @@ export default function HomePage() {
 
           {/* Interactive Flowchart split view */}
           <div className="grid md:grid-cols-12 gap-8 items-start pt-6">
-            
+
             {/* Step list (Left col) */}
             <div className="md:col-span-5 space-y-4">
               <div className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-2">Pipeline Steps</div>
               {activeSteps.map((step, idx) => {
                 const Icon = step.icon;
                 const isHovered = hoveredStep === idx;
-                
+
                 return (
                   <button
                     key={step.title}
                     onMouseEnter={() => setHoveredStep(idx)}
                     onClick={() => setHoveredStep(idx)}
-                    className={`w-full p-5 rounded-2xl border text-left transition-all duration-300 flex items-center gap-4 relative overflow-hidden group outline-none ${
-                      isHovered
+                    className={`w-full p-5 rounded-2xl border text-left transition-all duration-300 flex items-center gap-4 relative overflow-hidden group outline-none ${isHovered
                         ? selectedPipeline === 'pam'
                           ? 'border-indigo-500 bg-indigo-50/20 shadow-xs translate-x-1.5'
                           : 'border-emerald-500 bg-emerald-50/20 shadow-xs translate-x-1.5'
                         : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold transition-all ${
-                      isHovered
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold transition-all ${isHovered
                         ? selectedPipeline === 'pam'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-emerald-500 text-slate-950'
                         : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
-                    }`}>
+                      }`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="flex-1">
@@ -389,7 +385,7 @@ export default function HomePage() {
             {/* Step Detail Card (Right col) */}
             <div className="md:col-span-7 h-full min-h-[380px]">
               <div className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-2">Step Deep-Dive</div>
-              
+
               <AnimatePresence mode="wait">
                 <motion.div
                   key={`${selectedPipeline}-${hoveredStep}`}
@@ -397,20 +393,17 @@ export default function HomePage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
                   transition={{ duration: 0.35, ease: 'easeOut' }}
-                  className={`p-8 md:p-10 rounded-[32px] bg-slate-900 text-white h-full flex flex-col justify-between border shadow-2xl relative overflow-hidden ${
-                    selectedPipeline === 'pam' ? 'border-indigo-500/20' : 'border-emerald-500/20'
-                  }`}
+                  className={`p-8 md:p-10 rounded-[32px] bg-slate-900 text-white h-full flex flex-col justify-between border shadow-2xl relative overflow-hidden ${selectedPipeline === 'pam' ? 'border-indigo-500/20' : 'border-emerald-500/20'
+                    }`}
                 >
                   {/* Decorative background glow */}
-                  <div className={`absolute -right-24 -top-24 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none ${
-                    selectedPipeline === 'pam' ? 'bg-indigo-500' : 'bg-emerald-400'
-                  }`} />
-                  
+                  <div className={`absolute -right-24 -top-24 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none ${selectedPipeline === 'pam' ? 'bg-indigo-500' : 'bg-emerald-400'
+                    }`} />
+
                   <div className="space-y-6 relative z-10">
                     <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        selectedPipeline === 'pam' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-emerald-400/10 text-emerald-400'
-                      }`}>
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedPipeline === 'pam' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-emerald-400/10 text-emerald-400'
+                        }`}>
                         {React.createElement(activeSteps[hoveredStep].icon, { className: 'w-6 h-6' })}
                       </div>
                       <div>

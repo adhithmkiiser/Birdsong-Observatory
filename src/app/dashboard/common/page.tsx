@@ -140,6 +140,7 @@ export default function CommonDashboardPage() {
   useEffect(() => {
     async function loadAllDetections() {
       setLoading(true);
+      setLoadingProgress(0);
       try {
         const baseFields = 'id,date,time,common_name,confidence,site_name,project_name,recorder_name';
         const makeQuery = (withCount: 'exact' | 'none' = 'none') => {
@@ -168,11 +169,13 @@ export default function CommonDashboardPage() {
         if (countError) {
           console.error('Error counting pam_detections:', countError);
           setAllDetections([]);
+          setLoading(false);
           return;
         }
         const total = Number(totalCount) || 0;
         if (total === 0) {
           setAllDetections([]);
+          setLoading(false);
           return;
         }
 
@@ -180,13 +183,19 @@ export default function CommonDashboardPage() {
         const pages = Math.ceil(total / pageSize);
         const allDets: any[] = [];
         const batchSize = 4;
+        let completedChunks = 0;
         for (let b = 0; b < pages; b += batchSize) {
           const requests = [];
           for (let p = b; p < Math.min(b + batchSize, pages); p++) {
             const start = p * pageSize;
             requests.push(makeQuery().range(start, start + pageSize - 1));
           }
-          let completed = 0; const results: any[] = await Promise.all(requests.map(async p => { const res = await p; completed++; setLoadingProgress((completed / pages) * 100); return res; }));
+          const results: any[] = await Promise.all(requests.map(async p => { 
+            const res = await p; 
+            completedChunks++; 
+            setLoadingProgress((completedChunks / pages) * 100); 
+            return res; 
+          }));
           let hasError = false;
           results.forEach((r) => {
             if (r.error) {
@@ -203,8 +212,9 @@ export default function CommonDashboardPage() {
       } catch (err) {
         console.error('Error loading all detections:', err);
         setAllDetections([]);
-      } finally {
         setLoading(false);
+      } finally {
+        // setLoading(false);
       }
     }
     loadAllDetections();
@@ -307,7 +317,7 @@ export default function CommonDashboardPage() {
       };
     });
 
-    setMapSites(formattedMapSites);
+    setMapSites(formattedMapSites); setLoading(false);
   }, [allDetections, confidenceThreshold, stationsList, recordersRegistryList, selectedStationId, selectedRecorderId, selectedProjectId]);
 
   // Set default date selectors to the latest available detection date
@@ -551,7 +561,7 @@ export default function CommonDashboardPage() {
     };
   }, [rawDetections, selectedSpecies, diversityYear, diversityMonth, diurnalDate, radialDate, hourLabels, chartColors]);
 
-  if (loading) return <DashboardLoader message="Loading PAM dashboard..." />;
+  if (loading) return <DashboardLoader message="Loading PAM dashboard..." progress={loadingProgress} />;
 
   return (
     <div className="space-y-8 pb-12 font-sans">

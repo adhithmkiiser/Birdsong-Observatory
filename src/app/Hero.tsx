@@ -16,15 +16,11 @@ export default function HomeHero() {
     <section className="home-hero relative w-full min-h-[90vh] bg-[#081C16] overflow-hidden">
       <div className="grid md:grid-cols-2 min-h-[90vh]">
         {/* Left content */}
-        <motion.div 
+        <motion.div
           style={{ opacity: opacityText, y: yText }}
           className="relative z-10 flex flex-col justify-center px-6 md:px-12 lg:px-20 py-20 md:py-0 bg-[#081C16]"
         >
           <div className="max-w-xl space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Platform Core Active
-            </div>
             <h1 className="font-sans text-5xl md:text-7xl font-black tracking-tight leading-[1.05] text-white">
               Birdsong{' '}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">
@@ -32,7 +28,7 @@ export default function HomeHero() {
               </span>
             </h1>
             <p className="text-emerald-400 text-sm md:text-base font-bold tracking-wide">
-              IISER Tirupati Bird Ecology &amp; Bioacoustics Lab
+              Bird Ecology Lab,IISER Tirupati
             </p>
             <p className="text-slate-300 text-sm md:text-base font-medium leading-relaxed max-w-md">
               A unified cloud analytics platform for landscape-scale avian acoustics. Integrating automated Raspberry Pi field recording nodes with offline passive monitoring (PAM) survey pipelines.

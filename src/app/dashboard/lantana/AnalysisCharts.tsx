@@ -287,7 +287,7 @@ export default function AnalysisCharts({
 
           <div className="stats-summary-panel">
             <span className="stats-summary-title">Summary Statistics</span>
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'stretch' }}>
                 <div style={{ background: '#dcfce7', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(22,163,74,0.15)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '100px' }}>
                   <div>
