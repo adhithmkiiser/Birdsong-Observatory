@@ -55,14 +55,23 @@ export default function UserManagementPage() {
         ]);
 
         const p = projRes.data || [];
-        const common = (sitesRes.data || []).map((s: any) => ({ ...s, source: 'PAM' }));
-        const live = (liveSitesRes.data || []).map((s: any) => ({ ...s, source: 'Live' }));
-        const lantana = (lantanaSitesRes.data || []).map((s: any) => ({
-          id: s.id,
-          name: s.site_name,
-          project_id: s.project_id,
-          source: 'Lantana'
-        }));
+        // Create a Set of valid project IDs to filter out orphaned sites
+        const validProjectIds = new Set(p.map((proj: any) => proj.id));
+
+        const common = (sitesRes.data || [])
+          .filter((s: any) => validProjectIds.has(s.project_id))
+          .map((s: any) => ({ ...s, source: 'PAM' }));
+        const live = (liveSitesRes.data || [])
+          .filter((s: any) => validProjectIds.has(s.project_id))
+          .map((s: any) => ({ ...s, source: 'Live' }));
+        const lantana = (lantanaSitesRes.data || [])
+          .filter((s: any) => validProjectIds.has(s.project_id))
+          .map((s: any) => ({
+            id: s.id,
+            name: s.site_name,
+            project_id: s.project_id,
+            source: 'Lantana'
+          }));
 
         setProjects(p);
         setSites([...common, ...live, ...lantana]);
@@ -89,11 +98,13 @@ export default function UserManagementPage() {
   }, [projects, formRole, formProjectType]);
 
   const filteredSites = useMemo(() => {
-    if (formRole === 'Site Manager') {
-      if (formAssignedProjects.length === 0) return [];
-      return sites.filter(s => formAssignedProjects.includes(s.project_id));
+    if (formRole === 'Site Manager' || formRole === 'Project Manager' || formRole === 'Admin') {
+      // If projects are selected, filter sites by those projects to make it easier, otherwise show all
+      if (formAssignedProjects.length > 0) {
+        return sites.filter(s => formAssignedProjects.includes(s.project_id));
+      }
+      return sites;
     }
-    if (formRole === 'Admin') return sites;
     return [];
   }, [sites, formRole, formAssignedProjects]);
 
@@ -563,7 +574,7 @@ export default function UserManagementPage() {
               </div>
             )}
 
-              {(formRole === 'Site Manager' || formRole === 'Admin') && (
+              {(formRole === 'Site Manager' || formRole === 'Project Manager' || formRole === 'Admin') && (
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
                 <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
