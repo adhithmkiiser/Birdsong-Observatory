@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import { useRole } from '@/components/layout/RoleContext';
 
 // ─── Client-only imports to avoid SSR issues ────────────────────────────────
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
@@ -109,6 +110,7 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
 
 // ─── Main Lantana Dashboard Page ──────────────────────────────────────────────
 export default function LantanaDashboardPage() {
+  const { currentRole, currentUser } = useRole();
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_LANTANA');
 
@@ -118,6 +120,7 @@ export default function LantanaDashboardPage() {
   const [rawSpeciesList, setRawSpeciesList] = useState<string[]>([]);
   const [rawSpeciesMetadata, setRawSpeciesMetadata] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState<number | undefined>(undefined);
 
   // Filter state – exact same as App.tsx
   const [selectedSiteGroup, setSelectedSiteGroup] = useState('All');
@@ -149,7 +152,27 @@ export default function LantanaDashboardPage() {
           supabase.from('lantana_species_ecology').select('*').order('common_name')
         ]);
 
-        const lantanaProjects = (projs.data || []).filter((p: any) => p.project_type === 'Lantana');
+        let lantanaProjects = (projs.data || []).filter((p: any) => p.project_type === 'Lantana');
+        
+        // Apply RBAC filtering
+        if (currentRole === 'Project Manager') {
+          const assigned = currentUser?.assignedProjects || [];
+          lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
+        } else if (currentRole === 'Site Manager') {
+          // Site Managers might not have assignedProjects directly if derived from assignedSites, 
+          // but if they do, we'll filter on assignedProjects just like PAM.
+          const assigned = currentUser?.assignedProjects || [];
+          if (assigned.length > 0) {
+              lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
+          } else {
+              // fallback to assignedSites
+              const siteIds = currentUser?.assignedSites || [];
+              const { data: sData } = await supabase.from('lantana_sites').select('project_id').in('id', siteIds);
+              const allowedProjIds = new Set((sData || []).map((s: any) => s.project_id));
+              lantanaProjects = lantanaProjects.filter((p: any) => allowedProjIds.has(p.id));
+          }
+        }
+        
         setProjectsList(lantanaProjects);
 
         // Pre-select project from query param, otherwise first project
@@ -182,7 +205,7 @@ export default function LantanaDashboardPage() {
       } catch (e) { console.error(e); }
     }
     loadMeta();
-  }, []);
+  }, [currentRole, currentUser]);
 
   // Load Lantana sites/detections when selected project changes
   useEffect(() => {
@@ -190,24 +213,84 @@ export default function LantanaDashboardPage() {
       setLoading(true);
       try {
         let siteQuery = supabase.from('lantana_sites').select('*').order('site_name');
-        let detQuery = supabase.from('lantana_detections').select('*').order('id');
+        
         if (selectedProjectId !== 'ALL_LANTANA') {
           siteQuery = siteQuery.eq('project_id', selectedProjectId);
-          detQuery = detQuery.eq('project_id', selectedProjectId);
+        } else {
+           if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
+             const allowedProjIds = projectsList.map(p => p.id);
+             if (allowedProjIds.length > 0) {
+               siteQuery = siteQuery.in('project_id', allowedProjIds);
+             } else {
+               siteQuery = siteQuery.eq('id', 'NONE');
+             }
+           }
         }
+        
+        // Further filter sites for Site Managers
+        if (currentRole === 'Site Manager') {
+            const allowedSites = currentUser?.assignedSites || [];
+            if (allowedSites.length > 0) {
+                siteQuery = siteQuery.in('id', allowedSites);
+            }
+        }
+
+        const buildDetQuery = () => {
+          let q = supabase.from('lantana_detections').select('*').order('id');
+          if (selectedProjectId !== 'ALL_LANTANA') {
+            q = q.eq('project_id', selectedProjectId);
+          } else {
+            if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
+              const allowedProjIds = projectsList.map(p => p.id);
+              if (allowedProjIds.length > 0) q = q.in('project_id', allowedProjIds);
+              else q = q.eq('id', 'NONE');
+            }
+          }
+          if (currentRole === 'Site Manager') {
+            const allowedSites = currentUser?.assignedSites || [];
+            if (allowedSites.length > 0) q = q.in('site_name', allowedSites);
+          }
+          return q;
+        };
+
         const { data: sbSites } = await siteQuery;
         const sbDets = await (async () => {
-          const all: any[] = [];
-          const pageSize = 1000;
-          let offset = 0;
-          while (true) {
-            const { data } = await detQuery.range(offset, offset + pageSize - 1);
-            if (!data || data.length === 0) break;
-            all.push(...data);
-            if (data.length < pageSize) break;
-            offset += pageSize;
+          // Get the total count first
+          const { count, error } = await supabase.from('lantana_detections')
+            .select('*', { count: 'exact', head: true })
+            .eq(selectedProjectId !== 'ALL_LANTANA' ? 'project_id' : 'id', selectedProjectId !== 'ALL_LANTANA' ? selectedProjectId : 'NONE'); // simplification for count
+            
+          // Better logic: reuse detQuery to get count
+          const countQuery = supabase.from('lantana_detections').select('*', { count: 'exact', head: true });
+          if (selectedProjectId !== 'ALL_LANTANA') countQuery.eq('project_id', selectedProjectId);
+          else if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
+            const allowedProjIds = projectsList.map(p => p.id);
+            if (allowedProjIds.length > 0) countQuery.in('project_id', allowedProjIds);
+            else countQuery.eq('id', 'NONE');
           }
-          return all;
+          if (currentRole === 'Site Manager') {
+            const allowedSites = currentUser?.assignedSites || [];
+            if (allowedSites.length > 0) countQuery.in('site_name', allowedSites);
+          }
+          
+          const { count: totalCount } = await countQuery;
+          
+          if (!totalCount || totalCount === 0) return [];
+
+          const pageSize = 1000;
+          const numPages = Math.ceil(totalCount / pageSize);
+          
+          // Fire all requests in parallel
+          const promises = [];
+          for (let i = 0; i < numPages; i++) {
+            const offset = i * pageSize;
+            promises.push(
+               buildDetQuery().range(offset, offset + pageSize - 1).then(res => res.data || [])
+            );
+          }
+          
+          let completed = 0; const results = await Promise.all(promises.map(async p => { const res = await p; completed++; setLoadingProgress((completed / numPages) * 100); return res; }));
+          return results.flat();
         })();
 
         const recorders = (sbSites || []).map((s: any) => {
@@ -232,7 +315,7 @@ export default function LantanaDashboardPage() {
       finally { setLoading(false); }
     }
     loadProject();
-  }, [selectedProjectId]);
+  }, [selectedProjectId, projectsList, currentRole, currentUser]);
 
   // Click outside dropdown
   useEffect(() => {
@@ -544,15 +627,17 @@ export default function LantanaDashboardPage() {
           return `<div style="font-family:Inter,sans-serif;padding:4px 8px"><div style="font-weight:700;font-size:13px">${spName}</div><div style="font-size:12px;color:#666;margin-top:4px">Site: <strong>${rec?.site_group} — ${rec?.recorder_id}</strong> (${rec?.habitat})</div><div style="font-size:12px;color:#666;margin-top:2px">Detections: <strong style="color:#4f46e5">${val} calls</strong></div></div>`;
         }
       },
-      grid: { top: '5%', left: '20%', right: '5%', bottom: 115, containLabel: false },
+      grid: { top: 30, left: '2%', right: 30, bottom: 90, containLabel: true },
       xAxis: {
         type: 'category', data: xCategories,
         axisLabel: { interval: 0, rotate: 45, fontSize: 9, color: '#475569' },
+        axisTick: { alignWithLabel: true },
         splitArea: { show: true }
       },
       yAxis: {
         type: 'category', data: yCategories,
-        axisLabel: { fontSize: 9, color: '#475569' },
+        axisLabel: { fontSize: 9, color: '#475569', verticalAlign: 'middle' },
+        axisTick: { alignWithLabel: true },
         splitArea: { show: true }
       },
       visualMap: {
@@ -641,15 +726,17 @@ export default function LantanaDashboardPage() {
           return `<div style="font-family:Inter,sans-serif;padding:4px 8px"><div style="font-weight:700;font-size:13px">${sp}</div><div style="font-size:12px;color:#666;margin-top:4px">Site: <strong>${rec?.site_group} — ${rec?.recorder_id}</strong></div><div style="font-size:12px;color:#666;margin-top:2px">Detections: <strong style="color:#4f46e5">${val} calls</strong></div></div>`;
         }
       },
-      grid: { top: '5%', left: '22%', right: '5%', bottom: 115, containLabel: false },
+      grid: { top: 30, left: '2%', right: 30, bottom: 90, containLabel: true },
       xAxis: {
         type: 'category', data: indXCats,
         axisLabel: { interval: 0, rotate: 45, fontSize: 9, color: '#475569' },
+        axisTick: { alignWithLabel: true },
         splitArea: { show: true }
       },
       yAxis: {
         type: 'category', data: indYCats,
-        axisLabel: { fontSize: 9, color: '#475569' },
+        axisLabel: { fontSize: 9, color: '#475569', verticalAlign: 'middle' },
+        axisTick: { alignWithLabel: true },
         splitArea: { show: true }
       },
       visualMap: {
@@ -699,7 +786,7 @@ export default function LantanaDashboardPage() {
     triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `lantana_matrix_${selectedSiteGroup}.csv`);
   };
 
-  if (loading) return <DashboardLoader message="Loading Lantana bioacoustics..." />;
+  if (loading) return <DashboardLoader message="Loading Lantana bioacoustics..." progress={loadingProgress} />;
 
   return (
     <div style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
@@ -764,7 +851,7 @@ export default function LantanaDashboardPage() {
             </label>
             <div className="slider-wrapper">
               <input
-                type="range" min="0.50" max="0.95" step="0.05"
+                type="range" min="0.0" max="1.0" step="0.05"
                 value={confidenceThreshold}
                 onChange={e => setConfidenceThreshold(Number(e.target.value))}
                 className="range-slider"

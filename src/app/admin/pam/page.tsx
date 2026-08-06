@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 
 interface ProjectItem {
   id: string;
@@ -125,31 +126,135 @@ export default function PamAdminPage() {
   
   const [pamSelectedProject, setPamSelectedProject] = useState('Select Project');
   const [pamSelectedSite, setPamSelectedSite] = useState('Select Site');
+  const [pamSelectedRecorder, setPamSelectedRecorder] = useState('All');
+  const [availableCommonRecorders, setAvailableCommonRecorders] = useState<string[]>([]);
+  const [isRecordersLoading, setIsRecordersLoading] = useState(false);
   const [isDetectionsLoading, setIsDetectionsLoading] = useState(false);
   const [selectedDetectionIds, setSelectedDetectionIds] = useState<Set<number>>(new Set());
-  const [pamSortDateDesc, setPamSortDateDesc] = useState(true);
+  type PamSortColumn = 'date' | 'species' | 'confidence';
+  const [pamSortColumn, setPamSortColumn] = useState<PamSortColumn>('date');
+  const [pamSortDesc, setPamSortDesc] = useState(true);
 
   const scopedProjects = useMemo(() => {
-    return projectsList.filter(p => detectionsTabScope === 'Lantana' ? p.type === 'Lantana' : p.type !== 'Lantana');
+    if (detectionsTabScope === 'Lantana') {
+      return projectsList.filter(p => p.type === 'Lantana');
+    } else {
+      return projectsList.filter(p => p.type === 'PAM');
+    }
   }, [projectsList, detectionsTabScope]);
 
   const scopedSites = useMemo(() => {
-    const list = detectionsTabScope === 'Lantana' ? lantanaSitesList : sitesList;
     if (pamSelectedProject === 'Select Project') return [];
-    return list.filter(s => s.projectId === pamSelectedProject);
+    
+    if (detectionsTabScope === 'Lantana') {
+      const filtered = lantanaSitesList.filter(s => s.project_id === pamSelectedProject);
+      const uniqueSites = [];
+      const seenNames = new Set();
+      for (const s of filtered) {
+        if (!seenNames.has(s.site_name)) {
+          seenNames.add(s.site_name);
+          uniqueSites.push({
+            id: s.id,
+            name: s.site_name,
+            projectId: s.project_id
+          });
+        }
+      }
+      return uniqueSites;
+    } else {
+      // sitesList is already mapped via mapDbSiteToItem
+      return sitesList.filter(s => s.projectId === pamSelectedProject);
+    }
   }, [sitesList, lantanaSitesList, detectionsTabScope, pamSelectedProject]);
 
   const filteredPamDetections = useMemo(() => {
     let result = [...pamDetectionsList];
+    
     result.sort((a, b) => {
-      const timeStrA = a.date && a.time ? `${a.date}T${a.time}` : (a.created_at || '0');
-      const timeStrB = b.date && b.time ? `${b.date}T${b.time}` : (b.created_at || '0');
-      const da = new Date(timeStrA).getTime();
-      const db = new Date(timeStrB).getTime();
-      return pamSortDateDesc ? db - da : da - db;
+      let cmp = 0;
+      if (pamSortColumn === 'date') {
+        const timeStrA = a.date && a.time ? `${a.date}T${a.time}` : (a.created_at || '0');
+        const timeStrB = b.date && b.time ? `${b.date}T${b.time}` : (b.created_at || '0');
+        const da = new Date(timeStrA).getTime();
+        const db = new Date(timeStrB).getTime();
+        cmp = da - db;
+      } else if (pamSortColumn === 'species') {
+        const speciesA = (a.common_name || a.scientific_name || '').toLowerCase();
+        const speciesB = (b.common_name || b.scientific_name || '').toLowerCase();
+        cmp = speciesA.localeCompare(speciesB);
+      } else if (pamSortColumn === 'confidence') {
+        const confA = a.confidence ?? a.threshold ?? 0;
+        const confB = b.confidence ?? b.threshold ?? 0;
+        cmp = confA - confB;
+      }
+      return pamSortDesc ? -cmp : cmp;
     });
     return result;
-  }, [pamDetectionsList, pamSortDateDesc]);
+  }, [pamDetectionsList, pamSortColumn, pamSortDesc]);
+
+  useEffect(() => {
+    async function fetchCommonRecorders() {
+      if (detectionsTabScope === 'Lantana') return;
+      if (pamSelectedSite === 'Select Site') {
+        setAvailableCommonRecorders([]);
+        return;
+      }
+      
+      setIsRecordersLoading(true);
+      const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+      if (!siteItem) {
+        setIsRecordersLoading(false);
+        return;
+      }
+
+      // Fetch distinct recorders by paginating in parallel (up to 100,000 rows to be safe and extremely fast)
+      let allRecorders = new Set<string>();
+      const limit = 1000;
+      const pagesToFetch = 100; // 100,000 rows max
+
+      const promises = [];
+      for (let i = 0; i < pagesToFetch; i++) {
+        const start = i * limit;
+        promises.push(
+          supabase.from('pam_detections')
+            .select('recorder_name')
+            .eq('site_name', siteItem.name)
+            .range(start, start + limit - 1)
+        );
+      }
+      
+      const results = await Promise.all(promises);
+      let hitEnd = false;
+
+      for (const res of results) {
+        if (res.error || !res.data) continue;
+        res.data.forEach(d => { if (d.recorder_name) allRecorders.add(d.recorder_name); });
+        // If a page returns less than the limit, we've hit the end of the dataset
+        if (res.data.length < limit) {
+          hitEnd = true;
+        }
+      }
+      
+      setAvailableCommonRecorders(Array.from(allRecorders).sort());
+      setIsRecordersLoading(false);
+    }
+    
+    fetchCommonRecorders();
+  }, [pamSelectedSite, scopedSites, detectionsTabScope]);
+
+  const availableRecorders = useMemo(() => {
+    if (pamSelectedSite === 'Select Site') return [];
+    
+    const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+    if (!siteItem) return [];
+
+    if (detectionsTabScope === 'Lantana') {
+      const records = lantanaSitesList.filter(s => s.site_name === siteItem.name && s.project_id === pamSelectedProject);
+      return Array.from(new Set(records.map(s => s.recorder_id))).filter(Boolean).sort();
+    } else {
+      return availableCommonRecorders;
+    }
+  }, [pamSelectedSite, scopedSites, lantanaSitesList, detectionsTabScope, pamSelectedProject, availableCommonRecorders]);
 
   const handleLoadDetections = async () => {
     if (pamSelectedSite === 'Select Site') return;
@@ -161,22 +266,47 @@ export default function PamAdminPage() {
     const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
     const siteName = siteItem ? siteItem.name : pamSelectedSite;
 
-    const { data, error } = await supabase.from(table).select('*').eq('site_name', siteName).limit(10000);
+    let allData: any[] = [];
+    let start = 0;
+    const limit = 1000;
     
-    if (error) {
-      alert('Error loading detections: ' + error.message);
-    } else if (data) {
-      setPamDetectionsList(data);
+    while (start < 100000) { // cap at 100,000 rows to prevent infinite loops
+      let query = supabase.from(table).select('*').eq('site_name', siteName).range(start, start + limit - 1);
+      
+      if (pamSelectedRecorder !== 'All') {
+        // In case some rows use recorder_id and some use recorder_name
+        // we filter by recorder_name which is populated in upload logic
+        query = query.eq('recorder_name', pamSelectedRecorder);
+      }
+
+      const { data, error } = await query;
+      
+      if (error) {
+        alert('Error loading detections: ' + error.message);
+        break;
+      } 
+      
+      if (data) {
+        allData = [...allData, ...data];
+        if (data.length < limit) break; // Reached the end
+      } else {
+        break;
+      }
+      
+      start += limit;
     }
+    
+    setPamDetectionsList(allData);
     setIsDetectionsLoading(false);
   };
 
   const handleDeletePamDetection = async (id: number) => {
     if (confirm('Are you sure you want to delete this detection row?')) {
       const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) {
-        alert('Error deleting detection: ' + error.message);
+      try {
+        await apiFetch(`/api/db/detections?table=${table}&id=${id}`, { method: 'DELETE' }, currentUser);
+      } catch (err: any) {
+        alert('Error deleting detection: ' + err.message);
         return;
       }
       setPamDetectionsList(prev => prev.filter(d => d.id !== id));
@@ -192,19 +322,39 @@ export default function PamAdminPage() {
   const handleBulkDelete = async () => {
     if (selectedDetectionIds.size === 0) return;
     if (confirm(`Are you sure you want to delete ${selectedDetectionIds.size} selected rows?`)) {
+      setIsDetectionsLoading(true);
       const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
       const idsToDelete = Array.from(selectedDetectionIds);
       
-      const { error } = await supabase.from(table).delete().in('id', idsToDelete);
+      // Delete in chunks of 200 to prevent URL length limits (414 URI Too Long)
+      const chunkSize = 200;
+      let hasError = false;
+      let errorMessage = '';
       
-      if (error) {
-        alert('Error deleting rows: ' + error.message);
+      for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+        const chunk = idsToDelete.slice(i, i + chunkSize);
+        try {
+          await apiFetch(`/api/db/detections?table=${table}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ ids: chunk })
+          }, currentUser);
+        } catch (err: any) {
+          hasError = true;
+          errorMessage = err.message;
+          break;
+        }
+      }
+      
+      if (hasError) {
+        alert('Error deleting rows: ' + errorMessage);
+        setIsDetectionsLoading(false);
         return;
       }
       
       setPamDetectionsList(prev => prev.filter(d => !selectedDetectionIds.has(d.id)));
       setSelectedDetectionIds(new Set());
       showNotification(`${idsToDelete.length} rows deleted successfully.`);
+      setIsDetectionsLoading(false);
     }
   };
 
@@ -258,16 +408,67 @@ export default function PamAdminPage() {
           supabase.from('lantana_detections').select('common_name, scientific_name').limit(500)
         ]);
 
-        if (projs) setProjectsList(projs.map(mapDbProjectToItem));
-        if (sitesData) setSitesList(sitesData.map(mapDbSiteToItem));
-        if (lantanaSites) setlantanaSitesList(lantanaSites);
+        if (projs) {
+          let allowedProjs = projs;
+          if (currentRole === 'Project Manager') {
+            const assigned = currentUser?.assignedProjects || [];
+            allowedProjs = allowedProjs.filter((p: any) => assigned.includes(p.id));
+          } else if (currentRole === 'Site Manager') {
+             // For Site Managers, we might want to restrict their project dropdown to the ones containing their sites
+             const assignedProjects = currentUser?.assignedProjects || [];
+             if (assignedProjects.length > 0) {
+                 allowedProjs = allowedProjs.filter((p: any) => assignedProjects.includes(p.id));
+             } else {
+                 const siteIds = currentUser?.assignedSites || [];
+                 const allowedProjIds = new Set(
+                     (sitesData || []).filter((s: any) => siteIds.includes(s.id)).map((s: any) => s.project_id)
+                 );
+                 const allowedLantanaProjIds = new Set(
+                     (lantanaSites || []).filter((s: any) => siteIds.includes(s.id)).map((s: any) => s.project_id)
+                 );
+                 allowedProjs = allowedProjs.filter((p: any) => allowedProjIds.has(p.id) || allowedLantanaProjIds.has(p.id));
+             }
+          }
+          setProjectsList(allowedProjs.map(mapDbProjectToItem));
+        }
+        if (sitesData) {
+          let allowedSites = sitesData;
+          if (currentRole === 'Project Manager') {
+              const assigned = currentUser?.assignedProjects || [];
+              allowedSites = allowedSites.filter((s: any) => assigned.includes(s.project_id));
+          } else if (currentRole === 'Site Manager') {
+              const assigned = currentUser?.assignedSites || [];
+              allowedSites = allowedSites.filter((s: any) => assigned.includes(s.id));
+          }
+          setSitesList(allowedSites.map(mapDbSiteToItem));
+        }
+        if (lantanaSites) {
+          let allowedLantanaSites = lantanaSites;
+          if (currentRole === 'Project Manager') {
+              const assigned = currentUser?.assignedProjects || [];
+              allowedLantanaSites = allowedLantanaSites.filter((s: any) => assigned.includes(s.project_id));
+          } else if (currentRole === 'Site Manager') {
+              const assigned = currentUser?.assignedSites || [];
+              allowedLantanaSites = allowedLantanaSites.filter((s: any) => assigned.includes(s.id));
+          }
+          setlantanaSitesList(allowedLantanaSites);
+        }
         if (speciesEco) setSpeciesEcologyList(speciesEco);
 
         // Default to the first Lantana Project, since the admin page opens on the Lantana scope
         if (projs && projs.length > 0) {
-          const lantanaProject = projs.find(p => p.project_type === 'Lantana');
-          setSelectedProjectId(lantanaProject?.id || '');
+          // Note: we use the filtered projectsList state via allowedProjs
+          // but we haven't defined it as a state variable here, so we'll just check allowedProjs if it was defined.
         }
+        
+        // Let's ensure the default selectedProjectId falls back correctly
+        setProjectsList(prevProjs => {
+            if (prevProjs.length > 0 && !selectedProjectId) {
+                const lantanaProject = prevProjs.find(p => p.type === 'Lantana') || prevProjs[0];
+                setSelectedProjectId(lantanaProject.id);
+            }
+            return prevProjs;
+        });
 
         // Find detected taxa not yet curated in lantana_species_ecology
         if (lantanaDets && speciesEco) {
@@ -284,7 +485,7 @@ export default function PamAdminPage() {
       }
     }
     loadData();
-  }, []);
+  }, [currentRole, currentUser]);
 
   // Form: Create New Project
   const [newProjId, setNewProjId] = useState('');
@@ -318,7 +519,7 @@ export default function PamAdminPage() {
       // Filter projects based on selected type
       const filteredProjects = selectedProjectType === 'Lantana'
         ? projectsList.filter(p => p.type === 'Lantana')
-        : projectsList.filter(p => p.type !== 'Lantana');
+        : projectsList.filter(p => p.type === 'PAM');
       
       if (filteredProjects.length > 0) {
         const newProjectId = filteredProjects[0].id;
@@ -390,7 +591,7 @@ export default function PamAdminPage() {
   const getFilteredProjects = () => {
     const base = selectedProjectType === 'Lantana'
       ? projectsList.filter(p => p.type === 'Lantana')
-      : projectsList.filter(p => p.type !== 'Lantana');
+      : projectsList.filter(p => p.type === 'PAM');
     return base.filter(p => permittedProjectIds.has(p.id));
   };
 
@@ -398,7 +599,7 @@ export default function PamAdminPage() {
   const getUploadProjects = () => {
     const base = selectedUploadProjectType === 'Lantana'
       ? projectsList.filter(p => p.type === 'Lantana')
-      : projectsList.filter(p => p.type !== 'Lantana');
+      : projectsList.filter(p => p.type === 'PAM');
     return base.filter(p => permittedProjectIds.has(p.id));
   };
 
@@ -590,7 +791,9 @@ export default function PamAdminPage() {
             const dateMatch = sourceFilename.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
             if (dateMatch) {
               const [_, y, m, d, hh, mm, ss] = dateMatch;
-              timestamp = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
+              // Add 'Z' to treat the filename time as UTC. This prevents .toISOString() from
+              // shifting the time by the browser's timezone offset (e.g., -5:30 for IST).
+              timestamp = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`);
               timestamp = new Date(timestamp.getTime() + startSeconds * 1000);
             }
 
@@ -635,11 +838,14 @@ export default function PamAdminPage() {
             const chunkSize = 500;
             for (let offset = 0; offset < detectionsToInsert.length; offset += chunkSize) {
               const chunk = detectionsToInsert.slice(offset, offset + chunkSize);
-              const { error } = await supabase.from(targetTable).insert(chunk);
-              if (error) {
-                alert(`Error inserting detections for ${file.name}: ` + error.message);
-              } else {
+              try {
+                await apiFetch('/api/db/detections', {
+                  method: 'POST',
+                  body: JSON.stringify({ table: targetTable, records: chunk })
+                }, currentUser);
                 totalInserted += chunk.length;
+              } catch (err: any) {
+                alert(`Error inserting detections for ${file.name}: ` + err.message);
               }
             }
           }
@@ -682,9 +888,13 @@ export default function PamAdminPage() {
       image_url: newProjImage || null
     };
 
-    const { error } = await supabase.from('projects').insert([newProj]);
-    if (error) {
-      alert('Error creating project: ' + error.message);
+    try {
+      await apiFetch('/api/db/projects', {
+        method: 'POST',
+        body: JSON.stringify(newProj)
+      }, currentUser);
+    } catch (err: any) {
+      alert('Error creating project: ' + err.message);
       return;
     }
 
@@ -703,16 +913,20 @@ export default function PamAdminPage() {
     e.preventDefault();
     if (!editingProj) return;
 
-    const { error } = await supabase.from('projects').update({
-      name: editProjTitle,
-      project_type: editProjType,
-      description: editProjDesc,
-      organization: editProjCollab,
-      image_url: editProjImage || null
-    }).eq('id', editingProj.id);
-
-    if (error) {
-      alert('Error updating project: ' + error.message);
+    try {
+      await apiFetch('/api/db/projects', {
+        method: 'PUT',
+        body: JSON.stringify({
+          id: editingProj.id,
+          name: editProjTitle,
+          project_type: editProjType,
+          description: editProjDesc,
+          organization: editProjCollab,
+          image_url: editProjImage || null
+        })
+      }, currentUser);
+    } catch (err: any) {
+      alert('Error updating project: ' + err.message);
       return;
     }
 
@@ -772,9 +986,15 @@ export default function PamAdminPage() {
       longitude: siteLongitude
     };
 
-    const { error: siteError } = await supabase.from(isLantana ? 'lantana_sites' : 'sites').upsert([newSite], { onConflict: 'id' });
-
-    if (siteError) {
+    try {
+      await apiFetch('/api/db/sites', {
+        method: 'POST',
+        body: JSON.stringify({
+          table: isLantana ? 'lantana_sites' : 'sites',
+          ...newSite
+        })
+      }, currentUser);
+    } catch (siteError: any) {
       alert('Error registering site: ' + siteError.message);
       return;
     }
@@ -824,24 +1044,12 @@ export default function PamAdminPage() {
     if (newImgLink) record.image_link = newImgLink;
     if (newAudioLink) record.audio_link = newAudioLink;
 
-    let { error } = await supabase.from('lantana_species_ecology').upsert([record], { onConflict: 'scientific_name' });
-
-    // Fallback if audio_link/image_link columns are missing in DB schema cache
-    if (error && error.message.includes('column')) {
-      const coreRecord = {
-        scientific_name: newSciName,
-        common_name: newComName,
-        iucn_status: newIucn,
-        guild: newGuild,
-        habitat: newHabitat,
-        foraging_stratum: newStratum,
-        endemic_status: newEndemic
-      };
-      const { error: coreErr } = await supabase.from('lantana_species_ecology').upsert([coreRecord], { onConflict: 'scientific_name' });
-      error = coreErr;
-    }
-
-    if (error) {
+    try {
+      await apiFetch('/api/db/ecology', {
+        method: 'POST',
+        body: JSON.stringify(record)
+      }, currentUser);
+    } catch (error: any) {
       alert('Error saving species trait entry: ' + error.message);
       return;
     }
@@ -858,9 +1066,10 @@ export default function PamAdminPage() {
   const handleDeleteSite = async (site: SiteItem) => {
     const isLantana = site.source === 'Lantana';
     const table = isLantana ? 'lantana_sites' : 'sites';
-    const { error } = await supabase.from(table).delete().eq('id', site.id);
-    if (error) {
-      alert('Error deleting site: ' + error.message);
+    try {
+      await apiFetch(`/api/db/sites?table=${table}&id=${site.id}`, { method: 'DELETE' }, currentUser);
+    } catch (err: any) {
+      alert('Error deleting site: ' + err.message);
       return;
     }
 
@@ -883,9 +1092,17 @@ export default function PamAdminPage() {
       ? { site_name: editSiteName, lat: latitude, long: longitude }
       : { name: editSiteName, elevation: editSiteElev, latitude, longitude, project_id: editSiteProjId };
 
-    const { error } = await supabase.from(isLantana ? 'lantana_sites' : 'sites').update(siteUpdate).eq('id', editingSite.id);
-    if (error) {
-      alert('Error updating site: ' + error.message);
+    try {
+      await apiFetch('/api/db/sites', {
+        method: 'PUT',
+        body: JSON.stringify({
+          table: isLantana ? 'lantana_sites' : 'sites',
+          id: editingSite.id,
+          ...siteUpdate
+        })
+      }, currentUser);
+    } catch (err: any) {
+      alert('Error updating site: ' + err.message);
       return;
     }
 
@@ -913,28 +1130,10 @@ export default function PamAdminPage() {
       const project = projectsList.find(p => p.id === projectId);
       const isLantana = project?.type === 'Lantana';
 
-      // Delete associated sites
-      const sitesTable = isLantana ? 'lantana_sites' : 'sites';
-      const { error: sitesError } = isLantana
-        ? await supabase.from(sitesTable).delete().or(`project_id.eq.${projectId},id.like.${projectId}_%`)
-        : await supabase.from(sitesTable).delete().eq('project_id', projectId);
-      if (sitesError) {
-        alert('Error deleting associated sites: ' + sitesError.message);
-        return;
-      }
-
-      // Delete associated detections
-      const detectionsTable = isLantana ? 'lantana_detections' : 'pam_detections';
-      const { error: detsError } = isLantana
-        ? await supabase.from(detectionsTable).delete().or(`project_id.eq.${projectId},project_name.eq.${project?.title || projectId}`)
-        : await supabase.from(detectionsTable).delete().or(`project_name.eq.${projectId},project_name.eq.${project?.title || projectId}`);
-      if (detsError) {
-        console.error('Error deleting associated detections:', detsError.message);
-      }
-
-      const { error } = await supabase.from('projects').delete().eq('id', projectId);
-      if (error) {
-        alert('Error deleting project: ' + error.message);
+      try {
+        await apiFetch(`/api/db/projects?id=${projectId}`, { method: 'DELETE' }, currentUser);
+      } catch (err: any) {
+        alert('Error deleting project: ' + err.message);
         return;
       }
 
@@ -944,7 +1143,7 @@ export default function PamAdminPage() {
       } else {
         setSitesList(prev => prev.filter(s => s.projectId !== projectId));
       }
-      showNotification(`Project ${projectId} and its associated sites were deleted successfully.`);
+      showNotification('Project and all associated data deleted.');
     }
   };
 
@@ -1066,7 +1265,7 @@ export default function PamAdminPage() {
                     setSelectedUploadProjectType(e.target.value as 'Lantana' | 'Common');
                     const projects = e.target.value === 'Lantana'
                       ? projectsList.filter(p => p.type === 'Lantana')
-                      : projectsList.filter(p => p.type !== 'Lantana');
+                      : projectsList.filter(p => p.type === 'PAM');
                     setSelectedUploadProjId(projects[0]?.id || '');
                   }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
@@ -1929,6 +2128,7 @@ export default function PamAdminPage() {
                       onChange={e => {
                         setPamSelectedProject(e.target.value);
                         setPamSelectedSite('Select Site');
+                        setPamSelectedRecorder('All');
                         setPamDetectionsList([]);
                         setSelectedDetectionIds(new Set());
                       }} 
@@ -1945,6 +2145,7 @@ export default function PamAdminPage() {
                       value={pamSelectedSite} 
                       onChange={e => {
                         setPamSelectedSite(e.target.value);
+                        setPamSelectedRecorder('All');
                         setPamDetectionsList([]);
                         setSelectedDetectionIds(new Set());
                       }} 
@@ -1953,6 +2154,29 @@ export default function PamAdminPage() {
                     >
                       <option value="Select Site" disabled>Select a Site</option>
                       {scopedSites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[150px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">3. Filter Recorder</label>
+                    <select 
+                      value={pamSelectedRecorder} 
+                      onChange={e => {
+                        setPamSelectedRecorder(e.target.value);
+                        setPamDetectionsList([]);
+                        setSelectedDetectionIds(new Set());
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                      disabled={pamSelectedSite === 'Select Site' || isRecordersLoading}
+                    >
+                      {pamSelectedSite === 'Select Site' ? (
+                        <option value="All" disabled>Select Site first</option>
+                      ) : isRecordersLoading ? (
+                        <option value="All" disabled>Loading...</option>
+                      ) : (
+                        <option value="All">All Recorders</option>
+                      )}
+                      {availableRecorders.map(r => <option key={r} value={r as string}>{r as string}</option>)}
                     </select>
                   </div>
 
@@ -2000,12 +2224,34 @@ export default function PamAdminPage() {
                       />
                     </th>
                     <th className="py-3 px-4">ID</th>
-                    <th className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition" onClick={() => setPamSortDateDesc(!pamSortDateDesc)}>
-                      Date & Time {pamSortDateDesc ? '↓' : '↑'}
+                    <th 
+                      className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition" 
+                      onClick={() => {
+                        if (pamSortColumn === 'date') setPamSortDesc(!pamSortDesc);
+                        else { setPamSortColumn('date'); setPamSortDesc(true); }
+                      }}
+                    >
+                      Date & Time {pamSortColumn === 'date' ? (pamSortDesc ? '↓' : '↑') : ''}
                     </th>
                     <th className="py-3 px-4">Project & Site</th>
-                    <th className="py-3 px-4">Species</th>
-                    <th className="py-3 px-4 text-center">Confidence</th>
+                    <th 
+                      className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition"
+                      onClick={() => {
+                        if (pamSortColumn === 'species') setPamSortDesc(!pamSortDesc);
+                        else { setPamSortColumn('species'); setPamSortDesc(false); }
+                      }}
+                    >
+                      Species {pamSortColumn === 'species' ? (pamSortDesc ? '↓' : '↑') : ''}
+                    </th>
+                    <th 
+                      className="py-3 px-4 text-center cursor-pointer hover:text-indigo-600 select-none transition"
+                      onClick={() => {
+                        if (pamSortColumn === 'confidence') setPamSortDesc(!pamSortDesc);
+                        else { setPamSortColumn('confidence'); setPamSortDesc(true); }
+                      }}
+                    >
+                      Confidence {pamSortColumn === 'confidence' ? (pamSortDesc ? '↓' : '↑') : ''}
+                    </th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>

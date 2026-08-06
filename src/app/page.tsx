@@ -79,14 +79,14 @@ export default function HomePage() {
         const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
         for (const p of projData) {
           if (p.project_type === 'Lantana') {
-            const [{ data: lantanaSites }, { data: lantanaDets }] = await Promise.all([
+            const [{ data: lantanaSites }, { data: lantanaDets, count: lantanaDetCount }] = await Promise.all([
               supabase.from('lantana_sites').select('id').eq('project_id', p.id),
-              supabase.from('lantana_detections').select('common_name').eq('project_id', p.id)
+              supabase.from('lantana_detections').select('common_name', { count: 'exact' }).eq('project_id', p.id)
             ]);
             statsMap[p.id] = {
               recorders: (lantanaSites || []).length,
               species: new Set((lantanaDets || []).map((d: any) => d.common_name)).size,
-              detections: (lantanaDets || []).length
+              detections: lantanaDetCount || 0
             };
             continue;
           }

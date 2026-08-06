@@ -33,7 +33,7 @@ const LightMap = dynamic(() => import('@/components/map/LightMap'), { ssr: false
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 export default function CommonDashboardPage() {
-  const { currentRole } = useRole();
+  const { currentRole, currentUser } = useRole();
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
   // Scope filter state: Project, Site, Recorder, Confidence Threshold
@@ -45,7 +45,7 @@ export default function CommonDashboardPage() {
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
   const [recordersRegistryList, setRecordersRegistryList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); const [loadingProgress, setLoadingProgress] = useState<number | undefined>(undefined);
 
   // Raw Detections List from DB
   const [allDetections, setAllDetections] = useState<any[]>([]);
@@ -54,11 +54,11 @@ export default function CommonDashboardPage() {
   // Aggregated stats & insights
   const [totalDetections, setTotalDetections] = useState(0);
   const [uniqueSpecies, setUniqueSpecies] = useState(0);
-  const [birdOfTheYear, setBirdOfTheYear] = useState<{ name: string; count: number }>({ name: 'Indian Roller', count: 0 });
-  const [rarestFind, setRarestFind] = useState<{ name: string; count: number }>({ name: 'Nilgiri Laughingthrush', count: 1 });
-  const [busiestDay, setBusiestDay] = useState<{ date: string; count: number }>({ date: 'Today', count: 0 });
-  const [dawnChampion, setDawnChampion] = useState<{ name: string; time: string }>({ name: 'Common Myna', time: '05:15 AM' });
-  const [nightOwl, setNightOwl] = useState<{ name: string; count: number }>({ name: 'Brown Hawk-Owl', count: 0 });
+  const [birdOfTheYear, setBirdOfTheYear] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
+  const [rarestFind, setRarestFind] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
+  const [busiestDay, setBusiestDay] = useState<{ date: string; count: number }>({ date: '-', count: 0 });
+  const [dawnChampion, setDawnChampion] = useState<{ name: string; time: string }>({ name: 'No detection', time: '-' });
+  const [nightOwl, setNightOwl] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
 
   const [mapSites, setMapSites] = useState<any[]>([]);
 
@@ -83,8 +83,22 @@ export default function CommonDashboardPage() {
           supabase.from('recorders_registry').select('*').order('recorder_id')
         ]);
 
-        // Filter strictly to PAM projects
-        const pamProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
+        let allProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
+        let allSites = sitesRes.data || [];
+
+        // Apply RBAC filtering
+        if (currentRole === 'Project Manager') {
+          const assigned = currentUser?.assignedProjects || [];
+          allProjects = allProjects.filter((p: any) => assigned.includes(p.id));
+          allSites = allSites.filter((s: any) => assigned.includes(s.project_id));
+        } else if (currentRole === 'Site Manager') {
+          const assigned = currentUser?.assignedSites || [];
+          allSites = allSites.filter((s: any) => assigned.includes(s.id));
+          const allowedProjIds = new Set(allSites.map((s: any) => s.project_id));
+          allProjects = allProjects.filter((p: any) => allowedProjIds.has(p.id));
+        }
+
+        const pamProjects = allProjects;
         const pamProjectIds = new Set(pamProjects.map((p: any) => p.id));
         setProjectsList(pamProjects);
 
@@ -95,7 +109,7 @@ export default function CommonDashboardPage() {
         }
 
         // Include ONLY PAM sites (Never Live stations)
-        const pamSites: any[] = (sitesRes.data || [])
+        const pamSites: any[] = allSites
           .filter((s: any) => pamProjectIds.has(s.project_id))
           .map(s => ({
             id: s.id,
@@ -120,7 +134,7 @@ export default function CommonDashboardPage() {
       }
     }
     initData();
-  }, []);
+  }, [currentRole, currentUser]);
 
   // Load detection data once when project changes
   useEffect(() => {
@@ -137,6 +151,15 @@ export default function CommonDashboardPage() {
             if (selectedProj) {
               q = q.eq('project_name', selectedProj.name);
             }
+          } else {
+             if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
+                 const allowedProjNames = projectsList.map(p => p.name);
+                 if (allowedProjNames.length > 0) {
+                     q = q.in('project_name', allowedProjNames);
+                 } else {
+                     q = q.eq('id', 'NONE'); // Force empty result if no projects assigned
+                 }
+             }
           }
           return q;
         };
@@ -163,7 +186,7 @@ export default function CommonDashboardPage() {
             const start = p * pageSize;
             requests.push(makeQuery().range(start, start + pageSize - 1));
           }
-          const results: any[] = await Promise.all(requests);
+          let completed = 0; const results: any[] = await Promise.all(requests.map(async p => { const res = await p; completed++; setLoadingProgress((completed / pages) * 100); return res; }));
           let hasError = false;
           results.forEach((r) => {
             if (r.error) {
@@ -178,14 +201,14 @@ export default function CommonDashboardPage() {
 
         setAllDetections(allDets);
       } catch (err) {
-        console.error('Error loading aggregated stats:', err);
+        console.error('Error loading all detections:', err);
+        setAllDetections([]);
       } finally {
         setLoading(false);
       }
     }
-
     loadAllDetections();
-  }, [selectedProjectId, projectsList, stationsList]);
+  }, [selectedProjectId, projectsList, currentRole, stationsList]);
 
   // Filter and recalc stats client-side on threshold changes (no re-fetch, no loader)
   useEffect(() => {
@@ -204,7 +227,7 @@ export default function CommonDashboardPage() {
     const siteDetMap: Record<string, number> = {};
     const dateCounts: Record<string, number> = {};
     let nightOwlCount = 0;
-    let nightOwlSpecies = 'Brown Hawk-Owl';
+    let nightOwlSpecies = 'No detection';
     const allBirdSpecies = new Set<string>();
 
     filteredDets.forEach(d => {
@@ -243,17 +266,19 @@ export default function CommonDashboardPage() {
       setBirdOfTheYear({ name: birdCounts[0][0], count: birdCounts[0][1] });
       setRarestFind({ name: birdCounts[birdCounts.length - 1][0], count: birdCounts[birdCounts.length - 1][1] });
     } else {
-      setBirdOfTheYear({ name: 'Indian Roller', count: 0 });
-      setRarestFind({ name: 'Nilgiri Laughingthrush', count: 1 });
+      setBirdOfTheYear({ name: 'No detection', count: 0 });
+      setRarestFind({ name: 'No detection', count: 0 });
     }
 
     const sortedDates = Object.entries(dateCounts).sort((a, b) => b[1] - a[1]);
     if (sortedDates.length > 0) {
       setBusiestDay({ date: sortedDates[0][0], count: sortedDates[0][1] });
+    } else {
+      setBusiestDay({ date: '-', count: 0 });
     }
 
-    setDawnChampion({ name: birdCounts[0]?.[0] || 'Indian Roller', time: '05:15 AM' });
-    setNightOwl({ name: nightOwlSpecies, count: nightOwlCount });
+    setDawnChampion({ name: birdCounts[0]?.[0] || 'No detection', time: birdCounts[0]?.[0] ? '05:15 AM' : '-' });
+    setNightOwl({ name: nightOwlCount > 0 ? nightOwlSpecies : 'No detection', count: nightOwlCount });
 
     const sortedSpeciesOptions = Object.keys(speciesCounts)
       .filter(name => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')

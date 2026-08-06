@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, PublicVisibilitySettings, User } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 
 interface RoleContextType {
   currentRole: UserRole;
@@ -161,7 +162,10 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     setUsersList(prev => prev.map(u => u.id === found.id ? updated : u));
     
     // Save last login time to DB
-    supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', found.id).then();
+    apiFetch('/api/db/users', {
+      method: 'PUT',
+      body: JSON.stringify({ id: found.id, last_login: new Date().toISOString() })
+    }, updated).catch(e => console.error('Failed to update last login', e));
     
     return { success: true, message: `Welcome back, ${found.name}!` };
   };
@@ -219,41 +223,37 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.from('users').update(dbUpdates).eq('id', userId);
-      if (error) {
-        console.error('Supabase error updating user:', error);
-        alert('Error updating user in database: ' + error.message);
-      }
-    } catch (e) {
-      console.error('Supabase error updating user:', e);
+      await apiFetch('/api/db/users', {
+        method: 'PUT',
+        body: JSON.stringify({ id: userId, ...dbUpdates })
+      }, currentUser);
+    } catch (e: any) {
+      console.error('API error updating user:', e);
+      alert('Error updating user in database: ' + e.message);
     }
   };
 
   const deleteUser = async (userId: string) => {
     setUsersList(prev => prev.filter(u => u.id !== userId));
     try {
-      const { error } = await supabase.from('users').delete().eq('id', userId);
-      if (error) {
-        console.error('Supabase error deleting user:', error);
-        alert('Error deleting user in database: ' + error.message);
-      }
-    } catch (e) {
-      console.error('Supabase error deleting user:', e);
+      await apiFetch(`/api/db/users?id=${userId}`, { method: 'DELETE' }, currentUser);
+    } catch (e: any) {
+      console.error('API error deleting user:', e);
+      alert('Error deleting user in database: ' + e.message);
     }
   };
 
   const addUser = async (newUser: User) => {
     try {
       const dbUser = mapUserToDbUser(newUser);
-      const { error } = await supabase.from('users').insert([dbUser]);
-      if (error) {
-        console.error('Supabase error adding user:', error);
-        alert('Error adding user in database: ' + error.message);
-      } else {
-        setUsersList(prev => [newUser, ...prev]);
-      }
-    } catch (e) {
-      console.error('Supabase error adding user:', e);
+      await apiFetch('/api/db/users', {
+        method: 'POST',
+        body: JSON.stringify(dbUser)
+      }, currentUser);
+      setUsersList(prev => [...prev, newUser]);
+    } catch (e: any) {
+      console.error('API error adding user:', e);
+      alert('Error adding user to database: ' + e.message);
     }
   };
 
