@@ -549,7 +549,7 @@ export default function UserManagementPage() {
                 </select>
               </div>
 
-              {formRole !== 'Public' && (
+              {formRole !== 'Public' && formRole !== 'Admin' && (
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">Assigned Projects</label>
                 <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
@@ -574,7 +574,7 @@ export default function UserManagementPage() {
               </div>
             )}
 
-              {(formRole === 'Site Manager' || formRole === 'Project Manager' || formRole === 'Admin') && (
+              {(formRole === 'Site Manager' || formRole === 'Project Manager') && (
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
                 <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
