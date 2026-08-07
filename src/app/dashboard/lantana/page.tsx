@@ -25,7 +25,7 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
     if (audioRef.current) audioRef.current.load();
   }, [src]);
 
-  const resolvedAudioSrc = src && src.startsWith('http') ? src : '';
+  const resolvedAudioSrc = src && (src.startsWith('http') || src.startsWith('/')) ? src : '';
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -183,6 +183,8 @@ export default function LantanaDashboardPage() {
 
         const speciesList: string[] = [];
         const speciesMetadata: Record<string, any> = {};
+        let firstEndemic: string | null = null;
+        
         (species.data || []).forEach((s: any) => {
           const name = s.common_name;
           if (!name) return;
@@ -196,12 +198,17 @@ export default function LantanaDashboardPage() {
             iucn: s.iucn_status,
             foraging_stratum: s.foraging_stratum,
             indicator_group: s.indicator_group || 'Nil',
-            image: s.image_link,
-            audio: s.audio_link
+            image: s.image_link || s.image_url,
+            audio: s.audio_link || s.audio_url
           };
+          
+          if (!firstEndemic && s.endemic_status && String(s.endemic_status).trim().toLowerCase() === 'yes') {
+            firstEndemic = name;
+          }
         });
         setRawSpeciesList(speciesList);
         setRawSpeciesMetadata(speciesMetadata);
+        setSelectedSpecies(prev => prev ? prev : firstEndemic);
       } catch (e) { console.error(e); }
     }
     loadMeta();
@@ -296,12 +303,13 @@ export default function LantanaDashboardPage() {
 
         const recorders = (sbSites || []).map((s: any) => {
           const combined = `${s.habitat_type || ''} ${s.site_name || ''} ${s.recorder_id || ''}`.toLowerCase();
-          const isLC = /lc|lantana-cleared|cleared/i.test(combined);
-          const isLI = /li|lantana-infested|infested/i.test(combined);
+          const isLC = /(^|[\s_-])(lc|lantana-cleared|cleared)([\s_-]|$)/i.test(combined);
+          const isCS = /(^|[\s_-])(cs|control-site|control)([\s_-]|$)/i.test(combined);
+          const isLI = /(^|[\s_-])(li|lantana-infested|infested)([\s_-]|$)/i.test(combined);
           return {
             site_group: s.site_name || s.id,
             recorder_id: s.recorder_id || s.id,
-            habitat: isLC ? 'LC' : isLI ? 'LI' : 'LI',
+            habitat: isLC ? 'LC' : isCS ? 'CS' : isLI ? 'LI' : 'LI',
             latitude: s.lat != null ? Number(s.lat) : null,
             longitude: s.long != null ? Number(s.long) : null,
             size_gb: s.total_size_bytes ? Number(s.total_size_bytes) / 1e9 : 0,
@@ -958,7 +966,7 @@ export default function LantanaDashboardPage() {
                   </div>
                 </div>
                 <AudioPlayer 
-                  src={profileData.audio ? `/${profileData.audio.replace(/^\/?audio\//, '')}` : ''} 
+                  src={profileData.audio ? (profileData.audio.startsWith('http') ? profileData.audio : `/${profileData.audio.replace(/^\/?audio\//, '')}`) : ''} 
                   speciesName={profileData.name} 
                 />
               </div>
@@ -1139,7 +1147,7 @@ export default function LantanaDashboardPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', alignItems: 'stretch' }}>
+          <div style={{ width: '100%' }}>
             <div>
               {indYCats.length === 0 ? (
                 <div className="empty-state"><span>No indicator species detected in current filter.</span></div>
@@ -1150,47 +1158,6 @@ export default function LantanaDashboardPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Indicator Summary Side Panel */}
-            <div className="stats-summary-panel">
-              <span className="stats-summary-title">Indicator Detections Summary</span>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recovery Category</span>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>Choice</span>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#4f46e5', padding: '0.35rem 0.75rem', borderRadius: '999px', background: '#e0e7ff', width: 'fit-content', marginTop: '0.25rem' }}>
-                    {indicatorClass === 'recovery' ? 'Restoration-Associated' : indicatorClass === 'lantana' ? 'Lantana-Associated' : 'All Indicators'}
-                  </span>
-                </div>
-                <div className="stats-grid" style={{ alignItems: 'stretch' }}>
-                  <div style={{ background: '#dcfce7', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(22,163,74,0.15)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#14532d', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.3 }}>Detections</div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#14532d', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.3 }}>In LC</div>
-                    </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#14532d' }}>{indicatorTotals.lcTotal.toLocaleString()}</div>
-                    <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#15803d' }}>Restored Habitats</div>
-                  </div>
-                  <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(239,68,68,0.15)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.3 }}>Detections</div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.3 }}>In LI</div>
-                    </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#991b1b' }}>{indicatorTotals.liTotal.toLocaleString()}</div>
-                    <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#dc2626' }}>Infested Habitats</div>
-                  </div>
-                </div>
-                {indicatorTotals.liTotal > 0 && (
-                  <div className="stat-diff-callout">
-                    <span className="stat-diff-label">Detections Ratio (LC / LI)</span>
-                    <span className="stat-diff-val">{(indicatorTotals.lcTotal / Math.max(1, indicatorTotals.liTotal)).toFixed(2)}x</span>
-                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                      Detected predominantly in {indicatorTotals.lcTotal > indicatorTotals.liTotal ? 'Lantana-Cleared (LC)' : 'Lantana-Infested (LI)'} sites.
-                    </span>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>

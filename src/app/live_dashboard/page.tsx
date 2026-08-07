@@ -211,6 +211,24 @@ export default function LiveDashboardPage() {
   // Active Nodes calculation (status === 'online')
   const activeNodesCount = availableStations.filter((s: any) => s.status === 'online').length;
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 animate-in fade-in duration-300">
+        <div className="relative flex items-center justify-center">
+          <div className="w-20 h-20 border-4 border-emerald-100 rounded-full"></div>
+          <div className="w-20 h-20 border-4 border-emerald-600 rounded-full border-t-transparent animate-spin absolute inset-0"></div>
+          <Radio className="w-8 h-8 text-emerald-600 absolute animate-pulse" />
+        </div>
+        <div className="flex flex-col items-center space-y-1">
+          <h3 className="text-xl font-black text-slate-900 tracking-tight">Initializing Live Feed</h3>
+          <p className="text-sm text-slate-500 font-medium max-w-sm text-center">
+            Establishing secure connection to field BirdNET-Pi daemons and loading realtime telemetry...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Banner Header */}

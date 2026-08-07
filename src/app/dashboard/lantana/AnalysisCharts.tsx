@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
@@ -22,6 +22,7 @@ const COLORS = [
 function getHabitatColor(habitat?: string) {
   if (habitat === 'LC') return '#10b981';
   if (habitat === 'LI') return '#ef4444';
+  if (habitat === 'CS') return '#a855f7';
   return '#64748b';
 }
 
@@ -39,6 +40,7 @@ export default function AnalysisCharts({
 }: AnalysisChartsProps) {
   const [search, setSearch] = useState('');
   const [selectedSpecies, setSelectedSpecies] = useState<string[]>([]);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Species totals across current sites
   const speciesTotals = useMemo(() => {
@@ -63,10 +65,19 @@ export default function AnalysisCharts({
       .sort((a, b) => speciesTotals[b] - speciesTotals[a]);
   }, [speciesList, search, speciesTotals, speciesMetadata]);
 
+  useEffect(() => {
+    if (!hasInitialized && speciesList.length > 0 && Object.keys(speciesTotals).length > 0) {
+      const top8 = [...speciesList]
+        .sort((a, b) => (speciesTotals[b] || 0) - (speciesTotals[a] || 0))
+        .slice(0, 8);
+      setSelectedSpecies(top8);
+      setHasInitialized(true);
+    }
+  }, [hasInitialized, speciesList, speciesTotals]);
+
   const topSpecies = useMemo(() => {
-    if (selectedSpecies.length > 0) return selectedSpecies;
-    return filteredSpecies.slice(0, 8);
-  }, [selectedSpecies, filteredSpecies]);
+    return selectedSpecies;
+  }, [selectedSpecies]);
 
   const xCategories = useMemo(() =>
     recs.map(r => `${r.site_group}\n${r.recorder_id}`),
@@ -76,16 +87,17 @@ export default function AnalysisCharts({
   const speciesBySiteOption = useMemo(() => {
     const series = topSpecies.map((sp, i) => ({
       name: sp,
-      type: 'bar' as const,
+      type: 'line' as const,
       data: recs.map(r => spSiteMatrix[sp]?.[getRecKey(r)] || 0),
-      itemStyle: { color: COLORS[i % COLORS.length], borderRadius: [3, 3, 0, 0] },
-      barGap: '10%'
+      itemStyle: { color: COLORS[i % COLORS.length] },
+      smooth: true,
+      symbolSize: 6
     }));
 
     return {
       tooltip: {
         trigger: 'axis' as const,
-        axisPointer: { type: 'shadow' as const }
+        axisPointer: { type: 'line' as const }
       },
       legend: { top: 0, textStyle: { color: '#475569', fontSize: 10 } },
       grid: { left: '12%', right: '5%', top: '14%', bottom: '18%' },
@@ -163,7 +175,7 @@ export default function AnalysisCharts({
 
     return {
       tooltip: { trigger: 'axis' as const, axisPointer: { type: 'cross' as const } },
-      legend: { top: 0, data: ['Unique Species', 'Total Detections'], textStyle: { color: '#475569', fontSize: 10 } },
+      legend: { show: false },
       grid: { left: '8%', right: '8%', top: '16%', bottom: '18%' },
       xAxis: {
         type: 'category' as const,
@@ -217,22 +229,46 @@ export default function AnalysisCharts({
         </div>
 
         <div className="heatmap-controls" style={{ marginBottom: '0.75rem', flexWrap: 'wrap' as const }}>
-          <div className="search-box" style={{ maxWidth: '360px' }}>
-            <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search species common or scientific name..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+          <div style={{ position: 'relative', width: '100%', maxWidth: '360px', zIndex: 50 }}>
+            <div className="search-box" style={{ maxWidth: '100%', margin: 0 }}>
+              <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search species common or scientific name..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            {search.trim().length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 100, maxHeight: '250px', overflowY: 'auto' }}>
+                {filteredSpecies.length === 0 ? (
+                  <div style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>No matches found.</div>
+                ) : (
+                  filteredSpecies.map(sp => (
+                    <div 
+                      key={sp} 
+                      style={{ padding: '0.65rem 1rem', fontSize: '0.875rem', color: '#1e293b', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                      onClick={() => {
+                        setSelectedSpecies(prev => Array.from(new Set([...prev, sp])));
+                        setSearch('');
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      {sp}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
-          <button className="btn-primary" onClick={() => setSelectedSpecies(filteredSpecies.slice(0, 8))}>
+          <button className="btn-primary" onClick={() => setSelectedSpecies([...speciesList].sort((a, b) => speciesTotals[b] - speciesTotals[a]).slice(0, 8))}>
             Top 8 Most Detected
           </button>
-          <button className="btn-primary" onClick={() => setSelectedSpecies([])}>
+          <button className="btn-primary" onClick={() => { setSelectedSpecies([]); setSearch(''); }}>
             Clear
           </button>
         </div>
@@ -264,7 +300,7 @@ export default function AnalysisCharts({
 
         <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
           <div style={{ minWidth: '800px', padding: '1rem 0' }}>
-            <ReactECharts option={speciesBySiteOption} style={{ height: '420px', width: '100%' }} />
+            <ReactECharts option={speciesBySiteOption} notMerge={true} style={{ height: '420px', width: '100%' }} />
           </div>
         </div>
       </div>
@@ -344,6 +380,9 @@ export default function AnalysisCharts({
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#ef4444', display: 'inline-block' }}></span> LI Site (Species)
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#a855f7', display: 'inline-block' }}></span> CS Site (Species)
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '999px', background: '#4f46e5', display: 'inline-block' }}></span> Total Detections

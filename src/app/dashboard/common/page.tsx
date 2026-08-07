@@ -17,7 +17,8 @@ import {
   Filter,
   Layers,
   Search,
-  X
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
@@ -46,6 +47,17 @@ export default function CommonDashboardPage() {
   const [stationsList, setStationsList] = useState<any[]>([]);
   const [recordersRegistryList, setRecordersRegistryList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true); const [loadingProgress, setLoadingProgress] = useState<number | undefined>(undefined);
+  const [showSlowLoadPopup, setShowSlowLoadPopup] = useState(false);
+
+  useEffect(() => {
+    if (loading) {
+      setShowSlowLoadPopup(true);
+      const timer = setTimeout(() => setShowSlowLoadPopup(false), 50000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowSlowLoadPopup(false);
+    }
+  }, [loading]);
 
   // Raw Detections List from DB
   const [allDetections, setAllDetections] = useState<any[]>([]);
@@ -561,7 +573,17 @@ export default function CommonDashboardPage() {
     };
   }, [rawDetections, selectedSpecies, diversityYear, diversityMonth, diurnalDate, radialDate, hourLabels, chartColors]);
 
-  if (loading) return <DashboardLoader message="Loading PAM dashboard..." progress={loadingProgress} />;
+  if (loading) return (
+    <>
+      <DashboardLoader message="Loading PAM dashboard..." progress={loadingProgress} />
+      {showSlowLoadPopup && (
+        <div className="fixed top-8 right-8 z-[100] bg-indigo-600/95 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl font-bold flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
+          <AlertCircle className="w-6 h-6 text-indigo-200" />
+          might take some time to load the data
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-8 pb-12 font-sans">

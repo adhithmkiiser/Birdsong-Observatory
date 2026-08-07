@@ -27,25 +27,25 @@ export async function POST(request: NextRequest) {
 
     const textBody = `Dear ${name},
 
-${
-  isNewUser
-    ? 'An account has been created for you on the IISER Tirupati BirdSong Observatory Platform.'
-    : 'A password reset request was initiated for your BirdSong Observatory account.'
+${isNewUser
+        ? 'An account has been created for you on the IISER Tirupati BirdSong Observatory Platform.'
+        : 'A password reset request was initiated for your BirdSong Observatory account.'
 }
+Website link: https://birdsong-observatory.onrender.com/
 
-Your Temporary One-Time Password (OTP) is: ${otpCode}
+Your Temporary One - Time Password(OTP) is: ${ otpCode }
 
-Please log in using your email (${email}) and this temporary password. Upon initial login, you will be required to set your new permanent password.
+Please log in using your email(${ email }) and this temporary password.Upon initial login, you will be required to set your new permanent password.
 
 Best regards,
-IISER Tirupati Bioacoustics Research Team
+    IISER Tirupati Bioacoustics Research Team
 BirdSong Observatory System`.trim();
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
+        Authorization: `Bearer ${ apiKey } `
       },
       body: JSON.stringify({
         from: fromEmail,
