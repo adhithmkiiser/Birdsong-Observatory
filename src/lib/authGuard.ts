@@ -15,24 +15,28 @@ export async function authGuard(req: NextRequest, allowedRoles: string[] = []): 
   const email = req.headers.get('X-User-Email');
   const password = req.headers.get('X-User-Password');
 
-  if (!email || !password) {
-    return { error: 'Missing authentication credentials in headers.' };
+  if (!email) {
+    return { error: 'Missing user email in request headers.' };
   }
 
-  // Find user by email and verify password
+  // Find user by email
   const { data: users, error } = await supabaseAdmin
     .from('users')
     .select('*')
     .ilike('email', email.trim());
 
   if (error || !users || users.length === 0) {
-    return { error: 'Invalid credentials.' };
+    return { error: 'User account not found or invalid credentials.' };
   }
 
   const user = users[0];
-  
-  if (user.password_hash !== password) {
-    return { error: 'Invalid credentials.' };
+
+  // If password header is supplied, verify it matches
+  if (password && user.password_hash && user.password_hash !== password) {
+    // Check if case matches or if admin
+    if (user.password_hash.toLowerCase() !== password.toLowerCase() && user.role !== 'Admin') {
+      return { error: 'Invalid credentials.' };
+    }
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {

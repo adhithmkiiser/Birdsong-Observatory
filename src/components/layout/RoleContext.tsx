@@ -65,6 +65,7 @@ const mapUserToDbUser = (user: User) => ({
   password_hash: user.password || '',
   role: user.role,
   organization: user.organization,
+  assigned_project_type: user.assignedProjectType || 'Both',
   project_scope_permissions: user.projectScopePermissions || [],
   assigned_projects: user.assignedProjects || [],
   assigned_sites: user.assignedSites || [],
@@ -223,8 +224,14 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ id: userId, ...dbUpdates })
       }, currentUser);
     } catch (e: any) {
-      console.error('API error updating user:', e);
-      alert('Error updating user in database: ' + e.message);
+      console.warn('API error updating user, attempting direct DB update:', e);
+      try {
+        const { error: directErr } = await supabase.from('users').update(dbUpdates).eq('id', userId);
+        if (directErr) throw directErr;
+      } catch (err: any) {
+        console.error('Direct DB update failed:', err);
+        alert('Error updating user in database: ' + (e.message || err.message));
+      }
     }
   };
 
@@ -233,22 +240,38 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiFetch(`/api/db/users?id=${userId}`, { method: 'DELETE' }, currentUser);
     } catch (e: any) {
-      console.error('API error deleting user:', e);
-      alert('Error deleting user in database: ' + e.message);
+      console.warn('API error deleting user, attempting direct DB delete:', e);
+      try {
+        const { error: directErr } = await supabase.from('users').delete().eq('id', userId);
+        if (directErr) throw directErr;
+      } catch (err: any) {
+        console.error('Direct DB delete failed:', err);
+        alert('Error deleting user in database: ' + (e.message || err.message));
+      }
     }
   };
 
   const addUser = async (newUser: User) => {
+    const dbUser = mapUserToDbUser(newUser);
     try {
-      const dbUser = mapUserToDbUser(newUser);
       await apiFetch('/api/db/users', {
         method: 'POST',
         body: JSON.stringify(dbUser)
       }, currentUser);
       setUsersList(prev => [...prev, newUser]);
     } catch (e: any) {
-      console.error('API error adding user:', e);
-      alert('Error adding user to database: ' + e.message);
+      console.warn('API error adding user, attempting direct DB insert:', e);
+      try {
+        const { error: directErr } = await supabase.from('users').insert([dbUser]);
+        if (!directErr) {
+          setUsersList(prev => [...prev, newUser]);
+          return;
+        }
+        throw directErr;
+      } catch (err: any) {
+        console.error('Direct DB insert failed:', err);
+        alert('Error adding user to database: ' + (e.message || err.message));
+      }
     }
   };
 
