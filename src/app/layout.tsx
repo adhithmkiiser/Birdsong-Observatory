@@ -25,11 +25,30 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       if (data) setRecorders(data);
     }
     loadRecorders();
-    const interval = setInterval(() => {
-      setNow(Date.now());
-      loadRecorders();
-    }, STATION_HEARTBEAT_INTERVAL_MS);
-    return () => clearInterval(interval);
+
+    const channel = supabase
+      .channel('public:recorders_registry')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recorders_registry' },
+        (payload) => {
+          setNow(Date.now());
+          setRecorders((prev) => {
+            const index = prev.findIndex((r) => r.id === payload.new.id);
+            if (index !== -1) {
+              const newRecorders = [...prev];
+              newRecorders[index] = payload.new;
+              return newRecorders;
+            }
+            return [...prev, payload.new];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const onlineStations = React.useMemo(() => {

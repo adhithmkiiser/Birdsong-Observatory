@@ -1,15 +1,17 @@
-import { supabase } from './supabaseClient';
+import { supabase } from './supabase';
 import { User, Project, Station, Detection, Species } from '@/types/database';
 
 // ============================================================
 // 1. USER ACCOUNTS, AUTH & LOGINS
 // ============================================================
 
-export async function fetchAllUsers() {
+export async function fetchAllUsers(page = 1, pageSize = 100) {
+  const start = (page - 1) * pageSize;
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(start, start + pageSize - 1);
   if (error) throw error;
   return data;
 }
@@ -48,11 +50,13 @@ export async function recordUserLoginAudit(userId: string, email: string) {
 // 2. PROJECTS & FIELD SITES DIRECTORY
 // ============================================================
 
-export async function fetchProjectsList() {
+export async function fetchProjectsList(page = 1, pageSize = 100) {
+  const start = (page - 1) * pageSize;
   const { data, error } = await supabase
     .from('projects')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(start, start + pageSize - 1);
   if (error) throw error;
   return data;
 }
@@ -133,12 +137,13 @@ export async function deleteSiteRecord(siteId: string) {
 // 4. LIVE RECORDER DETECTIONS & AUDIO CLIPS
 // ============================================================
 
-export async function fetchLiveDetections(limit = 50) {
+export async function fetchLiveDetections(page = 1, limit = 50) {
+  const start = (page - 1) * limit;
   const { data, error } = await supabase
     .from('live_detections')
     .select('*')
     .order('timestamp', { ascending: false })
-    .limit(limit);
+    .range(start, start + limit - 1);
   if (error) throw error;
   return data;
 }

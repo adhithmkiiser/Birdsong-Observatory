@@ -12,6 +12,7 @@ import {
   Sparkles,
   FileText
 } from 'lucide-react';
+import { Footer } from '@/components/Footer';
 
 export default function AboutPage() {
   const BULLETS = [

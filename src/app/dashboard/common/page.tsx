@@ -1,91 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Radio, 
-  Cpu, 
-  Bird, 
-  FolderKanban, 
-  Database, 
-  Clock, 
-  Play, 
-  ChevronRight,
-  ShieldCheck,
-  Activity, 
-  Volume2,
-  Sparkles,
-  Filter,
-  Layers,
-  Search,
-  X,
-  AlertCircle
-} from 'lucide-react';
-import { DiurnalChart } from '@/components/charts/DiurnalChart';
-import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
-import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
-import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
-import DashboardLoader from '@/components/ui/DashboardLoader';
-import { Detection } from '@/types/database';
+import React, { useEffect, useState } from 'react';
+import { Layers, Sparkles } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
-import dynamic from 'next/dynamic';
-
-const LightMap = dynamic(() => import('@/components/map/LightMap'), { ssr: false });
-const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
+import DashboardLoader from '@/components/ui/DashboardLoader';
+import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
+import { DashboardStats, DashboardStatsData } from '@/components/dashboard/DashboardStats';
+import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
+import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
+import { useDashboardStore } from '@/lib/store/useDashboardStore';
 
 export default function CommonDashboardPage() {
   const { currentRole, currentUser } = useRole();
-  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
-
-  // Scope filter state: Project, Site, Recorder, Confidence Threshold
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
-  const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
-  const [selectedRecorderId, setSelectedRecorderId] = useState<string>('ALL_RECORDERS');
-  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0.50);
+  
+  const { 
+    selectedProjectId, 
+    selectedStationId, 
+    selectedRecorderId, 
+    confidenceThreshold,
+    setProject
+  } = useDashboardStore();
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
   const [recordersRegistryList, setRecordersRegistryList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true); const [loadingProgress, setLoadingProgress] = useState<number | undefined>(undefined);
-  const [showSlowLoadPopup, setShowSlowLoadPopup] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  const [stats, setStats] = useState<DashboardStatsData | null>(null);
 
-  useEffect(() => {
-    if (loading) {
-      setShowSlowLoadPopup(true);
-      const timer = setTimeout(() => setShowSlowLoadPopup(false), 50000);
-      return () => clearTimeout(timer);
-    } else {
-      setShowSlowLoadPopup(false);
-    }
-  }, [loading]);
-
-  // Raw Detections List from DB
-  const [allDetections, setAllDetections] = useState<any[]>([]);
-  const [rawDetections, setRawDetections] = useState<any[]>([]);
-
-  // Aggregated stats & insights
-  const [totalDetections, setTotalDetections] = useState(0);
-  const [uniqueSpecies, setUniqueSpecies] = useState(0);
-  const [birdOfTheYear, setBirdOfTheYear] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
-  const [rarestFind, setRarestFind] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
-  const [busiestDay, setBusiestDay] = useState<{ date: string; count: number }>({ date: '-', count: 0 });
-  const [dawnChampion, setDawnChampion] = useState<{ name: string; time: string }>({ name: 'No detection', time: '-' });
-  const [nightOwl, setNightOwl] = useState<{ name: string; count: number }>({ name: 'No detection', count: 0 });
-
-  const [mapSites, setMapSites] = useState<any[]>([]);
-
-  // Species selection for trend & diurnal charts
-  const [speciesOptions, setSpeciesOptions] = useState<string[]>([]);
-  const [selectedSpecies, setSelectedSpecies] = useState<string[]>([]);
-  const [speciesSearch, setSpeciesSearch] = useState('');
-
-  // Date selectors for chart drill-downs
-  const [diversityYear, setDiversityYear] = useState<string>('');
-  const [diversityMonth, setDiversityMonth] = useState<string>('');
-  const [diurnalDate, setDiurnalDate] = useState<string>('');
-  const [radialDate, setRadialDate] = useState<string>('');
-
-  // Load projects (PAM only) and combined stations/sites on mount
+  // Initial load of reference data (Projects, Sites, Recorders)
   useEffect(() => {
     async function initData() {
       try {
@@ -117,473 +61,87 @@ export default function CommonDashboardPage() {
         // Pre-select project from query param
         const queryProject = new URLSearchParams(window.location.search).get('project');
         if (queryProject && pamProjectIds.has(queryProject)) {
-          setSelectedProjectId(queryProject);
+          setProject(queryProject);
         }
 
-        // Include ONLY PAM sites (Never Live stations)
+        // Include ONLY PAM sites
         const pamSites: any[] = allSites
           .filter((s: any) => pamProjectIds.has(s.project_id))
           .map(s => ({
             id: s.id,
             station_name: s.name,
-            description: `${s.name} Field Site`,
             project_id: s.project_id,
-            type: 'PAM',
             latitude: s.latitude,
             longitude: s.longitude
           }));
 
         setStationsList(pamSites);
 
-        const pamProjectNames = new Set(pamProjects.map((p: any) => p.name));
-        setRecordersRegistryList(
-          (recordersRes.data || []).filter(
-            (r: any) => r.project_type === 'PAM' && pamProjectNames.has(r.project_name)
-          )
+        const pamSiteNames = Array.from(new Set(pamSites.map((s: any) => s.station_name)));
+        
+        // Filter actual registered recorders
+        const actualRecorders = (recordersRes.data || []).filter(
+            (r: any) => r.project_type === 'PAM' && pamSiteNames.some(name => name.includes(r.site_name))
         );
+
+        // Dynamically inject a standard 'Rec_01' for all PAM sites to fallback for missing registries or BirdNET defaults
+        const syntheticRecorders = pamSites.map((s: any) => ({
+            id: `synth_${s.id}_Rec_01`,
+            project_type: 'PAM',
+            project_name: s.project_id,
+            site_name: s.station_name,
+            recorder_id: 'Rec_01'
+        }));
+
+        setRecordersRegistryList([...actualRecorders, ...syntheticRecorders]);
+
       } catch (err) {
         console.error('Error loading projects/sites:', err);
+      } finally {
+        setLoading(false);
       }
     }
     initData();
-  }, [currentRole, currentUser]);
+  }, [currentRole, currentUser, setProject]);
 
-  // Load detection data once when project changes
+  // Fetch server-side aggregations whenever filters change
   useEffect(() => {
-    async function loadAllDetections() {
-      setLoading(true);
-      setLoadingProgress(0);
-      try {
-        const baseFields = 'id,date,time,common_name,confidence,site_name,project_name,recorder_name';
-        const makeQuery = (withCount: 'exact' | 'none' = 'none') => {
-          const options: any = withCount === 'exact' ? { count: 'exact', head: true } : undefined;
-          let q = supabase.from('pam_detections').select(baseFields, options).order('id', { ascending: true });
-
-          if (selectedProjectId !== 'ALL_PROJECTS') {
-            const selectedProj = projectsList.find(p => p.id === selectedProjectId);
-            if (selectedProj) {
-              q = q.eq('project_name', selectedProj.name);
-            }
-          } else {
-             if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
-                 const allowedProjNames = projectsList.map(p => p.name);
-                 if (allowedProjNames.length > 0) {
-                     q = q.in('project_name', allowedProjNames);
-                 } else {
-                     q = q.eq('id', 'NONE'); // Force empty result if no projects assigned
-                 }
-             }
-          }
-          return q;
-        };
-
-        const { count: totalCount, error: countError } = await makeQuery('exact');
-        if (countError) {
-          console.error('Error counting pam_detections:', countError);
-          setAllDetections([]);
-          setLoading(false);
-          return;
-        }
-        const total = Number(totalCount) || 0;
-        if (total === 0) {
-          setAllDetections([]);
-          setLoading(false);
-          return;
-        }
-
-        const pageSize = 1000;
-        const pages = Math.ceil(total / pageSize);
-        const allDets: any[] = [];
-        const batchSize = 4;
-        let completedChunks = 0;
-        for (let b = 0; b < pages; b += batchSize) {
-          const requests = [];
-          for (let p = b; p < Math.min(b + batchSize, pages); p++) {
-            const start = p * pageSize;
-            requests.push(makeQuery().range(start, start + pageSize - 1));
-          }
-          const results: any[] = await Promise.all(requests.map(async p => { 
-            const res = await p; 
-            completedChunks++; 
-            setLoadingProgress((completedChunks / pages) * 100); 
-            return res; 
-          }));
-          let hasError = false;
-          results.forEach((r) => {
-            if (r.error) {
-              hasError = true;
-              console.error('Error paginating pam_detections:', r.error);
-            } else {
-              allDets.push(...(r.data || []));
-            }
-          });
-          if (hasError) break;
-        }
-
-        setAllDetections(allDets);
-      } catch (err) {
-        console.error('Error loading all detections:', err);
-        setAllDetections([]);
-        setLoading(false);
-      } finally {
-        // setLoading(false);
-      }
-    }
-    loadAllDetections();
-  }, [selectedProjectId, projectsList, currentRole, stationsList]);
-
-  // Filter and recalc stats client-side on threshold changes (no re-fetch, no loader)
-  useEffect(() => {
-    const selectedSite = selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId) : null;
-    const selectedRecorder = selectedRecorderId !== 'ALL_RECORDERS' ? recordersRegistryList.find(r => r.recorder_id === selectedRecorderId) : null;
-    const filteredDets = allDetections.filter(d =>
-      (d.confidence || 0.8) >= confidenceThreshold &&
-      (!selectedSite || d.site_name === selectedSite.station_name) &&
-      (!selectedRecorder || d.recorder_name === selectedRecorder.recorder_id)
-    );
-    setRawDetections(filteredDets);
-    setTotalDetections(filteredDets.length);
-
-    const speciesCounts: Record<string, number> = {};
-    const siteSpeciesMap: Record<string, Set<string>> = {};
-    const siteDetMap: Record<string, number> = {};
-    const dateCounts: Record<string, number> = {};
-    let nightOwlCount = 0;
-    let nightOwlSpecies = 'No detection';
-    const allBirdSpecies = new Set<string>();
-
-    filteredDets.forEach(d => {
-      const sp = d.common_name || 'Unknown Species';
-      if (sp && sp.toLowerCase() !== 'nocall') {
-        allBirdSpecies.add(sp);
-      }
-      speciesCounts[sp] = (speciesCounts[sp] || 0) + 1;
-
-      const site = d.site_name || 'Unknown';
-      if (!siteSpeciesMap[site]) siteSpeciesMap[site] = new Set();
-      siteSpeciesMap[site].add(sp);
-      siteDetMap[site] = (siteDetMap[site] || 0) + 1;
-
-      if (d.date) {
-        dateCounts[d.date] = (dateCounts[d.date] || 0) + 1;
+    async function fetchStats() {
+      if (projectsList.length === 0) return;
+      
+      let p_project_names = null;
+      if (selectedProjectId !== 'ALL_PROJECTS') {
+         const projectSites = stationsList.filter(s => s.project_id === selectedProjectId);
+         const allowedSiteNames = projectSites.map(s => s.station_name);
+         p_project_names = allowedSiteNames.length > 0 ? allowedSiteNames : ['NONE'];
       }
 
-      if (d.time) {
-        const hour = parseInt(d.time.split(':')[0], 10);
-        if (hour >= 20 || hour < 5) {
-          nightOwlCount++;
-          if (sp && sp.toLowerCase() !== 'nocall') {
-            nightOwlSpecies = sp;
-          }
-        }
+      let p_site_name = 'ALL_SITES';
+      if (selectedStationId !== 'ALL_SITES') {
+         const s = stationsList.find(s => s.id === selectedStationId);
+         if (s) p_site_name = s.station_name;
       }
-    });
 
-    setUniqueSpecies(allBirdSpecies.size);
-
-    const birdCounts = Object.entries(speciesCounts)
-      .filter(([name]) => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
-      .sort((a, b) => b[1] - a[1]);
-    if (birdCounts.length > 0) {
-      setBirdOfTheYear({ name: birdCounts[0][0], count: birdCounts[0][1] });
-      setRarestFind({ name: birdCounts[birdCounts.length - 1][0], count: birdCounts[birdCounts.length - 1][1] });
-    } else {
-      setBirdOfTheYear({ name: 'No detection', count: 0 });
-      setRarestFind({ name: 'No detection', count: 0 });
-    }
-
-    const sortedDates = Object.entries(dateCounts).sort((a, b) => b[1] - a[1]);
-    if (sortedDates.length > 0) {
-      setBusiestDay({ date: sortedDates[0][0], count: sortedDates[0][1] });
-    } else {
-      setBusiestDay({ date: '-', count: 0 });
-    }
-
-    setDawnChampion({ name: birdCounts[0]?.[0] || 'No detection', time: birdCounts[0]?.[0] ? '05:15 AM' : '-' });
-    setNightOwl({ name: nightOwlCount > 0 ? nightOwlSpecies : 'No detection', count: nightOwlCount });
-
-    const sortedSpeciesOptions = Object.keys(speciesCounts)
-      .filter(name => name && name.toLowerCase() !== 'nocall' && name !== 'Unknown Species')
-      .sort((a, b) => (speciesCounts[b] || 0) - (speciesCounts[a] || 0));
-    setSpeciesOptions(sortedSpeciesOptions);
-    setSelectedSpecies(prev => prev.length > 0 ? prev : sortedSpeciesOptions.slice(0, 5));
-
-    const projectStations = selectedProjectId === 'ALL_PROJECTS'
-      ? stationsList
-      : stationsList.filter(s => s.project_id === selectedProjectId);
-    const visibleStations = selectedStationId !== 'ALL_SITES'
-      ? projectStations.filter(s => s.id === selectedStationId)
-      : projectStations;
-
-    const formattedMapSites = visibleStations.map((s) => {
-      const siteName = s.station_name;
-      const uSpecies = new Set([...(siteSpeciesMap[siteName] || new Set())].filter(n => n && n.toLowerCase() !== 'nocall')).size;
-      const totalD = siteDetMap[siteName] || 0;
-      return {
-        id: s.id,
-        name: siteName,
-        lat: Number(s.latitude) || 11.40,
-        lng: Number(s.longitude) || 76.65,
-        detectionsCount: totalD,
-        speciesCount: uSpecies
-      };
-    });
-
-    setMapSites(formattedMapSites); setLoading(false);
-  }, [allDetections, confidenceThreshold, stationsList, recordersRegistryList, selectedStationId, selectedRecorderId, selectedProjectId]);
-
-  // Set default date selectors to the latest available detection date
-  useEffect(() => {
-    if (rawDetections.length === 0) return;
-    const allDates = [...new Set(rawDetections.map((d: any) => d.date).filter(Boolean))].sort();
-    const latest = allDates[allDates.length - 1];
-    if (latest) {
-      const [y, m] = latest.split('-');
-      if (!diversityYear) setDiversityYear(y);
-      if (!diversityMonth) setDiversityMonth(m);
-      if (!diurnalDate) setDiurnalDate(latest);
-      if (!radialDate) setRadialDate(latest);
-    }
-  }, [rawDetections]);
-
-  const availableStations = selectedProjectId === 'ALL_PROJECTS'
-    ? stationsList
-    : stationsList.filter(s => s.project_id === selectedProjectId);
-  const selectedProject = selectedProjectId !== 'ALL_PROJECTS' ? projectsList.find(p => p.id === selectedProjectId) : null;
-  const selectedStation = selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId) : null;
-
-  const handleProjectChange = (projId: string) => {
-    setSelectedProjectId(projId);
-    setSelectedStationId('ALL_SITES');
-    setSelectedRecorderId('ALL_RECORDERS');
-  };
-
-  const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#a855f7', '#06b6d4', '#f43f5e', '#8b5cf6'];
-  const hourLabels = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
-
-  // Real ECharts options derived from filtered pam_detections
-  const {
-    trendOption,
-    diversityOption,
-    diurnalOption,
-    monthlyOption,
-    radialOption,
-    availableYears,
-    availableMonths,
-    availableDates
-  } = useMemo(() => {
-    const dateStrs = [...new Set(rawDetections.map((d: any) => d.date).filter(Boolean))].sort();
-    const dateObjects = dateStrs.map((ds: string) => new Date(`${ds}T00:00:00`)).filter((d: Date) => !isNaN(d.getTime()));
-    const months: Record<string, number> = {};
-    const dateUnique: Record<string, Set<string>> = {};
-
-    rawDetections.forEach((d: any) => {
-      if (d.date) {
-        months[d.date.slice(0, 7)] = (months[d.date.slice(0, 7)] || 0) + 1;
-        if (!dateUnique[d.date]) dateUnique[d.date] = new Set();
-        if (d.common_name && d.common_name.toLowerCase() !== 'nocall') dateUnique[d.date].add(d.common_name);
-      }
-    });
-
-    const monthKeys = Object.keys(months).sort();
-    const monthLabels = monthKeys.map((m) => {
-      const [y, mo] = m.split('-');
-      return `${new Date(2000, parseInt(mo) - 1).toLocaleString('default', { month: 'short' })} ${y}`;
-    });
-
-    const topSpecies = selectedSpecies.slice(0, 8);
-
-    // Trend binning: daily (<=30 days) -> weekly (<=5 months) -> monthly
-    let aggregation = 'Daily';
-    const trendBinTotals: Record<string, Record<string, number>> = {};
-    if (dateObjects.length > 0) {
-      const minDate = dateObjects[0];
-      const maxDate = dateObjects[dateObjects.length - 1];
-      const daySpan = Math.max(1, Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-      if (daySpan <= 30) {
-        aggregation = 'Daily';
-        rawDetections.forEach((d: any) => {
-          if (!trendBinTotals[d.date]) trendBinTotals[d.date] = {};
-          trendBinTotals[d.date][d.common_name || 'Unknown Species'] = (trendBinTotals[d.date][d.common_name || 'Unknown Species'] || 0) + 1;
-        });
-      } else if (daySpan <= 150) {
-        aggregation = 'Weekly';
-        rawDetections.forEach((d: any) => {
-          if (!d.date) return;
-          const dd = new Date(`${d.date}T00:00:00`);
-          const start = new Date(dd);
-          start.setDate(dd.getDate() - dd.getDay());
-          const key = start.toISOString().split('T')[0];
-          if (!trendBinTotals[key]) trendBinTotals[key] = {};
-          trendBinTotals[key][d.common_name || 'Unknown Species'] = (trendBinTotals[key][d.common_name || 'Unknown Species'] || 0) + 1;
-        });
-      } else {
-        aggregation = 'Monthly';
-        rawDetections.forEach((d: any) => {
-          if (!d.date) return;
-          const key = d.date.slice(0, 7);
-          if (!trendBinTotals[key]) trendBinTotals[key] = {};
-          trendBinTotals[key][d.common_name || 'Unknown Species'] = (trendBinTotals[key][d.common_name || 'Unknown Species'] || 0) + 1;
-        });
-      }
-    }
-    const trendLabels = Object.keys(trendBinTotals).sort();
-    const trendSeries = topSpecies.map((sp, idx) => ({
-      name: sp,
-      type: 'line' as const,
-      smooth: true,
-      areaStyle: { opacity: 0.15 },
-      itemStyle: { color: chartColors[idx % chartColors.length] },
-      data: trendLabels.map((key) => trendBinTotals[key][sp] || 0)
-    }));
-
-    // Diversity: 30 days in selected year/month
-    const diversityLabels: string[] = [];
-    const diversityData: number[] = [];
-    if (diversityYear && diversityMonth) {
-      const daysInMonth = new Date(parseInt(diversityYear), parseInt(diversityMonth), 0).getDate();
-      for (let day = 1; day <= daysInMonth; day++) {
-        const ds = `${diversityYear}-${diversityMonth}-${day.toString().padStart(2, '0')}`;
-        diversityLabels.push(day.toString());
-        diversityData.push(dateUnique[ds]?.size || 0);
-      }
-    }
-
-    // Diurnal: selected species on selected date
-    const diurnalSeries = topSpecies.map((sp, idx) => {
-      const hCounts = Array(24).fill(0);
-      rawDetections.filter((d: any) => d.date === diurnalDate && d.common_name === sp).forEach((d: any) => {
-        if (d.time) {
-          const h = parseInt(d.time.split(':')[0], 10);
-          if (!isNaN(h) && h >= 0 && h < 24) hCounts[h]++;
-        }
+      const { data, error } = await supabase.rpc('get_dashboard_stats', {
+        p_project_names,
+        p_site_name: p_site_name,
+        p_recorder_name: selectedRecorderId,
+        p_confidence: confidenceThreshold
       });
-      return {
-        name: sp,
-        type: 'line' as const,
-        smooth: true,
-        itemStyle: { color: chartColors[idx % chartColors.length] },
-        data: hCounts
-      };
-    });
 
-    // Radial: total detections per hour on selected date
-    const radialData = Array(24).fill(0);
-    rawDetections.filter((d: any) => d.date === radialDate).forEach((d: any) => {
-      if (d.time) {
-        const h = parseInt(d.time.split(':')[0], 10);
-        if (!isNaN(h) && h >= 0 && h < 24) radialData[h]++;
-      }
-    });
-
-    // Selector data: full continuous ranges between first and last detection
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const firstDate = dateStrs[0] || '';
-    const lastDate = dateStrs[dateStrs.length - 1] || '';
-
-    const allDatesInRange: string[] = [];
-    if (firstDate && lastDate) {
-      const curr = new Date(`${firstDate}T00:00:00`);
-      const end = new Date(`${lastDate}T00:00:00`);
-      while (curr <= end) {
-        allDatesInRange.push(`${curr.getFullYear()}-${pad(curr.getMonth() + 1)}-${pad(curr.getDate())}`);
-        curr.setDate(curr.getDate() + 1);
+      if (error) {
+        console.error("Error fetching stats:", error);
+      } else if (data) {
+        setStats(data as DashboardStatsData);
       }
     }
-
-    const allMonthsInRange: string[] = [];
-    if (firstDate && lastDate) {
-      const [startY, startM] = firstDate.split('-').map(Number);
-      const [endY, endM] = lastDate.split('-').map(Number);
-      let y = startY;
-      let m = startM;
-      while (y < endY || (y === endY && m <= endM)) {
-        allMonthsInRange.push(`${y}-${pad(m)}`);
-        m++;
-        if (m > 12) { m = 1; y++; }
-      }
+    
+    if (!loading) {
+      fetchStats();
     }
+  }, [selectedProjectId, selectedStationId, selectedRecorderId, confidenceThreshold, loading, projectsList]);
 
-    const availableYears = [...new Set(allMonthsInRange.map((mm: string) => mm.slice(0, 4)))].sort();
-    const availableMonths = allMonthsInRange.filter((mm: string) => mm.startsWith(diversityYear)).map((mm: string) => mm.slice(5, 7));
-    const availableDates = allDatesInRange;
-
-    return {
-      trendOption: {
-        tooltip: { trigger: 'axis' },
-        title: { text: `Showing: ${aggregation}`, left: 'right', top: 0, textStyle: { fontSize: 11, color: '#64748b' } },
-        legend: { data: topSpecies, top: 24 },
-        grid: { left: '3%', right: '4%', bottom: '3%', top: 64, containLabel: true },
-        xAxis: { type: 'category' as const, boundaryGap: false, data: trendLabels },
-        yAxis: { type: 'value' as const },
-        series: trendSeries
-      },
-      diversityOption: {
-        tooltip: { trigger: 'axis' },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category' as const, boundaryGap: false, data: diversityLabels },
-        yAxis: { type: 'value' as const },
-        series: [{
-          name: 'Unique Species',
-          type: 'line' as const,
-          smooth: true,
-          symbol: 'circle',
-          symbolSize: 6,
-          itemStyle: { color: '#3b82f6' },
-          areaStyle: { opacity: 0.15, color: { type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(59, 130, 246, 0.4)' }, { offset: 1, color: 'rgba(59, 130, 246, 0.02)' }] } },
-          data: diversityData
-        }]
-      },
-      diurnalOption: {
-        tooltip: { trigger: 'axis' },
-        legend: { data: topSpecies, top: 0 },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category' as const, boundaryGap: false, data: hourLabels },
-        yAxis: { type: 'value' as const },
-        series: diurnalSeries
-      },
-      monthlyOption: {
-        tooltip: { trigger: 'axis' },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category' as const, data: monthLabels },
-        yAxis: { type: 'value' as const },
-        series: [{
-          name: 'Detections',
-          type: 'bar' as const,
-          barWidth: '50%',
-          itemStyle: { color: '#6366f1', borderRadius: [6, 6, 0, 0] },
-          data: monthKeys.map((m) => months[m])
-        }]
-      },
-      radialOption: {
-        tooltip: { trigger: 'axis' },
-        polar: {},
-        angleAxis: { type: 'category' as const, data: hourLabels, startAngle: 90, boundaryGap: false },
-        radiusAxis: { type: 'value' as const },
-        series: [{
-          type: 'bar' as const,
-          coordinateSystem: 'polar',
-          data: radialData,
-          itemStyle: { color: '#10b981', borderRadius: [2, 2, 2, 2] }
-        }]
-      },
-      availableYears,
-      availableMonths,
-      availableDates
-    };
-  }, [rawDetections, selectedSpecies, diversityYear, diversityMonth, diurnalDate, radialDate, hourLabels, chartColors]);
-
-  if (loading) return (
-    <>
-      <DashboardLoader message="Loading PAM dashboard..." progress={loadingProgress} />
-      {showSlowLoadPopup && (
-        <div className="fixed top-8 right-8 z-[100] bg-indigo-600/95 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl font-bold flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
-          <AlertCircle className="w-6 h-6 text-indigo-200" />
-          might take some time to load the data
-        </div>
-      )}
-    </>
-  );
+  if (loading) return <DashboardLoader message="Loading PAM dashboard..." />;
 
   return (
     <div className="space-y-8 pb-12 font-sans">
@@ -599,15 +157,12 @@ export default function CommonDashboardPage() {
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Standard Research Project Dashboard
               </span>
             </div>
-
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
               Standard Bioacoustics Monitoring Dashboard
             </h1>
-
             <p className="text-emerald-400 text-sm font-bold tracking-wide">
               Modular Format for All Newly Created Projects & Deployed Stations
             </p>
-
             <p className="text-slate-300 text-xs max-w-2xl leading-relaxed font-medium">
               Unified bioacoustics dashboard template providing species richness counts, 24-hour diurnal patterns, and field station telemetry.
             </p>
@@ -615,335 +170,26 @@ export default function CommonDashboardPage() {
         </div>
       </div>
 
-      {/* Scope Filter Controls Bar */}
-      <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4 font-sans">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2 text-xs font-black text-slate-900">
-            <Filter className="w-4 h-4 text-indigo-600" />
-            <span>Dashboard Scope & Real-Time Filter Toolbar</span>
-          </div>
-          <div className="text-[11px] font-bold text-slate-500">
-            Showing <strong className="text-indigo-600 font-extrabold">{totalDetections.toLocaleString()}</strong> detections at <strong className="text-emerald-600 font-extrabold">{(confidenceThreshold * 100).toFixed(0)}%</strong> confidence threshold
-          </div>
-        </div>
+      <DashboardFilters 
+        totalDetections={stats?.total_detections || 0}
+        projectsList={projectsList}
+        stationsList={stationsList}
+        recordersRegistryList={recordersRegistryList}
+      />
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">1. Select Research Project</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => handleProjectChange(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
-              {projectsList.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+      <DashboardStats stats={stats} />
 
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site Node</label>
-            <select
-              value={selectedStationId}
-              onChange={(e) => { setSelectedStationId(e.target.value); setSelectedRecorderId('ALL_RECORDERS'); }}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL_SITES">All Sites in Chosen Project ({availableStations.length})</option>
-              {availableStations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.station_name}
-                </option>
-              ))}
-            </select>
-          </div>
+      <DashboardCharts 
+        p_project_names={selectedProjectId !== 'ALL_PROJECTS' ? (stationsList.filter(s => s.project_id === selectedProjectId).length > 0 ? stationsList.filter(s => s.project_id === selectedProjectId).map(s => s.station_name) : ['NONE']) : null}
+        p_site_name={selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId)?.station_name || 'ALL_SITES' : 'ALL_SITES'}
+        p_recorder_name={selectedRecorderId}
+      />
 
-          <div>
-            <label className="font-extrabold text-slate-700 block mb-1.5">3. Select Recorder Hardware</label>
-            <select
-              value={selectedRecorderId}
-              onChange={(e) => setSelectedRecorderId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL_RECORDERS">All Recorders in Site</option>
-              {recordersRegistryList
-                .filter(r => {
-                  if (selectedProject && r.project_name !== selectedProject.name) return false;
-                  if (selectedStation && r.site_name !== selectedStation.station_name) return false;
-                  return true;
-                })
-                .map(r => (
-                  <option key={r.id || r.recorder_id} value={r.recorder_id}>
-                    {r.recorder_id} ({r.site_name})
-                  </option>
-                ))
-              }
-            </select>
-          </div>
-
-          <div>
-            <label className="font-extrabold text-slate-700 flex items-center justify-between mb-1.5">
-              <span>4. Min Confidence Filter</span>
-              <span className="font-mono text-[10px] text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-md border border-indigo-200 font-bold">
-                {(confidenceThreshold * 100).toFixed(0)}%
-              </span>
-            </label>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 h-[42px] flex items-center">
-              <input
-                type="range"
-                min="0.2"
-                max="0.99"
-                step="0.05"
-                value={confidenceThreshold}
-                onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sleek Interactive Light Map with Species Gradient Markers */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs px-1">
-          <h3 className="font-black text-slate-900 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-emerald-600" /> Interactive Field Recorder Map (Species Diversity Gradient)
-          </h3>
-          <span className="text-[11px] text-slate-500 font-medium">CartoDB Positron Cartography</span>
-        </div>
-        <LightMap sites={mapSites} uniformSize zoom={12} heightClass="h-[480px]" />
-      </div>
-
-      {/* Year / Survey in Birds Insights Cards */}
-      <div className="space-y-3 font-sans">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500" /> Survey Bioacoustic Insights (BirdNET Highlights)
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Bird of the Year</div>
-            <div className="font-black text-slate-900 text-sm truncate">{birdOfTheYear.name}</div>
-            <div className="text-[10px] text-indigo-600 font-bold">{birdOfTheYear.count.toLocaleString()} detections</div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Rarest Find</div>
-            <div className="font-black text-slate-900 text-sm truncate">{rarestFind.name}</div>
-            <div className="text-[10px] text-rose-600 font-bold">{rarestFind.count} detection</div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Busiest Day</div>
-            <div className="font-black text-slate-900 text-sm truncate">{busiestDay.date}</div>
-            <div className="text-[10px] text-emerald-600 font-bold">{busiestDay.count.toLocaleString()} calls heard</div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Dawn Champion</div>
-            <div className="font-black text-slate-900 text-sm truncate">{dawnChampion.name}</div>
-            <div className="text-[10px] text-amber-600 font-bold">First song at {dawnChampion.time}</div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Night Owl</div>
-            <div className="font-black text-slate-900 text-sm truncate">{nightOwl.name}</div>
-            <div className="text-[10px] text-purple-600 font-bold">{nightOwl.count} calls after dark</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Species Selection & Stacked Charts */}
-      <div className="space-y-6">
-        {/* Species selector for trends & diurnal */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Bird className="w-4 h-4 text-indigo-600" /> Species for Trends & Diurnal
-            </h3>
-            <span className="text-[11px] font-black text-slate-500">{selectedSpecies.length}/8</span>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {selectedSpecies.map((sp) => (
-              <span key={sp} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
-                {sp}
-                <button
-                  onClick={() => setSelectedSpecies(selectedSpecies.filter((x) => x !== sp))}
-                  className="hover:text-indigo-950"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-            <div className="md:col-span-2 relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={speciesSearch}
-                  onChange={(e) => setSpeciesSearch(e.target.value)}
-                  placeholder="Search and add a species..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              {speciesSearch && (
-                <div className="absolute z-20 w-full mt-1 max-h-40 overflow-auto bg-white border border-slate-200 rounded-xl shadow-lg">
-                  {speciesOptions
-                    .filter((sp) => sp.toLowerCase().includes(speciesSearch.toLowerCase()) && !selectedSpecies.includes(sp))
-                    .slice(0, 8)
-                    .map((sp) => (
-                      <button
-                        key={sp}
-                        disabled={selectedSpecies.length >= 8}
-                        onClick={() => {
-                          if (selectedSpecies.length < 8) {
-                            setSelectedSpecies([...selectedSpecies, sp]);
-                            setSpeciesSearch('');
-                          }
-                        }}
-                        className="w-full text-left px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-indigo-50 disabled:opacity-50"
-                      >
-                        {sp}
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => setSelectedSpecies(speciesOptions.slice(0, 8))}
-              className="px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold hover:bg-emerald-100"
-            >
-              Top 8 Most Detected
-            </button>
-
-            <button
-              onClick={() => setSelectedSpecies([...speciesOptions].reverse().slice(0, 8))}
-              className="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 font-bold hover:bg-rose-100"
-            >
-              Top 8 Rarest
-            </button>
-          </div>
-        </div>
-
-        {/* Chart 1: Species Detection Trends Over Time */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-indigo-600" /> Species Detection Trends Over Time
-            </h3>
-            <p className="text-[11px] text-slate-500 font-medium">Auto-binned by day, week, or month based on the date range</p>
-          </div>
-          <ReactECharts option={trendOption} notMerge={true} style={{ height: '320px' }} />
-        </div>
-
-        {/* Chart 2: Detection Patterns by Time of Day (24-Hour Diurnal) */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-600" /> Detection Patterns by Time of Day (24-Hour Diurnal)
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">Use the species selector above; pick a date to see hourly detections</p>
-            </div>
-            <select
-              value={diurnalDate}
-              onChange={(e) => setDiurnalDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
-            >
-              {availableDates.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <ReactECharts option={diurnalOption} notMerge={true} style={{ height: '280px' }} />
-        </div>
-
-        {/* Chart 3: Species Diversity Over Time */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Bird className="w-4 h-4 text-blue-600" /> Species Diversity Over Time
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">Number of unique species detected per day</p>
-            </div>
-            <div className="flex gap-2">
-              <select
-                value={diversityYear}
-                onChange={(e) => { setDiversityYear(e.target.value); setDiversityMonth(''); }}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
-              >
-                {availableYears.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <select
-                value={diversityMonth}
-                onChange={(e) => setDiversityMonth(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
-              >
-                {availableMonths.map((m) => (
-                  <option key={m} value={m}>
-                    {new Date(2000, parseInt(m) - 1, 1).toLocaleString('default', { month: 'short' })}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <ReactECharts option={diversityOption} notMerge={true} style={{ height: '280px' }} />
-        </div>
-
-        {/* Chart 4: Month by Month Abundance Bar Chart */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Database className="w-4 h-4 text-indigo-600" /> Month by Month Vocal Activity Volume
-            </h3>
-            <p className="text-[11px] text-slate-500 font-medium">Monthly total bioacoustic call detections across the survey period</p>
-          </div>
-          <ReactECharts option={monthlyOption} notMerge={true} style={{ height: '280px' }} />
-        </div>
-
-        {/* Chart 5: Diurnal Activity Pattern (24-Hour Radial Clock - Total) */}
-        <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-3">
-          <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-600" /> Diurnal Activity Pattern (24-Hour Radial Clock - Total)
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">Pick a date to see total detections per hour for that day</p>
-            </div>
-            <select
-              value={radialDate}
-              onChange={(e) => setRadialDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
-            >
-              {availableDates.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <ReactECharts option={radialOption} notMerge={true} style={{ height: '360px' }} />
-        </div>
-      </div>
-
-      {/* Species Detection Matrix by Hour of Day */}
-      <CommonSpeciesHourMatrix detections={rawDetections} />
-
-      {selectedDetection && (
-        <AudioPlayerModal
-          detection={selectedDetection}
-          currentRole={currentRole}
-          onClose={() => setSelectedDetection(null)}
-        />
-      )}
+      <CommonSpeciesHourMatrix 
+        p_project_names={selectedProjectId !== 'ALL_PROJECTS' ? (stationsList.filter(s => s.project_id === selectedProjectId).length > 0 ? stationsList.filter(s => s.project_id === selectedProjectId).map(s => s.station_name) : ['NONE']) : null}
+        p_site_name={selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId)?.station_name || 'ALL_SITES' : 'ALL_SITES'}
+        p_recorder_name={selectedRecorderId}
+      />
     </div>
   );
 }

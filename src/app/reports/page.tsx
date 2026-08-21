@@ -24,16 +24,18 @@ export default function ReportsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_PROJECTS');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL_SITES');
   const [startDate, setStartDate] = useState<string>('2026-07-01');
-  const [endDate, setEndDate] = useState<string>('2026-07-28');
+  const [endDate, setEndDate] = useState<string>('2026-08-22');
   const [reportTemplate, setReportTemplate] = useState<string>('comprehensive');
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [topSpeciesList, setTopSpeciesList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function loadReportsFilters() {
       const [{ data: projs }, { data: sitesData }] = await Promise.all([
-        supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
+        supabase.from('projects').select('*').order('name'),
         supabase.from('sites').select('*').order('name')
       ]);
 
@@ -46,7 +48,12 @@ export default function ReportsPage() {
         setSelectedProjectId(queryProject);
       }
 
-      setStationsList([{ id: 'Test_Lab_1', station_name: 'Inside BirdLab (Test_Lab_1)', description: 'Raspberry Pi Live Stream Node' }]);
+      setStationsList((sitesData || []).map(s => ({
+        id: s.id,
+        project_id: s.project_id,
+        station_name: s.name,
+        description: `Field Station Node (${s.name})`
+      })));
     }
 
     loadReportsFilters();
@@ -57,7 +64,7 @@ export default function ReportsPage() {
     name: 'All Projects Summary',
     description: 'Acoustic monitoring across all active research transects.',
     organization: 'IISER Tirupati Bird Lab',
-    manager_name: '',
+    manager_name: 'Dr. Robin Vijayan',
     species_count: 0,
     total_detections: 0,
     stations_count: 0,
@@ -71,33 +78,57 @@ export default function ReportsPage() {
 
   const selectedStation = stationsList.find(s => s.id === selectedStationId);
 
+  // Fetch dynamic top species for report
+  useEffect(() => {
+    async function fetchReportStats() {
+      setLoading(true);
+      try {
+        let p_project_names = null;
+        if (selectedProjectId !== 'ALL_PROJECTS') {
+          const allowedSiteNames = availableStations.map(s => s.station_name);
+          p_project_names = allowedSiteNames.length > 0 ? allowedSiteNames : ['NONE'];
+        }
+
+        const p_site_name = selectedStation ? selectedStation.station_name : 'ALL_SITES';
+
+        const { data, error } = await supabase.rpc('get_top_species', {
+          p_project_names,
+          p_site_name,
+          p_recorder_name: 'ALL_RECORDERS',
+          p_confidence: 0.50,
+          p_limit: 10
+        });
+
+        if (!error && data) {
+          setTopSpeciesList(data.map((d: any, idx: number) => ({
+            id: `spc-${idx}`,
+            common_name: d.common_name,
+            scientific_name: d.scientific_name || d.common_name,
+            guild: 'Forest Insectivore / Songbird',
+            iucn: 'LEAST CONCERN',
+            calls: Number(d.detections_count || d.count || 0),
+            detections: Number(d.detections_count || d.count || 0),
+            species: d.common_name
+          })));
+        } else {
+          setTopSpeciesList([]);
+        }
+      } catch (err) {
+        console.error('Failed to load report stats:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchReportStats();
+  }, [selectedProjectId, selectedStationId]);
+
   const handlePrint = () => {
     window.print();
   };
 
-  const REPORT_SPECIES_PRESET = [
-    {
-      id: 'spc-1',
-      common_name: 'Malabar Whistling Thrush',
-      scientific_name: 'Myiophonus horsfieldii',
-      guild: 'Frugivore / Insectivore',
-      iucn: 'LEAST CONCERN',
-      calls: 0,
-      confidence: '--'
-    },
-    {
-      id: 'spc-2',
-      common_name: 'Crimson-backed Sunbird',
-      scientific_name: 'Leptocoma minima',
-      guild: 'Nectarivore / Insectivore',
-      iucn: 'LEAST CONCERN',
-      calls: 0,
-      confidence: '--'
-    }
-  ];
-
   return (
-    <div className="space-y-6 pb-12 print:space-y-4 print:pb-0">
+    <div className="space-y-6 pb-12 print:space-y-4 print:pb-0 font-sans">
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm print:hidden">
         <div>
@@ -137,7 +168,7 @@ export default function ReportsPage() {
                 setSelectedProjectId(e.target.value);
                 setSelectedStationId('ALL_SITES');
               }}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
               {projectsList.map((p) => (
@@ -152,7 +183,7 @@ export default function ReportsPage() {
             <select
               value={selectedStationId}
               onChange={(e) => setSelectedStationId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
             >
               <option value="ALL_SITES">All Stations ({availableStations.length} Sites)</option>
               {availableStations.map((s) => (
@@ -245,11 +276,11 @@ export default function ReportsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div className="p-4 rounded-xl border border-slate-200">
             <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Transect Sites</span>
-            <strong className="text-xl font-black text-slate-900">{selectedProject.stations_count ?? 0}</strong>
+            <strong className="text-xl font-black text-slate-900">{availableStations.length}</strong>
           </div>
           <div className="p-4 rounded-xl border border-slate-200">
             <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Species Richness</span>
-            <strong className="text-xl font-black text-slate-900">{selectedProject.species_count ?? 0}</strong>
+            <strong className="text-xl font-black text-slate-900">{selectedProject.species_count ?? topSpeciesList.length}</strong>
           </div>
           <div className="p-4 rounded-xl border border-slate-200">
             <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Total Audio Detections</span>
@@ -265,19 +296,10 @@ export default function ReportsPage() {
         <div className="space-y-6">
           <div className="space-y-3">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b pb-1 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" /> 1. Diurnal Vocalization Activity Profile
+              <Bird className="w-3.5 h-3.5" /> 1. Identified Species Call Accumulation
             </h3>
             <div className="p-4 border rounded-2xl bg-white max-h-72 overflow-hidden flex items-center justify-center">
-              <DiurnalChart />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b pb-1 flex items-center gap-1">
-              <Bird className="w-3.5 h-3.5" /> 2. Identified Species Call Accumulation
-            </h3>
-            <div className="p-4 border rounded-2xl bg-white max-h-72 overflow-hidden flex items-center justify-center">
-              <TopSpeciesChart />
+              <TopSpeciesChart data={topSpeciesList.map(s => ({ species: s.common_name, detections: s.calls }))} />
             </div>
           </div>
         </div>
@@ -285,7 +307,7 @@ export default function ReportsPage() {
         {/* Indicator Species Highlights Table */}
         <div className="space-y-3">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b pb-1">
-            3. Focal / Restoration Indicator Species Call Ingestion Logs
+            2. Focal / Top Detected Species Call Logs
           </h3>
 
           <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
@@ -300,19 +322,27 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {REPORT_SPECIES_PRESET.map((spc) => (
-                  <tr key={spc.id}>
-                    <td className="p-3 pl-4 font-bold text-slate-900">{spc.common_name}</td>
-                    <td className="p-3 italic text-slate-600">{spc.scientific_name}</td>
-                    <td className="p-3 font-semibold text-slate-500">{spc.guild}</td>
-                    <td className="p-3">
-                      <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
-                        {spc.iucn}
-                      </span>
+                {topSpeciesList.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-4 text-center text-slate-400 font-bold">
+                      No species detection records found for this project scope.
                     </td>
-                    <td className="p-3 text-right pr-4 font-mono font-bold text-slate-900">{spc.calls}</td>
                   </tr>
-                ))}
+                ) : (
+                  topSpeciesList.map((spc) => (
+                    <tr key={spc.id}>
+                      <td className="p-3 pl-4 font-bold text-slate-900">{spc.common_name}</td>
+                      <td className="p-3 italic text-slate-600">{spc.scientific_name}</td>
+                      <td className="p-3 font-semibold text-slate-500">{spc.guild}</td>
+                      <td className="p-3">
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          {spc.iucn}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right pr-4 font-mono font-bold text-slate-900">{spc.calls.toLocaleString()}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

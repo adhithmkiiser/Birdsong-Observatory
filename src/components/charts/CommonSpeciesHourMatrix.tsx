@@ -1,32 +1,46 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Search } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useDashboardStore } from '@/lib/store/useDashboardStore';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 interface Props {
-  detections: any[];
+  p_project_names: string[] | null;
+  p_site_name: string;
+  p_recorder_name: string;
 }
 
-export default function CommonSpeciesHourMatrix({ detections }: Props) {
+export default function CommonSpeciesHourMatrix({ p_project_names, p_site_name, p_recorder_name }: Props) {
+  const { confidenceThreshold } = useDashboardStore();
+  
+  const [matrixData, setMatrixData] = useState<any[]>([]);
   const [matrixSearch, setMatrixSearch] = useState('');
   const [matrixTopN, setMatrixTopN] = useState('25');
   const [matrixSort, setMatrixSort] = useState<'detections' | 'alphabetical'>('detections');
   const [useLogScale, setUseLogScale] = useState(true);
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
+  useEffect(() => {
+    async function fetchData() {
+      const { data } = await supabase.rpc('get_species_hour_matrix', {
+        p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
+      });
+      if (data) setMatrixData(data);
+    }
+    fetchData();
+  }, [p_project_names, p_site_name, p_recorder_name, confidenceThreshold]);
+
   const { matrixOption, matrixHeight, yCount } = useMemo(() => {
     const bySp: Record<string, number[]> = {};
-    detections.forEach((d: any) => {
-      const sp = d.common_name || 'Unknown';
-      if (!d.time) return;
-      const h = parseInt(d.time.split(':')[0], 10);
-      if (isNaN(h) || h < 0 || h >= 24) return;
-      if (sp.toLowerCase() === 'nocall' || sp === 'Unknown') return;
+    matrixData.forEach((d: any) => {
+      const sp = d.common_name;
+      const h = d.hour;
       if (!bySp[sp]) bySp[sp] = Array(24).fill(0);
-      bySp[sp][h]++;
+      bySp[sp][h] += Number(d.count);
     });
 
     const totals = Object.entries(bySp).map(([name, counts]) => ({
@@ -107,18 +121,15 @@ export default function CommonSpeciesHourMatrix({ detections }: Props) {
       matrixHeight: `${Math.max(300, yCats.length * 24 + 100)}px`,
       yCount: yCats.length
     };
-  }, [detections, matrixSearch, matrixTopN, matrixSort, useLogScale, hourLabels]);
+  }, [matrixData, matrixSearch, matrixTopN, matrixSort, useLogScale, hourLabels]);
 
   const downloadCSV = () => {
-    // Re-compute the displayed matrix data for CSV
     const bySp: Record<string, number[]> = {};
-    detections.forEach((d: any) => {
-      const sp = d.common_name || 'Unknown';
-      if (!d.time || sp.toLowerCase() === 'nocall' || sp === 'Unknown') return;
-      const h = parseInt(d.time.split(':')[0], 10);
-      if (isNaN(h) || h < 0 || h >= 24) return;
+    matrixData.forEach((d: any) => {
+      const sp = d.common_name;
+      const h = d.hour;
       if (!bySp[sp]) bySp[sp] = Array(24).fill(0);
-      bySp[sp][h]++;
+      bySp[sp][h] += Number(d.count);
     });
 
     const totals = Object.entries(bySp).map(([name, counts]) => ({

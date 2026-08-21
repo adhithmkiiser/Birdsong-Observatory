@@ -208,8 +208,12 @@ export default function LiveDashboardPage() {
     return out;
   }, [filteredDetections]);
 
-  // Active Nodes calculation (status === 'online')
-  const activeNodesCount = availableStations.filter((s: any) => s.status === 'online').length;
+  // Active Nodes calculation (status === 'online' AND ping < 5 mins ago)
+  const activeNodesCount = availableStations.filter((s: any) => {
+    if (s.status !== 'online' || !s.last_ping) return false;
+    const diffMins = (Date.now() - new Date(s.last_ping).getTime()) / 60000;
+    return diffMins <= 5;
+  }).length;
 
   if (loading) {
     return (

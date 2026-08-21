@@ -22,6 +22,7 @@ import { Lora } from 'next/font/google';
 import { supabase } from '@/lib/supabase';
 import Hero from './Hero';
 import WhatWeProvide from './WhatWeProvide';
+import { Footer } from '@/components/Footer';
 import './animations.css';
 
 const lora = Lora({
@@ -65,19 +66,30 @@ export default function HomePage() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const [projRes, sitesRes] = await Promise.all([
+        const [projRes, sitesRes, recordersRes] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('sites').select('id, project_id, name')
+          supabase.from('sites').select('id, project_id, name'),
+          supabase.from('recorders_registry').select('project_name, status, last_ping').eq('project_type', 'Live')
         ]);
 
         const projData = projRes.data || [];
         const sitesData = sitesRes.data || [];
+        const liveRecorders = recordersRes.data || [];
 
         if (projRes.data) setProjects(projData);
         if (sitesRes.data) setSitesList(sitesData);
 
         const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
         for (const p of projData) {
+          if (p.project_type === 'Live') {
+             const activeCount = liveRecorders.filter((r: any) => {
+               if (r.project_name !== p.name || r.status !== 'online' || !r.last_ping) return false;
+               const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
+               return diffMins <= 5;
+             }).length;
+             p.active_nodes_count = activeCount;
+          }
+
           if (p.project_type === 'Lantana') {
             const [{ data: lantanaSites }, { data: lantanaDets, count: lantanaDetCount }] = await Promise.all([
               supabase.from('lantana_sites').select('id').eq('project_id', p.id),
@@ -255,9 +267,9 @@ export default function HomePage() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-800 font-extrabold text-[10px] uppercase border border-emerald-200 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span> Live Audio Stream
+                        <span className={`w-2 h-2 rounded-full ${p.active_nodes_count > 0 ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`}></span> Live Audio Stream
                       </span>
-                      <span className="text-[10px] font-mono text-emerald-600 font-bold">{p.stations_count || 0} Nodes Active</span>
+                      <span className="text-[10px] font-mono text-emerald-600 font-bold">{p.active_nodes_count !== undefined ? p.active_nodes_count : (p.stations_count || 0)} Nodes Active</span>
                     </div>
 
                     {p.image_url && (
@@ -302,7 +314,8 @@ export default function HomePage() {
 
       <WhatWeProvide />
 
-      {/* Unified Interactive Pipeline Switcher */}
+      {/* Unified Interactive Pipeline Switcher - HIDDEN FOR NOW */}
+      {false && (
       <section id="pipeline" className="py-24 px-6 md:px-12 bg-white border-t border-slate-100">
         <div className="max-w-6xl mx-auto space-y-12">
 
@@ -440,6 +453,9 @@ export default function HomePage() {
 
         </div>
       </section>
+      )}
+
+      <Footer />
     </main>
   );
 }

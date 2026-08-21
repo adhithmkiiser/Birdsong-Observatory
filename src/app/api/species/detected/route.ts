@@ -9,22 +9,58 @@ export async function GET(request: NextRequest) {
 
   // Load local species master metadata
   const filePath = path.join(process.cwd(), 'public', 'species_data.json');
-  const raw = await fs.readFile(filePath, 'utf-8');
-  const { byScientific, byCommon } = JSON.parse(raw);
-
-  // Fetch live detections
-  const { data: dets, error } = await supabase
-    .from('live_detections')
-    .select('common_name, scientific_name, recorder_id, project_name, site_name, timestamp')
-    .order('timestamp', { ascending: false })
-    .limit(1000);
-
-  if (error) {
-    console.error('Supabase error fetching live detections:', error);
-    return NextResponse.json({ total_results: 0, species: [] });
+  let byScientific: Record<string, any> = {};
+  let byCommon: Record<string, any> = {};
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    byScientific = parsed.byScientific || {};
+    byCommon = parsed.byCommon || {};
+  } catch (err) {
+    console.warn('Could not read species_data.json:', err);
   }
 
-  const rows = dets || [];
+  // Fetch detections across all three pipelines (Live, PAM, Lantana)
+  const [
+    { data: liveDets },
+    { data: pamDets },
+    { data: lantanaDets }
+  ] = await Promise.all([
+    supabase.from('live_detections').select('common_name, scientific_name, recorder_id, project_name, site_name, timestamp').limit(1000),
+    supabase.from('pam_detections').select('common_name, scientific_name, recorder_name, project_name, site_name, date, time').limit(3000),
+    supabase.from('lantana_detections').select('common_name, scientific_name, recorder_name, project_name, site_name, date, time').limit(3000)
+  ]);
+
+  const normalizedLive = (liveDets || []).map((r: any) => ({
+    common_name: r.common_name,
+    scientific_name: r.scientific_name,
+    recorder_id: r.recorder_id || 'Rec_01',
+    project_name: r.project_name || 'Live Observatory',
+    site_name: r.site_name || 'Live Site',
+    timestamp: r.timestamp || new Date().toISOString()
+  }));
+
+  const normalizedPam = (pamDets || []).map((r: any) => ({
+    common_name: r.common_name,
+    scientific_name: r.scientific_name,
+    recorder_id: r.recorder_name || 'Rec_01',
+    project_name: r.project_name || 'PAM Survey',
+    site_name: r.site_name || 'PAM Site',
+    timestamp: r.date && r.time ? `${r.date}T${r.time}` : (r.date ? `${r.date}T12:00:00` : new Date().toISOString())
+  }));
+
+  const normalizedLantana = (lantanaDets || []).map((r: any) => ({
+    common_name: r.common_name,
+    scientific_name: r.scientific_name,
+    recorder_id: r.recorder_name || 'LC_03',
+    project_name: r.project_name || 'Lantana Survey',
+    site_name: r.site_name || 'Lantana Site',
+    timestamp: r.date && r.time ? `${r.date}T${r.time}` : (r.date ? `${r.date}T12:00:00` : new Date().toISOString())
+  }));
+
+  const rows = [...normalizedLive, ...normalizedPam, ...normalizedLantana].filter(
+    (r) => r.common_name && r.common_name.toLowerCase() !== 'nocall'
+  );
 
   // Dedupe by recorder/timestamp/species
   const seen = new Set<string>();
@@ -40,7 +76,7 @@ export async function GET(request: NextRequest) {
   unique.forEach((r: any) => {
     const sci = r.scientific_name || 'Unknown';
     const comm = r.common_name || 'Unknown';
-    const key = sci.toLowerCase();
+    const key = sci.toLowerCase() !== 'unknown' ? sci.toLowerCase() : comm.toLowerCase();
     if (!speciesMap[key]) {
       speciesMap[key] = {
         common_name: comm,
@@ -104,6 +140,9 @@ export async function GET(request: NextRequest) {
       top_recorder: byRecorder[0] || null
     };
   });
+
+  // Sort by total detections descending
+  results.sort((a, b) => b.total_detections - a.total_detections);
 
   if (q) {
     results = results.filter((r: any) =>

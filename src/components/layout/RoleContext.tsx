@@ -11,13 +11,14 @@ interface RoleContextType {
   currentUser: User;
   setCurrentUser: (user: User) => void;
   usersList: User[];
-  loginUser: (email: string, pass: string) => { success: boolean; message: string };
+  loginUser: (email: string, pass: string) => Promise<{ success: boolean; message: string; user?: User }>;
   logoutUser: () => void;
-  updateUserCredentials: (userId: string, updates: Partial<User>) => void;
-  deleteUser: (userId: string) => void;
-  addUser: (user: User) => void;
+  updateUserCredentials: (userId: string, updates: Partial<User>) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+  addUser: (user: User) => Promise<void>;
   visibilitySettings: PublicVisibilitySettings;
   updateVisibilitySetting: (key: keyof PublicVisibilitySettings, val: boolean) => void;
+  refreshUsers: () => Promise<void>;
 }
 
 const defaultPublicUser: User = {
@@ -40,24 +41,11 @@ const defaultVisibilitySettings: PublicVisibilitySettings = {
   allowPublicReports: false,
 };
 
-const defaultAdminUser: User = {
-  id: 'usr-001',
-  name: 'Adhith M K',
-  email: 'adhithmk@labs.iisertirupati.ac.in',
-  password: 'pass123',
-  role: 'Admin',
-  organization: 'IISER Tirupati Bird Lab',
-  assignedProjectType: 'Both',
-  status: 'active',
-  createdAt: '2026-01-15',
-  lastLogin: 'Just now'
-};
-
 const mapDbUserToUser = (dbUser: any): User => ({
   id: dbUser.id,
   name: dbUser.full_name || dbUser.name || 'User',
   email: dbUser.email,
-  password: dbUser.password_hash || dbUser.password || 'pass123',
+  password: dbUser.password_hash || dbUser.password || '',
   role: dbUser.role as any,
   organization: dbUser.organization || 'IISER Tirupati Bird Lab',
   projectScopePermissions: dbUser.project_scope_permissions || [],
@@ -65,7 +53,7 @@ const mapDbUserToUser = (dbUser: any): User => ({
   assignedSites: dbUser.assigned_sites || [],
   isOneTimePassword: dbUser.is_one_time_password || false,
   mustChangePassword: dbUser.must_change_password || false,
-  status: dbUser.status as any || 'active',
+  status: (dbUser.status as any) || 'active',
   createdAt: dbUser.created_at ? dbUser.created_at.split('T')[0] : '2026-01-15',
   lastLogin: dbUser.last_login || 'Never'
 });
@@ -74,7 +62,7 @@ const mapUserToDbUser = (user: User) => ({
   id: user.id,
   full_name: user.name,
   email: user.email,
-  password_hash: user.password || 'pass123',
+  password_hash: user.password || '',
   role: user.role,
   organization: user.organization,
   project_scope_permissions: user.projectScopePermissions || [],
@@ -90,110 +78,119 @@ const RoleContext = createContext<RoleContextType>({
   setCurrentRole: () => {},
   currentUser: defaultPublicUser,
   setCurrentUser: () => {},
-  usersList: [defaultAdminUser],
-  loginUser: () => ({ success: false, message: '' }),
+  usersList: [],
+  loginUser: async () => ({ success: false, message: '' }),
   logoutUser: () => {},
-  updateUserCredentials: () => {},
-  deleteUser: () => {},
-  addUser: () => {},
+  updateUserCredentials: async () => {},
+  deleteUser: async () => {},
+  addUser: async () => {},
   visibilitySettings: defaultVisibilitySettings,
   updateVisibilitySetting: () => {},
+  refreshUsers: async () => {},
 });
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [usersList, setUsersList] = useState<User[]>([defaultAdminUser]);
+  const [usersList, setUsersList] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User>(defaultPublicUser);
   const [currentRole, setCurrentRoleState] = useState<UserRole>('Public');
   const [visibilitySettings, setVisibilitySettings] = useState<PublicVisibilitySettings>(defaultVisibilitySettings);
 
+  const refreshUsers = async () => {
+    try {
+      const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true });
+      if (!error && data && data.length > 0) {
+        setUsersList(data.map(mapDbUserToUser));
+      }
+    } catch (e) {
+      console.error('Failed to load users from database:', e);
+    }
+  };
+
   useEffect(() => {
-    async function loadUsers() {
-      try {
-        const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true });
-        if (!error && data && data.length > 0) {
-          const mappedUsers = data.map(mapDbUserToUser);
-          setUsersList(mappedUsers);
-          // Restore logged-in session from localStorage if present
-          const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
-          const sessionEmail = stored ? JSON.parse(stored).email : null;
-          const match = sessionEmail
-            ? mappedUsers.find(u => u.email.toLowerCase() === sessionEmail.toLowerCase())
-            : null;
-          if (match) {
-            setCurrentUser(match);
-            setCurrentRoleState(match.role);
+    async function initSession() {
+      // Restore logged-in session from localStorage if present
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
+      const sessionEmail = stored ? JSON.parse(stored).email : null;
+      if (sessionEmail) {
+        const { data, error } = await supabase.from('users').select('*').ilike('email', sessionEmail).single();
+        if (data && !error) {
+          const mapped = mapDbUserToUser(data);
+          setCurrentUser(mapped);
+          setCurrentRoleState(mapped.role);
+          if (mapped.role === 'Admin') {
+            await refreshUsers();
           }
         }
-      } catch (e) {
-        console.error('Failed to load users from database:', e);
       }
     }
-    loadUsers();
+    initSession();
   }, []);
 
   const setCurrentRole = (role: UserRole) => {
     setCurrentRoleState(role);
-    // Sync current user role preview
     setCurrentUser(prev => ({ ...prev, role }));
   };
 
-  const loginUser = (email: string, pass: string) => {
-    const found = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
-    if (!found) {
-      return { success: false, message: 'No account found with this email address.' };
-    }
-    if (found.password && found.password !== pass) {
-      return { success: false, message: 'Incorrect password. Please verify your credentials.' };
-    }
-    if (found.status !== 'active') {
-      return { success: false, message: 'This account is currently suspended or inactive.' };
-    }
+  const loginUser = async (email: string, pass: string): Promise<{ success: boolean; message: string; user?: User }> => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', email.trim())
+        .single();
 
-    const updated = { ...found, lastLogin: 'Just now' };
-    setCurrentUser(updated);
-    setCurrentRoleState(updated.role);
+      if (error || !data) {
+        return { success: false, message: 'No account found with this email address.' };
+      }
 
-    // Persist session
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('birdlab-session', JSON.stringify({ email: updated.email }));
+      if (data.password_hash && data.password_hash !== pass) {
+        return { success: false, message: 'Incorrect password. Please verify your credentials.' };
+      }
+
+      if (data.status && data.status !== 'active') {
+        return { success: false, message: 'This account is currently suspended or inactive.' };
+      }
+
+      const mapped = mapDbUserToUser(data);
+      const updated = { ...mapped, lastLogin: 'Just now' };
+      setCurrentUser(updated);
+      setCurrentRoleState(updated.role);
+
+      // Persist session
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('birdlab-session', JSON.stringify({ email: updated.email }));
+      }
+
+      // If user is admin, also refresh full usersList
+      if (updated.role === 'Admin') {
+        await refreshUsers();
+      }
+
+      // Save last login time to DB asynchronously
+      apiFetch('/api/db/users', {
+        method: 'PUT',
+        body: JSON.stringify({ id: mapped.id, last_login: new Date().toISOString() })
+      }, updated).catch(e => console.error('Failed to update last login', e));
+
+      return { success: true, message: `Welcome back, ${mapped.name}!`, user: updated };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Login failed.' };
     }
-
-    // Update in user list
-    setUsersList(prev => prev.map(u => u.id === found.id ? updated : u));
-    
-    // Save last login time to DB
-    apiFetch('/api/db/users', {
-      method: 'PUT',
-      body: JSON.stringify({ id: found.id, last_login: new Date().toISOString() })
-    }, updated).catch(e => console.error('Failed to update last login', e));
-    
-    return { success: true, message: `Welcome back, ${found.name}!` };
   };
 
   const logoutUser = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('birdlab-session');
     }
-    const publicUser = usersList.find(u => u.role === 'Public') || {
-      id: 'usr-public',
-      name: 'Public Guest',
-      email: 'public@birdlab.in',
-      password: 'pass',
-      role: 'Public',
-      organization: 'Public Network',
-      status: 'active',
-      createdAt: '2026-01-15',
-      lastLogin: 'Never'
-    };
-    setCurrentUser(publicUser);
+    setCurrentUser(defaultPublicUser);
     setCurrentRoleState('Public');
+    setUsersList([]);
   };
 
   const updateUserCredentials = async (userId: string, updates: Partial<User>) => {
     setUsersList(prev => prev.map(u => {
       if (u.id === userId) {
         const updated = { ...u, ...updates };
-        // If editing current logged in user, update active session
         if (currentUser.id === userId) {
           setCurrentUser(updated);
           if (updates.role) setCurrentRoleState(updates.role);
@@ -205,9 +202,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
     // Update in Supabase
     const dbUpdates: any = {};
-    if (updates.name !== undefined) {
-      dbUpdates.full_name = updates.name;
-    }
+    if (updates.name !== undefined) dbUpdates.full_name = updates.name;
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.password !== undefined) dbUpdates.password_hash = updates.password;
     if (updates.isOneTimePassword !== undefined) dbUpdates.is_one_time_password = updates.isOneTimePassword;
@@ -275,7 +270,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         deleteUser,
         addUser,
         visibilitySettings,
-        updateVisibilitySetting
+        updateVisibilitySetting,
+        refreshUsers
       }}
     >
       {children}

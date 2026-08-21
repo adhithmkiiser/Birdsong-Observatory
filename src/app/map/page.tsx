@@ -23,14 +23,14 @@ export default function MapPage() {
 
   const [projectsList, setProjectsList] = React.useState<any[]>([]);
   const [sitesList, setSitesList] = React.useState<any[]>([]);
-  const [stationsList, setStationsList] = React.useState<any[]>([]);
+  const [recordersList, setRecordersList] = React.useState<any[]>([]);
 
   React.useEffect(() => {
     async function loadMapFilters() {
-      const [{ data: projs }, { data: sitesData }, { data: stnData }] = await Promise.all([
+      const [{ data: projs }, { data: sitesData }, { data: recData }] = await Promise.all([
         supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
         supabase.from('sites').select('*').order('name'),
-        supabase.from('stations').select('*').order('station_name')
+        supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('recorder_id')
       ]);
 
       setProjectsList(projs || []);
@@ -43,18 +43,22 @@ export default function MapPage() {
       }
 
       setSitesList(sitesData || []);
-      setStationsList(stnData || []);
+      setRecordersList(recData || []);
     }
 
     loadMapFilters();
   }, []);
 
   const liveProjectIds = new Set(projectsList.map(p => p.id));
+  const selectedProject = projectsList.find(p => p.id === selectedProjectId);
+
   const availableSites = selectedProjectId === 'ALL'
     ? sitesList.filter(s => liveProjectIds.has(s.project_id))
     : sitesList.filter(s => s.project_id === selectedProjectId);
 
-  const availableStations = ['Test_Lab_1'];
+  const availableStations = selectedProjectId === 'ALL'
+    ? Array.from(new Set(recordersList.map(r => r.recorder_id)))
+    : Array.from(new Set(recordersList.filter(r => r.project_name === selectedProject?.name).map(r => r.recorder_id)));
 
   const handleProjectChange = (projId: string) => {
     setSelectedProjectId(projId);
@@ -128,7 +132,7 @@ export default function MapPage() {
               <option value="ALL">All Hardware Nodes ({availableStations.length})</option>
               {availableStations.map((id: string) => (
                 <option key={id} value={id}>
-                  {id === 'Test_Lab_1' ? 'Inside BirdLab (Test_Lab_1)' : id}
+                  {id}
                 </option>
               ))}
             </select>

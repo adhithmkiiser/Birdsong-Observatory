@@ -18,7 +18,7 @@ import { useRole } from '@/components/layout/RoleContext';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 export default function SignInPage() {
-  const { loginUser, usersList, updateUserCredentials } = useRole();
+  const { loginUser, usersList, updateUserCredentials, refreshUsers } = useRole();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -34,37 +34,29 @@ export default function SignInPage() {
 
   const handleGenerateOTP = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim()) {
+      setErrorMsg('Please enter your email address.');
+      return;
+    }
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
 
-    const targetUser = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
-    if (!targetUser) {
-      setLoading(false);
-      setErrorMsg('No user account found with this email.');
-      return;
-    }
-
-    const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
     try {
-      await updateUserCredentials(targetUser.id, {
-        password: generatedOTP,
-        isOneTimePassword: true,
-        mustChangePassword: true
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() })
       });
 
-      const emailResult = await sendOneTimePasswordEmail({
-        email: targetUser.email,
-        name: targetUser.name,
-        otpCode: generatedOTP,
-        isNewUser: false
-      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to reset password');
 
       setLoading(false);
       setSuccessMsg(
-        emailResult.dispatched
-          ? `One-Time Password sent to ${targetUser.email}. Please check your inbox.`
-          : 'Password reset request received, but email delivery is not configured. Contact an administrator.'
+        result.dispatched
+          ? `One-Time Password sent to ${email.trim()}. Please check your inbox.`
+          : 'Password reset request received. Please check your inbox or contact an administrator.'
       );
       setMode('login');
     } catch (err) {
@@ -111,29 +103,26 @@ export default function SignInPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
 
-    setTimeout(() => {
-      const found = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
-      const result = loginUser(email, password);
-      setLoading(false);
+    const result = await loginUser(email, password);
+    setLoading(false);
 
-      if (result.success) {
-        if (found?.mustChangePassword || found?.isOneTimePassword) {
-          setMode('change_temp');
-          setSuccessMsg('One-time password verified! Please set your new permanent password.');
-        } else {
-          setSuccessMsg(result.message);
-          setTimeout(() => router.push('/'), 1000);
-        }
+    if (result.success) {
+      if (result.user?.mustChangePassword || result.user?.isOneTimePassword) {
+        setMode('change_temp');
+        setSuccessMsg('One-time password verified! Please set your new permanent password.');
       } else {
-        setErrorMsg(result.message);
+        setSuccessMsg(result.message);
+        setTimeout(() => router.push('/'), 1000);
       }
-    }, 400);
+    } else {
+      setErrorMsg(result.message);
+    }
   };
 
   return (
