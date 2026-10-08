@@ -58,9 +58,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     }).length;
   }, [recorders, now]);
 
-  // Determine if current route is part of the Dashboard section where Sidebar should appear
+  // Determine if current route is part of the Admin Console section where Sidebar should appear
   const dashboardRoutes = [
-    '/dashboard',
     '/live_dashboard',
     '/live',
     '/stations',
@@ -73,21 +72,27 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     '/settings'
   ];
 
-  const isLantanaOrPamDashboard = pathname.startsWith('/dashboard/lantana') || pathname.startsWith('/dashboard/common');
-  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isLantanaOrPamDashboard;
-  const isFullBleedRoute = pathname === '/home' || pathname === '/';
+  const isDedicatedDashboard = pathname.startsWith('/dashboard') || pathname.startsWith('/live_dashboard');
+  const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(`${r}/`)) && !isDedicatedDashboard;
+  const isFullBleedRoute = pathname === '/home' || pathname === '/' || pathname === '/about' || isDedicatedDashboard;
 
   return (
-    <div className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">
+    <div className="bg-[#ffffff] text-[#1a1f1c] min-h-screen flex flex-col font-sans antialiased">
       <Header />
 
       <div className="flex-1 flex min-w-0">
-        {/* Left Sidebar only renders on Dashboard pages */}
+        {/* Left Sidebar only renders on Admin Console pages */}
         {isDashboardRoute && (
           <Sidebar currentRole={currentRole} onlineStationsCount={onlineStations} />
         )}
         
-        <main className={isFullBleedRoute ? "flex-1 w-full min-w-0" : `flex-1 p-6 overflow-y-auto w-full mx-auto space-y-6 max-w-7xl`}>
+        <main className={
+          isDedicatedDashboard
+            ? "flex-1 w-full min-w-0 h-[calc(100vh-80px)] overflow-hidden"
+            : isFullBleedRoute 
+              ? "flex-1 w-full min-w-0" 
+              : "flex-1 p-6 overflow-y-auto w-full mx-auto space-y-6 max-w-7xl"
+        }>
           {children}
         </main>
       </div>

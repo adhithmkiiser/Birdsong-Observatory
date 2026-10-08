@@ -35,6 +35,7 @@ import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
+import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 
 interface LiveNodeItem {
   id: string;
@@ -455,70 +456,71 @@ WantedBy=multi-user.target
   };
 
   return (
-    <div className="space-y-8 pb-12 font-sans">
+    <div className="space-y-6 pb-12 font-sans">
+      {/* Centralized Admin Console Switcher */}
+      <AdminNavTabs />
       
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-xl border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="p-6 md:p-8 rounded-2xl bg-[#ffffff] border border-[#dde1dc] flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 font-black text-xs uppercase tracking-wider">
-            <Radio className="w-3.5 h-3.5 animate-pulse" />
-            <span>Admin Console Section 1</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f5f6f4] border border-[#dde1dc] text-[#1f4d3a] font-mono font-medium text-xs">
+            <Radio className="w-3.5 h-3.5" />
+            <span>LIVE RECORDERS &amp; REAL-TIME STREAMS</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
-            1. Live Recorder & Real-Time Stream Admin Console
+          <h1 className="text-2xl md:text-3xl font-serif font-semibold tracking-tight text-[#1a1f1c]">
+            Live Detectors Console
           </h1>
-          <p className="text-slate-300 text-xs font-medium max-w-xl">
-            Monitor Raspberry Pi field sensor nodes, inspect SQLite delta sync queues, generate <code className="bg-slate-800 px-1 py-0.5 rounded font-mono">birdnet_sync.py</code> systemd configs, edit user roles & project permissions.
+          <p className="text-[#5a635d] text-sm max-w-xl leading-relaxed">
+            Monitor Raspberry Pi field sensor nodes, inspect SQLite delta sync queues, generate <code className="bg-[#f5f6f4] border border-[#dde1dc] px-1.5 py-0.5 rounded text-xs font-mono text-[#1a1f1c]">birdnet_sync.py</code> systemd configs, and manage real-time audio streams.
           </p>
         </div>
       </div>
 
       {/* Live Admin Navigation Tabs */}
-      <div className="flex border-b border-slate-200 gap-4 text-xs font-black">
+      <div className="flex border-b border-[#dde1dc] gap-2 overflow-x-auto text-xs font-medium">
         <button
           onClick={() => setActiveTab('nodes')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'nodes' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Cpu className="w-4 h-4" /> 1. Pi Field Nodes & Sync Telemetry
+          <Cpu className="w-4 h-4" /> Field Nodes &amp; Telemetry
         </button>
 
         <button
           onClick={() => setActiveTab('generator')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'generator' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Terminal className="w-4 h-4" /> 2. Pi Python Sync Daemon Config Generator
+          <Terminal className="w-4 h-4" /> Daemon Config Generator
         </button>
 
         <button
           onClick={() => setActiveTab('projects')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'projects' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <ImageIcon className="w-4 h-4" /> 3. Project Card Image & Description
+          <ImageIcon className="w-4 h-4" /> Live Projects &amp; Arrays
         </button>
 
         <button
           onClick={() => setActiveTab('detections')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'detections' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Database className="w-4 h-4" /> 4. Detections Data Management
+          <Database className="w-4 h-4" /> Detections Audit
         </button>
-
       </div>
 
       {successMsg && (

@@ -12,9 +12,9 @@ export function TopSpeciesChart({ data }: TopSpeciesChartProps) {
 
   if (chartData.length === 0) {
     return (
-      <div className="w-full h-80 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center space-y-2 text-slate-400">
-        <div className="text-xs font-extrabold text-slate-700">No Species Classification Detections Ingested</div>
-        <div className="text-[10px] text-slate-500 font-medium">As new bird species calls are recorded by field nodes, rankings will populate automatically.</div>
+      <div className="w-full h-80 rounded-xl bg-[#fafbfa] border border-[#dde1dc] flex flex-col items-center justify-center space-y-2 text-[#5a635d]">
+        <div className="text-xs font-bold text-[#1a1f1c]">No Species Classification Detections Ingested</div>
+        <div className="text-[11px] text-[#5a635d] font-medium">As new bird species calls are recorded by field nodes, rankings will populate automatically.</div>
       </div>
     );
   }
@@ -22,31 +22,31 @@ export function TopSpeciesChart({ data }: TopSpeciesChartProps) {
   return (
     <div className="w-full h-[400px]">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart layout="vertical" data={chartData} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+        <BarChart layout="vertical" data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-          <XAxis type="number" stroke="#64748b" fontSize={11} tickLine={false} />
+          <XAxis type="number" stroke="#64748b" fontSize={10} tickLine={false} />
           <YAxis
             dataKey="species"
             type="category"
-            stroke="#0f172a"
-            fontSize={12}
-            fontWeight={700}
+            stroke="#1a1f1c"
+            fontSize={11}
+            fontWeight={600}
             tickLine={false}
-            width={280}
+            width={240}
             interval={0}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: '#ffffff',
-              borderColor: '#e2e8f0',
-              borderRadius: '12px',
-              color: '#0f172a',
+              borderColor: '#dde1dc',
+              borderRadius: '10px',
+              color: '#1a1f1c',
               fontSize: '12px',
               fontWeight: 600,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+              boxShadow: '0 4px 12px rgba(0,0,0,0.06)'
             }}
           />
-          <Bar dataKey="detections" fill="#16a34a" radius={[0, 6, 6, 0]} barSize={20} />
+          <Bar dataKey="detections" fill="#1f4d3a" radius={[0, 4, 4, 0]} barSize={18} />
         </BarChart>
       </ResponsiveContainer>
     </div>

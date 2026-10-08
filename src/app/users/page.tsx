@@ -20,9 +20,10 @@ import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
+import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 
 export default function UserManagementPage() {
-  const { usersList, currentUser, deleteUser, updateUserCredentials, addUser } = useRole();
+  const { usersList, currentUser, currentRole, deleteUser, updateUserCredentials, addUser } = useRole();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -195,21 +196,48 @@ export default function UserManagementPage() {
     u.organization.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  if (currentRole !== 'Admin') {
+    return (
+      <div className="space-y-6 pb-16 font-sans">
+        <AdminNavTabs />
+        <div className="p-10 rounded-2xl bg-white border border-[#dde1dc] text-center space-y-4 max-w-lg mx-auto shadow-xs mt-8">
+          <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold font-serif text-[#1a1f1c]">Access Restricted</h2>
+          <p className="text-xs text-[#5a635d] leading-relaxed">
+            The User Auditing and Permissions Console is restricted to System Administrators only. You are currently logged in as <strong className="text-[#1f4d3a]">{currentRole}</strong>.
+          </p>
+          <div className="pt-2">
+            <a
+              href="/admin/pam"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1f4d3a] text-white text-xs font-semibold rounded-xl hover:bg-[#173b2c] transition-colors"
+            >
+              Return to PAM Projects Console
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 pb-16 font-sans">
+    <div className="space-y-6 pb-16 font-sans">
+      {/* Centralized Admin Console Switcher */}
+      <AdminNavTabs />
       
       {/* Header Banner */}
-      <div className="p-8 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-xl border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="p-6 md:p-8 rounded-2xl bg-[#ffffff] border border-[#dde1dc] flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 font-black text-xs uppercase tracking-wider">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f5f6f4] border border-[#dde1dc] text-[#1f4d3a] font-mono font-medium text-xs">
             <Users className="w-3.5 h-3.5" />
-            <span>Admin Governance Console</span>
+            <span>INSTITUTIONAL GOVERNANCE</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
-            User Accounts & Permission Assignment Directory
+          <h1 className="text-2xl md:text-3xl font-serif font-semibold tracking-tight text-[#1a1f1c]">
+            User Auditing &amp; Permissions
           </h1>
-          <p className="text-slate-300 text-xs font-medium max-w-xl">
-            Admin governance center to create users, edit organizations, delete accounts, and assign project access permissions (PAM Only, Live Only, or Both).
+          <p className="text-[#5a635d] text-sm max-w-xl leading-relaxed">
+            Create user accounts, audit login credentials, manage organizational affiliations, and configure project access permissions (PAM Only, Live Only, or Both).
           </p>
         </div>
 

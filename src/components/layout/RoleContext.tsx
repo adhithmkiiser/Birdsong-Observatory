@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserRole, PublicVisibilitySettings, User } from '@/types/database';
+import { UserRole, PublicVisibilitySettings, DashboardMenuVisibility, User } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/apiClient';
 
@@ -18,6 +18,8 @@ interface RoleContextType {
   addUser: (user: User) => Promise<void>;
   visibilitySettings: PublicVisibilitySettings;
   updateVisibilitySetting: (key: keyof PublicVisibilitySettings, val: boolean) => void;
+  updateMenuVisibility: (dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder', tabId: string, visible: boolean, scopeKey?: string) => void;
+  isTabVisibleForPublic: (dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder', tabId: string, scopeKey?: string) => boolean;
   refreshUsers: () => Promise<void>;
 }
 
@@ -33,12 +35,45 @@ const defaultPublicUser: User = {
   lastLogin: 'Never'
 };
 
+const defaultMenuVisibility: DashboardMenuVisibility = {
+  commonPam: {
+    summary: true,
+    map: true,
+    heatmap: true,
+    trends: true,
+    diurnal: true,
+    diversity: true
+  },
+  lantanaPam: {
+    summary: true,
+    map: true,
+    heatmap: true,
+    richness: true,
+    explorer: true,
+    indicators: true,
+    performance: true
+  },
+  liveRecorder: {
+    summary: true,
+    map: true,
+    accumulation: true,
+    diurnal: true,
+    live: true,
+    stations: true,
+    species: true,
+    review: false,
+    reports: false
+  }
+};
+
 const defaultVisibilitySettings: PublicVisibilitySettings = {
   showUnverifiedDetections: true,
   allowAudioDownloads: true,
   showExactGPSCoordinates: true,
   showTelemetryMetrics: true,
   allowPublicReports: false,
+  dashboardMenuVisibility: defaultMenuVisibility,
+  scopedMenuVisibility: {}
 };
 
 const mapDbUserToUser = (dbUser: any): User => ({
@@ -87,6 +122,8 @@ const RoleContext = createContext<RoleContextType>({
   addUser: async () => {},
   visibilitySettings: defaultVisibilitySettings,
   updateVisibilitySetting: () => {},
+  updateMenuVisibility: () => {},
+  isTabVisibleForPublic: () => true,
   refreshUsers: async () => {},
 });
 
@@ -98,7 +135,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUsers = async () => {
     try {
-      const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase.from('users').select('*').neq('email', 'system_settings@birdlab.in').order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
         setUsersList(data.map(mapDbUserToUser));
       }
@@ -275,8 +312,124 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  useEffect(() => {
+    // 1. Restore visibility settings from localStorage first for instant hydration
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-visibility-settings') : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setVisibilitySettings(prev => ({
+          ...prev,
+          ...parsed,
+          dashboardMenuVisibility: {
+            commonPam: { ...defaultMenuVisibility.commonPam, ...(parsed.dashboardMenuVisibility?.commonPam || {}) },
+            lantanaPam: { ...defaultMenuVisibility.lantanaPam, ...(parsed.dashboardMenuVisibility?.lantanaPam || {}) },
+            liveRecorder: { ...defaultMenuVisibility.liveRecorder, ...(parsed.dashboardMenuVisibility?.liveRecorder || {}) },
+          },
+          scopedMenuVisibility: parsed.scopedMenuVisibility || {}
+        }));
+      }
+    } catch (e) {
+      console.warn('Failed to load local visibility settings:', e);
+    }
+
+    // 2. Fetch latest visibility settings from database in background
+    async function syncRemoteSettings() {
+      try {
+        const res = await fetch('/api/db/settings');
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.settings) {
+            const remote = data.settings;
+            setVisibilitySettings(prev => {
+              const merged = {
+                ...prev,
+                ...remote,
+                dashboardMenuVisibility: {
+                  commonPam: { ...defaultMenuVisibility.commonPam, ...(remote.dashboardMenuVisibility?.commonPam || {}) },
+                  lantanaPam: { ...defaultMenuVisibility.lantanaPam, ...(remote.dashboardMenuVisibility?.lantanaPam || {}) },
+                  liveRecorder: { ...defaultMenuVisibility.liveRecorder, ...(remote.dashboardMenuVisibility?.liveRecorder || {}) },
+                },
+                scopedMenuVisibility: remote.scopedMenuVisibility || {}
+              };
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('birdlab-visibility-settings', JSON.stringify(merged));
+              }
+              return merged;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Background settings sync error:', err);
+      }
+    }
+    syncRemoteSettings();
+  }, []);
+
   const updateVisibilitySetting = (key: keyof PublicVisibilitySettings, val: boolean) => {
-    setVisibilitySettings(prev => ({ ...prev, [key]: val }));
+    setVisibilitySettings(prev => {
+      const updated = { ...prev, [key]: val };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('birdlab-visibility-settings', JSON.stringify(updated));
+      }
+      // Sync to database
+      apiFetch('/api/db/settings', {
+        method: 'PUT',
+        body: JSON.stringify(updated)
+      }, currentUser).catch(e => console.warn('Failed to save settings to server:', e));
+      return updated;
+    });
+  };
+
+  const updateMenuVisibility = (
+    dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder',
+    tabId: string,
+    visible: boolean,
+    scopeKey?: string
+  ) => {
+    setVisibilitySettings(prev => {
+      let updated: PublicVisibilitySettings;
+      if (scopeKey && scopeKey !== 'ALL') {
+        const scoped = { ...(prev.scopedMenuVisibility || {}) };
+        const existingScope = { ...(scoped[scopeKey] || {}) };
+        existingScope[tabId] = visible;
+        scoped[scopeKey] = existingScope;
+        updated = { ...prev, scopedMenuVisibility: scoped };
+      } else {
+        const menuVis = {
+          commonPam: { ...(prev.dashboardMenuVisibility?.commonPam || defaultMenuVisibility.commonPam) },
+          lantanaPam: { ...(prev.dashboardMenuVisibility?.lantanaPam || defaultMenuVisibility.lantanaPam) },
+          liveRecorder: { ...(prev.dashboardMenuVisibility?.liveRecorder || defaultMenuVisibility.liveRecorder) }
+        };
+        menuVis[dashboardType] = { ...menuVis[dashboardType], [tabId]: visible };
+        updated = { ...prev, dashboardMenuVisibility: menuVis };
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('birdlab-visibility-settings', JSON.stringify(updated));
+      }
+      // Sync to database
+      apiFetch('/api/db/settings', {
+        method: 'PUT',
+        body: JSON.stringify(updated)
+      }, currentUser).catch(e => console.warn('Failed to save settings to server:', e));
+      return updated;
+    });
+  };
+
+  const isTabVisibleForPublic = (
+    dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder',
+    tabId: string,
+    scopeKey?: string
+  ): boolean => {
+    if (scopeKey && scopeKey !== 'ALL' && visibilitySettings.scopedMenuVisibility?.[scopeKey]) {
+      const val = visibilitySettings.scopedMenuVisibility[scopeKey][tabId];
+      if (val !== undefined) return val;
+    }
+    const typeVis = visibilitySettings.dashboardMenuVisibility?.[dashboardType];
+    if (typeVis && typeVis[tabId] !== undefined) {
+      return typeVis[tabId];
+    }
+    return defaultMenuVisibility[dashboardType]?.[tabId] ?? true;
   };
 
   return (
@@ -294,6 +447,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         addUser,
         visibilitySettings,
         updateVisibilitySetting,
+        updateMenuVisibility,
+        isTabVisibleForPublic,
         refreshUsers
       }}
     >

@@ -18,9 +18,9 @@ export function DiurnalChart({ data }: DiurnalChartProps) {
 
   if (!hasData) {
     return (
-      <div className="w-full h-80 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center space-y-2 text-slate-400">
-        <div className="text-xs font-extrabold text-slate-700">No Diurnal Call Detections Recorded Yet</div>
-        <div className="text-[10px] text-slate-500 font-medium">Connect a field recorder station node or run Python sync engine to stream detections.</div>
+      <div className="w-full h-80 rounded-xl bg-[#fafbfa] border border-[#dde1dc] flex flex-col items-center justify-center space-y-2 text-[#5a635d]">
+        <div className="text-xs font-bold text-[#1a1f1c]">No Diurnal Call Detections Recorded Yet</div>
+        <div className="text-[11px] text-[#5a635d] font-medium">Connect a field recorder station node or run Python sync engine to stream detections.</div>
       </div>
     );
   }
@@ -39,20 +39,20 @@ export function DiurnalChart({ data }: DiurnalChartProps) {
             angle={-30}
             textAnchor="end"
           />
-          <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
+          <YAxis stroke="#64748b" fontSize={10} tickLine={false} />
           <Tooltip
             contentStyle={{
               backgroundColor: '#ffffff',
-              borderColor: '#e2e8f0',
-              borderRadius: '12px',
-              color: '#0f172a',
+              borderColor: '#dde1dc',
+              borderRadius: '10px',
+              color: '#1a1f1c',
               fontSize: '12px',
               fontWeight: 600,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+              boxShadow: '0 4px 12px rgba(0,0,0,0.06)'
             }}
-            cursor={{ fill: '#f8fafc' }}
+            cursor={{ fill: '#f0f7f3' }}
           />
-          <Bar dataKey="detections" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={16} />
+          <Bar dataKey="detections" fill="#1f4d3a" radius={[4, 4, 0, 0]} barSize={16} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -6,19 +6,17 @@ import Link from 'next/link';
 import { 
   Lock, 
   Mail, 
-  ShieldCheck, 
   Key, 
   LogIn, 
   CheckCircle2, 
   AlertCircle, 
-  Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  ShieldCheck
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
-import { sendOneTimePasswordEmail } from '@/lib/emailService';
 
 export default function SignInPage() {
-  const { loginUser, usersList, updateUserCredentials, refreshUsers } = useRole();
+  const { loginUser, usersList, updateUserCredentials } = useRole();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -30,12 +28,11 @@ export default function SignInPage() {
   const [mode, setMode] = useState<'login' | 'otp_reset' | 'change_temp'>('login');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [otpCode, setOtpCode] = useState('');
 
   const handleGenerateOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
-      setErrorMsg('Please enter your email address.');
+      setErrorMsg('Please enter your registered email address.');
       return;
     }
     setErrorMsg('');
@@ -55,13 +52,13 @@ export default function SignInPage() {
       setLoading(false);
       setSuccessMsg(
         result.dispatched
-          ? `One-Time Password sent to ${email.trim()}. Please check your inbox.`
-          : 'Password reset request received. Please check your inbox or contact an administrator.'
+          ? `One-Time Password dispatched to ${email.trim()}. Check your inbox.`
+          : 'Password reset request registered. Check your inbox or contact lab administrator.'
       );
       setMode('login');
     } catch (err) {
       setLoading(false);
-      setErrorMsg('Failed to generate OTP. Please try again.');
+      setErrorMsg('Failed to generate OTP. Please try again or contact support.');
     }
   };
 
@@ -83,7 +80,7 @@ export default function SignInPage() {
     const user = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
     if (!user) {
       setLoading(false);
-      setErrorMsg('User not found.');
+      setErrorMsg('User record not found in observatory registry.');
       return;
     }
     try {
@@ -94,12 +91,12 @@ export default function SignInPage() {
       });
 
       setLoading(false);
-      setSuccessMsg('Password updated successfully! Redirecting...');
+      setSuccessMsg('Password updated successfully. Redirecting to observatory...');
       loginUser(email, newPassword);
-      setTimeout(() => router.push('/'), 1000);
+      setTimeout(() => router.push('/'), 800);
     } catch (err) {
       setLoading(false);
-      setErrorMsg('Failed to update password.');
+      setErrorMsg('Failed to update credentials.');
     }
   };
 
@@ -115,10 +112,10 @@ export default function SignInPage() {
     if (result.success) {
       if (result.user?.mustChangePassword || result.user?.isOneTimePassword) {
         setMode('change_temp');
-        setSuccessMsg('One-time password verified! Please set your new permanent password.');
+        setSuccessMsg('Temporary credential verified. Please set your permanent research password.');
       } else {
         setSuccessMsg(result.message);
-        setTimeout(() => router.push('/'), 1000);
+        setTimeout(() => router.push('/'), 800);
       }
     } else {
       setErrorMsg(result.message);
@@ -126,170 +123,185 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-4 -m-6">
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden font-sans">
-        {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white relative">
-          <Link 
-            href="/" 
-            className="absolute top-4 left-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+    <div className="min-h-[calc(100vh-140px)] flex items-center justify-center px-4 py-12 bg-[#ffffff] font-sans">
+      <div className="w-full max-w-md bg-[#ffffff] border border-[#dde1dc] rounded-2xl p-8 sm:p-10 shadow-xs space-y-6">
+        
+        {/* Header Branding */}
+        <div className="space-y-2">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-[#5a635d] hover:text-[#1a1f1c] transition-colors mb-2"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Return to Observatory</span>
           </Link>
-          <div className="flex items-center gap-2.5 mb-1">
-            <span className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400">
-              <Lock className="w-4 h-4" />
-            </span>
-            <h2 className="text-lg font-black tracking-tight">
-              {mode === 'login' ? 'Sign In to BirdNET Cloud' : mode === 'change_temp' ? 'Set Permanent Password' : 'One-Time Password Reset'}
-            </h2>
-          </div>
-          <p className="text-xs text-slate-300 font-medium">IISER Tirupati Bioacoustics Wildlife Monitoring</p>
+
+          <h1 className="font-serif font-semibold text-2xl sm:text-3xl text-[#1a1f1c] tracking-tight">
+            {mode === 'login' ? 'Sign in to Observatory' : mode === 'change_temp' ? 'Set Permanent Password' : 'Reset Access Key'}
+          </h1>
+          <p className="text-xs text-[#5a635d]">
+            Bird Ecology Lab &bull; IISER Tirupati Research Portal
+          </p>
         </div>
 
-        {/* Body Form */}
-        <div className="p-6 space-y-5">
-          {errorMsg && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+        {/* Alerts */}
+        {errorMsg && (
+          <div className="p-3.5 rounded-lg bg-[#fbeee8] border border-[#943a29]/30 text-[#943a29] text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-          {successMsg && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span>{successMsg}</span>
-            </div>
-          )}
+        {successMsg && (
+          <div className="p-3.5 rounded-lg bg-[#eaf2ed] border border-[#1f4d3a]/30 text-[#1f4d3a] text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
 
-          {mode === 'login' && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Email Address</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    required
-                    placeholder="name@birdsongobservatory.in"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-xs font-extrabold text-slate-700">Password / OTP</label>
-                  <button
-                    type="button"
-                    onClick={() => setMode('otp_reset')}
-                    className="text-[11px] font-bold text-indigo-600 hover:underline"
-                  >
-                    Forgot Password / Get OTP?
-                  </button>
-                </div>
-                <div className="relative">
-                  <Key className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    required
-                    placeholder="Enter password or temporary OTP"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2"
-              >
-                <LogIn className="w-4 h-4" />
-                <span>{loading ? 'Authenticating...' : 'Sign In'}</span>
-              </button>
-            </form>
-          )}
-
-          {mode === 'change_temp' && (
-            <form onSubmit={handlePasswordChange} className="space-y-4">
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
-                First Login Security: Please replace your one-time password with a new permanent password.
-              </div>
-
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">New Permanent Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="At least 6 characters"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Confirm New Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Re-enter password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>{loading ? 'Updating Password...' : 'Save & Continue'}</span>
-              </button>
-            </form>
-          )}
-
-          {mode === 'otp_reset' && (
-            <form onSubmit={handleGenerateOTP} className="space-y-4">
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Enter Registered Email</label>
+        {/* Form Mode 1: Normal Sign In */}
+        {mode === 'login' && (
+          <form onSubmit={handleSubmit} className="space-y-4 font-sans">
+            <div className="space-y-1">
+              <label className="text-xs font-mono font-medium text-[#5a635d] uppercase tracking-wider block">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#5a635d] absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   required
                   placeholder="name@birdsongobservatory.in"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold"
+                  className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-lg pl-10 pr-3.5 py-2.5 text-xs text-[#1a1f1c] placeholder-[#5a635d] focus:outline-none focus:border-[#1f4d3a] focus:bg-white transition-colors"
                 />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>{loading ? 'Generating OTP...' : 'Generate One-Time Password'}</span>
-              </button>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-mono font-medium text-[#5a635d] uppercase tracking-wider">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setMode('otp_reset')}
+                  className="text-xs text-[#1f4d3a] hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <Key className="w-4 h-4 text-[#5a635d] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-lg pl-10 pr-3.5 py-2.5 text-xs text-[#1a1f1c] placeholder-[#5a635d] focus:outline-none focus:border-[#1f4d3a] focus:bg-white transition-colors"
+                />
+              </div>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => setMode('login')}
-                className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-900"
-              >
-                Back to Sign In
-              </button>
-            </form>
-          )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full rounded-lg text-xs font-semibold mt-2"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>{loading ? 'Verifying credentials...' : 'Sign In'}</span>
+            </button>
+          </form>
+        )}
 
+        {/* Form Mode 2: Change Temp Password */}
+        {mode === 'change_temp' && (
+          <form onSubmit={handlePasswordChange} className="space-y-4 font-sans">
+            <div className="p-3 rounded-lg bg-[#f5f6f4] border border-[#dde1dc] text-xs text-[#5a635d]">
+              First login protocol: Please establish a permanent research password.
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-mono font-medium text-[#5a635d] uppercase tracking-wider block">
+                New Permanent Password
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="At least 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-lg px-3.5 py-2.5 text-xs text-[#1a1f1c] focus:outline-none focus:border-[#1f4d3a] focus:bg-white transition-colors"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-mono font-medium text-[#5a635d] uppercase tracking-wider block">
+                Confirm Password
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="Re-enter new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-lg px-3.5 py-2.5 text-xs text-[#1a1f1c] focus:outline-none focus:border-[#1f4d3a] focus:bg-white transition-colors"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full rounded-lg text-xs font-semibold"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{loading ? 'Updating...' : 'Save and Continue'}</span>
+            </button>
+          </form>
+        )}
+
+        {/* Form Mode 3: OTP Reset */}
+        {mode === 'otp_reset' && (
+          <form onSubmit={handleGenerateOTP} className="space-y-4 font-sans">
+            <div className="space-y-1">
+              <label className="text-xs font-mono font-medium text-[#5a635d] uppercase tracking-wider block">
+                Registered Institutional Email
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="name@birdsongobservatory.in"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-lg px-3.5 py-2.5 text-xs text-[#1a1f1c] focus:outline-none focus:border-[#1f4d3a] focus:bg-white transition-colors"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full rounded-lg text-xs font-semibold"
+            >
+              <span>{loading ? 'Dispatched request...' : 'Send Access OTP'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('login')}
+              className="w-full text-center text-xs text-[#5a635d] hover:text-[#1a1f1c] pt-1"
+            >
+              &larr; Back to sign in
+            </button>
+          </form>
+        )}
+
+        {/* Colophon Note */}
+        <div className="pt-4 border-t border-[#dde1dc] text-center font-mono text-[11px] text-[#5a635d]">
+          Authorized access for IISER Tirupati researchers &amp; conservation collaborators.
         </div>
+
       </div>
     </div>
   );

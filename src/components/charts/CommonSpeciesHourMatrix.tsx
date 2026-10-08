@@ -27,7 +27,10 @@ export default function CommonSpeciesHourMatrix({ p_project_names, p_site_name, 
   useEffect(() => {
     async function fetchData() {
       const { data } = await supabase.rpc('get_species_hour_matrix', {
-        p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
+        p_confidence: confidenceThreshold,
+        p_project_names,
+        p_recorder_name,
+        p_site_name
       });
       if (data) setMatrixData(data);
     }

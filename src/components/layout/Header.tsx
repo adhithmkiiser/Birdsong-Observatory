@@ -1,271 +1,146 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  Menu, 
-  X, 
-  ChevronDown, 
-  ShieldCheck, 
-  User as UserIcon, 
-  LogOut, 
-  Radio, 
-  ExternalLink,
-  Database,
-  Users
-} from 'lucide-react';
+import { Menu, X, LogOut } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 
 export function Header() {
   const pathname = usePathname();
   const { currentRole, currentUser, logoutUser } = useRole();
-
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setActiveDropdown(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const isHomeActive = pathname === '/';
-  const isAboutActive = pathname === '/about';
-  const isDashboardActive = pathname === '/#projects' || pathname.startsWith('/dashboard');
-
-  const toggleDropdown = (name: string) => {
-    setActiveDropdown(prev => prev === name ? null : name);
-  };
+  const isHome = pathname === '/';
+  const isAbout = pathname === '/about';
+  const isProjects = pathname === '/#projects' || pathname.startsWith('/dashboard') || pathname.startsWith('/live_dashboard');
 
   return (
-    <>
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
-          
-          {/* Brand Logo & Identity */}
-          <Link href="/" className="flex items-center gap-3.5 group">
-            <div className="w-11 h-11 rounded-2xl overflow-hidden bg-emerald-900 border border-slate-200 shadow-md flex-shrink-0 group-hover:scale-105 transition">
-              <img
-                src="/Birdlab_logo.jpeg"
-                alt="IISER Tirupati Bird Lab Logo"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-baseline gap-1 text-slate-900 tracking-tight">
-                <span className="font-black text-lg text-emerald-700">birdsong</span>
-                <span className="font-black text-lg text-slate-900">observatory</span>
-              </div>
-              <span className="text-[10px] font-black text-slate-700 tracking-widest uppercase">
-                IISER TIRUPATI
-              </span>
-            </div>
+    <header className="w-full bg-[#ffffff] border-b border-[#dde1dc]">
+      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        
+        {/* Institutional Wordmark */}
+        <Link href="/" className="flex flex-col group">
+          <span className="font-serif font-semibold text-xl text-[#1a1f1c] tracking-tight group-hover:text-[#1f4d3a] transition-colors">
+            Birdsong Observatory
+          </span>
+          <span className="font-sans text-xs text-[#5a635d] tracking-normal">
+            Bird Ecology Lab, IISER Tirupati
+          </span>
+        </Link>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center gap-8 font-sans text-sm font-medium text-[#1a1f1c]">
+          <Link
+            href="/#projects"
+            className="text-[#5a635d] hover:text-[#1f4d3a] transition-colors"
+          >
+            Projects
           </Link>
 
-          {/* Desktop Navigation Links (Exact order requested) */}
-          <nav className="hidden lg:flex items-center gap-1 font-extrabold text-xs">
-            {/* 1. Home */}
+          <Link
+            href="/about"
+            className={`transition-colors ${
+              isAbout 
+                ? 'text-[#1f4d3a] font-semibold underline underline-offset-4' 
+                : 'text-[#5a635d] hover:text-[#1f4d3a]'
+            }`}
+          >
+            About
+          </Link>
+
+          {/* Admin link if permitted */}
+          {(currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager') && (
             <Link
-              href="/"
-              className={`px-4 py-2 rounded-xl transition ${
-                isHomeActive 
-                  ? 'bg-emerald-50 text-emerald-800 font-black border border-emerald-200/80 shadow-2xs' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
+              href="/admin/pam"
+              className="text-xs font-mono font-medium px-2.5 py-1 border border-[#dde1dc] rounded-md text-[#1f4d3a] hover:bg-[#f5f6f4] transition-colors"
             >
-              Home
+              Admin Console
             </Link>
+          )}
 
-            {/* 2. Dashboard -> Navigates directly to Projects section on Homepage */}
-            <Link
-              href="/#projects"
-              className={`px-4 py-2 rounded-xl transition ${
-                isDashboardActive 
-                  ? 'bg-indigo-50 text-indigo-800 font-black border border-indigo-200/80 shadow-2xs' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              Dashboard
-            </Link>
-
-            {/* 3. About */}
-            <Link
-              href="/about"
-              className={`px-4 py-2 rounded-xl transition ${
-                isAboutActive 
-                  ? 'bg-emerald-50 text-emerald-800 font-black border border-emerald-200/80 shadow-2xs' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              About
-            </Link>
-
-            {/* 4. Bird Lab (External) */}
-            <a
-              href="https://www.skyisland.in/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-slate-100 transition inline-flex items-center gap-1"
-            >
-              <span>Bird Lab</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
-            </a>
-
-            {/* 5. Admin Console Dropdown */}
-            {(currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager') && (
-              <div className="relative ml-2" ref={dropdownRef}>
-                <button
-                  onClick={() => toggleDropdown('admin')}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 text-white font-black shadow-md shadow-emerald-600/20 hover:opacity-95 transition flex items-center gap-1.5"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Admin Consoles</span>
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-
-                {activeDropdown === 'admin' && (
-                  <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 space-y-1 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
-                    <div className="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      Administrative Consoles
-                    </div>
-
-                    <Link
-                      href="/admin/pam"
-                      onClick={() => setActiveDropdown(null)}
-                      className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-indigo-50 text-slate-800 hover:text-indigo-800 transition"
-                    >
-                      <Database className="w-4 h-4 text-indigo-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="font-extrabold text-slate-900">PAM Admin Console</div>
-                        <div className="text-[10px] text-slate-500 font-medium font-sans">Full CSV parser, sites & copy editor</div>
-                      </div>
-                    </Link>
-
-                    {currentRole === 'Admin' && (
-                      <>
-                        <Link
-                          href="/admin/live"
-                          onClick={() => setActiveDropdown(null)}
-                          className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 hover:text-emerald-800 transition"
-                        >
-                          <Radio className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0 animate-pulse" />
-                          <div>
-                            <div className="font-extrabold text-slate-900">Live Recorder Admin</div>
-                            <div className="text-[10px] text-slate-500 font-medium font-sans">Realtime stream controls & gain DSP</div>
-                          </div>
-                        </Link>
-
-                        <div className="border-t border-slate-100 my-1"></div>
-
-                        <Link
-                          href="/users"
-                          onClick={() => setActiveDropdown(null)}
-                          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-100 text-slate-700 font-bold transition"
-                        >
-                          <Users className="w-3.5 h-3.5 text-slate-500" />
-                          <span>User Roles & Permissions</span>
-                        </Link>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </nav>
-
-          {/* User Auth Section */}
-          <div className="hidden lg:flex items-center gap-3">
-            {currentUser && currentUser.role !== 'Public' ? (
-              <div className="flex items-center gap-2.5">
-                <div className="flex flex-col text-right">
-                  <span className="text-xs font-black text-slate-900">{currentUser.name}</span>
-                  <span className="text-[10px] font-bold text-indigo-600">{currentUser.role}</span>
-                </div>
-                <button
-                  onClick={logoutUser}
-                  title="Logout Session"
-                  className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md shadow-slate-900/10 transition"
+          {/* Sign In / User Status */}
+          {currentUser && currentUser.role !== 'Public' ? (
+            <div className="flex items-center gap-3 pl-4 border-l border-[#dde1dc] font-mono text-xs">
+              <span className="text-[#1a1f1c] font-medium">{currentUser.name}</span>
+              <button
+                onClick={logoutUser}
+                title="Sign out"
+                className="text-[#5a635d] hover:text-[#1a1f1c] transition-colors"
               >
-                Sign In
-              </Link>
-            )}
-          </div>
-
-          {/* Mobile Menu Button */}
-          <div className="flex lg:hidden items-center gap-2">
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="text-[#5a635d] hover:text-[#1f4d3a] transition-colors"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
+              Sign in
+            </Link>
+          )}
+        </nav>
+
+        {/* Mobile menu trigger */}
+        <div className="flex md:hidden">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-[#1a1f1c]"
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
 
-        {/* Mobile Navigation Drawer */}
-        {mobileMenuOpen && (
-          <div className="lg:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-6 space-y-3 font-extrabold text-xs">
-            <Link
-              href="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block p-3 rounded-xl hover:bg-slate-100 text-slate-900"
-            >
-              Home
-            </Link>
-            <Link
-              href="/#projects"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block p-3 rounded-xl hover:bg-slate-100 text-slate-900"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/about"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block p-3 rounded-xl hover:bg-slate-100 text-slate-900"
-            >
-              About
-            </Link>
+      </div>
 
+      {/* Mobile Navigation Drawer */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-[#ffffff] border-b border-[#dde1dc] px-4 py-4 space-y-3 text-sm font-medium">
+          <Link
+            href="/#projects"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block py-1 text-[#1a1f1c]"
+          >
+            Projects
+          </Link>
+          <Link
+            href="/about"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block py-1 text-[#1a1f1c]"
+          >
+            About
+          </Link>
+          {(currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager') && (
+            <Link
+              href="/admin/pam"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-1 text-[#1f4d3a] font-semibold"
+            >
+              Admin Console
+            </Link>
+          )}
+
+          <div className="pt-3 border-t border-[#dde1dc] flex items-center justify-between font-mono text-xs">
             {currentUser && currentUser.role !== 'Public' ? (
               <button
                 onClick={() => { logoutUser(); setMobileMenuOpen(false); }}
-                className="w-full text-left p-3 rounded-xl bg-rose-50 text-rose-700 font-black flex items-center justify-between"
+                className="text-[#b5651d] font-sans"
               >
-                <span>Logout ({currentUser.name})</span>
-                <LogOut className="w-4 h-4" />
+                Sign out ({currentUser.name})
               </button>
             ) : (
               <Link
                 href="/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full p-3 rounded-xl bg-indigo-600 text-white font-black text-center block"
+                className="text-[#1f4d3a] font-sans"
               >
-                Sign In
+                Sign in &rarr;
               </Link>
             )}
           </div>
-        )}
-      </header>
-
-    </>
+        </div>
+      )}
+    </header>
   );
 }

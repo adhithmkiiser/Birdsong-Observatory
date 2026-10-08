@@ -184,6 +184,28 @@ export default function ReviewQueuePage() {
     }
   };
 
+  if (currentRole === 'Public') {
+    return (
+      <div className="max-w-xl mx-auto py-16 px-4 font-sans text-center space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-[#f0f7f3] border border-[#dde1dc] text-[#1f4d3a] flex items-center justify-center mx-auto shadow-xs">
+          <CheckSquare className="w-7 h-7" />
+        </div>
+        <h1 className="text-2xl font-bold font-serif text-[#1a1f1c]">Verification Queue Restricted</h1>
+        <p className="text-sm text-[#5a635d] max-w-md mx-auto leading-relaxed">
+          The Bioacoustic Review Queue is accessible only by authorized researchers, site managers, and project administrators.
+        </p>
+        <div className="pt-2">
+          <a
+            href="/login"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#1f4d3a] text-white text-xs font-semibold rounded-xl hover:bg-[#173b2c] transition-all shadow-xs"
+          >
+            <span>Sign In as Researcher</span>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12 font-sans">
       {/* Header Banner */}

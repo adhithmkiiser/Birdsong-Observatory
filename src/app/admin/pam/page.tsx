@@ -19,6 +19,7 @@ import {
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/apiClient';
+import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 
 interface ProjectItem {
   id: string;
@@ -1148,67 +1149,70 @@ export default function PamAdminPage() {
   };
 
   return (
-    <div className="space-y-8 pb-12 font-sans">
+    <div className="space-y-6 pb-12 font-sans">
+      {/* Centralized Admin Console Switcher */}
+      <AdminNavTabs />
+
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-[28px] bg-gradient-to-r from-[#022c22] via-[#0f172a] to-[#1e1b4b] text-white shadow-xl border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="p-6 md:p-8 rounded-2xl bg-[#ffffff] border border-[#dde1dc] flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 font-black text-xs uppercase tracking-wider">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f5f6f4] border border-[#dde1dc] text-[#1f4d3a] font-mono font-medium text-xs">
             <Database className="w-3.5 h-3.5" />
-            <span>Admin Console Section 2</span>
+            <span>INSTITUTIONAL ADMINISTRATION</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
-            2. PAM Data & Historical File Admin Console
+          <h1 className="text-2xl md:text-3xl font-serif font-semibold tracking-tight text-[#1a1f1c]">
+            Admin Console
           </h1>
-          <p className="text-slate-300 text-xs font-medium max-w-xl">
-            Ingest batch BirdNET CSV result sheets, parse SD card data, manage project transects, register site coordinates, and curate species traits.
+          <p className="text-[#5a635d] text-sm max-w-xl leading-relaxed">
+            Ingest batch BirdNET CSV detection sheets, parse SD card archives, manage survey projects, register site coordinates, and curate species ecological records.
           </p>
         </div>
       </div>
 
-      {/* PAM Admin Navigation Tabs */}
-      <div className="flex border-b border-slate-200 gap-4 text-xs font-black">
+      {/* Admin Navigation Tabs */}
+      <div className="flex border-b border-[#dde1dc] gap-2 overflow-x-auto text-xs font-medium">
         <button
           onClick={() => setActiveTab('upload')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'upload' 
-              ? 'border-indigo-600 text-indigo-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Upload className="w-4 h-4" /> 1. Files & Batch CSV Parser
+          <Upload className="w-4 h-4" /> Batch CSV Ingestion
         </button>
 
         <button
           onClick={() => setActiveTab('projects')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'projects' 
-              ? 'border-indigo-600 text-indigo-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <FolderPlus className="w-4 h-4" /> 2. Projects & Site Coordinates
+          <FolderPlus className="w-4 h-4" /> Projects &amp; Sites
         </button>
 
         <button
           onClick={() => setActiveTab('species')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'species' 
-              ? 'border-indigo-600 text-indigo-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Bird className="w-4 h-4" /> 3. Species Ecology Curator
+          <Bird className="w-4 h-4" /> Species Catalog
         </button>
 
         <button
           onClick={() => setActiveTab('detections')}
-          className={`pb-3 px-3 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
             activeTab === 'detections' 
-              ? 'border-indigo-600 text-indigo-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
           }`}
         >
-          <Database className="w-4 h-4" /> 4. Detections Data Management
+          <Database className="w-4 h-4" /> Detections Audit
         </button>
       </div>
 

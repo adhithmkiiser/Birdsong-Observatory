@@ -1,11 +1,19 @@
 export type UserRole = 'Admin' | 'Project Manager' | 'Site Manager' | 'Public';
 
+export interface DashboardMenuVisibility {
+  commonPam: Record<string, boolean>;
+  lantanaPam: Record<string, boolean>;
+  liveRecorder: Record<string, boolean>;
+}
+
 export interface PublicVisibilitySettings {
   showUnverifiedDetections: boolean;
   allowAudioDownloads: boolean;
   showExactGPSCoordinates: boolean;
   showTelemetryMetrics: boolean;
   allowPublicReports: boolean;
+  dashboardMenuVisibility?: DashboardMenuVisibility;
+  scopedMenuVisibility?: Record<string, Record<string, boolean>>;
 }
 
 export interface User {

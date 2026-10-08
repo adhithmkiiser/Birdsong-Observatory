@@ -1,794 +1,449 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { 
+  Compass, 
+  Radio, 
+  Cpu, 
+  BarChart3, 
+  FileText, 
+  CheckCircle2, 
+  Volume2, 
+  MapPin, 
+  Download,
+  Calendar,
+  Layers
+} from 'lucide-react';
 
-const stages = [
+interface MethodStage {
+  id: string;
+  number: string;
+  title: string;
+  subtitle: string;
+  summary: string;
+  details: string[];
+  metrics: { label: string; value: string }[];
+}
+
+const METHOD_STAGES: MethodStage[] = [
   {
+    id: 'stage-1',
+    number: '01',
     title: 'Study Design',
-    body: 'We work with conservation teams to design statistically robust acoustic monitoring plans: site selection, recorder spacing, temporal sampling, and target species.',
+    subtitle: 'Statistically robust acoustic monitoring plans',
+    summary: 'We work with conservation teams to design statistically robust acoustic monitoring plans: site selection, recorder spacing, temporal sampling, and target species.',
+    details: [
+      'Site selection and habitat stratification along elevation and disturbance gradients.',
+      'Recorder spacing with standardized radial acoustic buffers to ensure statistical independence.',
+      'Temporal sampling scheduling targeting dawn chorus, dusk, and nocturnal survey windows.'
+    ],
+    metrics: [
+      { label: 'Spatial Buffer', value: '250 m Radial' },
+      { label: 'Elevation Range', value: '400 – 2,200 m' },
+      { label: 'Survey Windows', value: 'Dawn & Nocturnal' }
+    ]
   },
   {
+    id: 'stage-2',
+    number: '02',
     title: 'Data Collection',
-    body: 'Field teams deploy autonomous PAM recorders or BirdNET-Pi live nodes. Audio, metadata, and telemetry stream or batch into the cloud.',
+    subtitle: 'Autonomous PAM & BirdNET-Pi live nodes',
+    summary: 'Field teams deploy autonomous PAM recorders or BirdNET-Pi live nodes. Audio, metadata, and telemetry stream or batch into the cloud.',
+    details: [
+      'Deployment of autonomous passive acoustic monitoring (PAM) units and solar IoT nodes.',
+      'High-resolution lossless 48 kHz / 24-bit audio capture preserving full avian acoustic bandwidth.',
+      'Automated batch ingestion and telemetry streaming into centralized cloud repositories.'
+    ],
+    metrics: [
+      { label: 'Hardware Types', value: 'PAM & Live Nodes' },
+      { label: 'Audio Standard', value: '48 kHz / 24-bit' },
+      { label: 'Ingest Pipeline', value: 'Batch & Stream' }
+    ]
   },
   {
+    id: 'stage-3',
+    number: '03',
     title: 'Analysis',
-    body: 'Bioacoustic AI classifies vocalizations, filters false positives, and links detections to species, sites, and environmental covariates.',
+    subtitle: 'Bioacoustic AI vocalization classification',
+    summary: 'Bioacoustic AI classifies vocalizations, filters false positives, and links detections to species, sites, and environmental covariates.',
+    details: [
+      'Neural network classification using calibrated regional acoustic model weights.',
+      'Automated confidence thresholding to filter wind, rain, and ambient acoustic artifacts.',
+      'Harmonic feature matching and linking detections to species, sites, and habitat metadata.'
+    ],
+    metrics: [
+      { label: 'AI Engine', value: 'BirdNET Bioacoustic' },
+      { label: 'Filter Precision', value: 'Dynamic Threshold' },
+      { label: 'Feature Window', value: '3.0s Segmented' }
+    ]
   },
   {
+    id: 'stage-4',
+    number: '04',
     title: 'Graphical Insights',
-    body: 'Interactive dashboards translate thousands of detections into species accumulation curves, diversity indices, and temporal activity patterns.',
+    subtitle: 'Interactive dashboards & diversity patterns',
+    summary: 'Interactive dashboards translate thousands of detections into species accumulation curves, diversity indices, and temporal activity patterns.',
+    details: [
+      'Dynamic species accumulation curves and observed richness across survey sites.',
+      'Diurnal vocal activity profiles and hourly detection frequency distributions.',
+      'Comparative habitat analytics between restored ecological corridors and control sites.'
+    ],
+    metrics: [
+      { label: 'Visualizations', value: 'Accumulation Curves' },
+      { label: 'Temporal Resolution', value: 'Hourly Diurnal' },
+      { label: 'Habitat Indices', value: 'Site-by-Species' }
+    ]
   },
   {
+    id: 'stage-5',
+    number: '05',
     title: 'Reporting',
-    body: 'We deliver technical reports with annotated spectrograms, photos, maps, and conservation recommendations for funders and regulators.',
-  },
+    subtitle: 'Technical reports & conservation recommendations',
+    summary: 'We deliver technical reports with annotated spectrograms, photos, maps, and conservation recommendations for funders and regulators.',
+    details: [
+      'Comprehensive research dossiers with timestamped Raven Pro spectrogram figures.',
+      'Georeferenced species occurrence maps and baseline ecological audits for protected areas.',
+      'Verifiable bioacoustic evidence and management recommendations for state forest departments.'
+    ],
+    metrics: [
+      { label: 'Deliverables', value: 'PDF & CSV Reports' },
+      { label: 'Evidence Base', value: 'Annotated Figures' },
+      { label: 'Stakeholders', value: 'Funders & Regulators' }
+    ]
+  }
 ];
 
-const fixedBgImage = 'https://images.unsplash.com/photo-1441974231531-c6227db76b84?auto=format&fit=crop&w=1920&q=80';
-
 export default function WhatWeProvide() {
-  const [active, setActive] = useState(0);
-  const triggerRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const idx = Number(entry.target.getAttribute('data-index'));
-            setActive(idx);
-          }
-        });
-      },
-      {
-        threshold: 0.5,
-      }
-    );
-
-    triggerRefs.current.forEach((el) => el && observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
+  const [activeStageIdx, setActiveStageIdx] = useState(0);
+  const activeStage = METHOD_STAGES[activeStageIdx];
 
   return (
-    <div className="relative h-[500vh] bg-slate-950">
-      
-      {/* Sticky Frame - Holds background and horizontal slides */}
-      <div className="sticky top-0 h-screen w-full overflow-hidden flex items-center">
+    <section id="method" className="w-full bg-gradient-to-b from-[#ffffff] via-[#f9faf9] to-[#ffffff] py-16 sm:py-24 border-b border-[#dde1dc]">
+      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         
-        {/* Persistent Background Image */}
-        <div className="absolute inset-0 w-full h-full -z-10 overflow-hidden">
-          <img
-            src="https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=1600&q=80"
-            alt="Aerial forest canopy"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-slate-950/90" />
+        {/* Section Heading */}
+        <div className="space-y-2 border-b border-[#dde1dc] pb-6">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono text-[#1f4d3a] font-semibold mb-1">
+            <Layers className="w-3 h-3 text-[#1f4d3a]" />
+            <span>RESEARCH METHODOLOGY</span>
+          </div>
+          <h2 className="text-[#1a1f1c] font-serif text-3xl sm:text-4xl font-semibold tracking-tight">
+            The bioacoustics research workflow
+          </h2>
+          <p className="text-[#5a635d] text-base leading-relaxed max-w-[680px]">
+            A systematic scientific protocol moving from acoustic sensor array deployment to verifiable empirical biodiversity records.
+          </p>
         </div>
 
-        {/* Horizontal Sliding Track - Animates between slides with a smooth pause/snap */}
-        <motion.div 
-          animate={{ x: `-${active * 100}vw` }}
-          transition={{ type: 'tween', ease: 'easeInOut', duration: 0.65 }}
-          className="flex w-[500%] h-full items-center"
-        >
-          {stages.map((stage, idx) => (
-            <div 
-              key={idx} 
-              className="w-screen h-full flex-shrink-0 flex items-center justify-center px-6 md:px-16"
-            >
-              <div className="max-w-7xl mx-auto w-full grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-                
-                {/* Left Column: Stage Text Content */}
-                <div className="space-y-6 text-left">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                      What We Provide
-                    </span>
-                    <div className="w-16 h-px bg-white/20" />
-                    <span className="text-[11px] font-black text-white/40 tabular-nums">
-                      {String(idx + 1).padStart(2, '0')} / {String(stages.length).padStart(2, '0')}
-                    </span>
-                  </div>
+        {/* Stage Selector Tabs */}
+        <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-[#dde1dc]">
+          {METHOD_STAGES.map((s, idx) => {
+            const isSelected = idx === activeStageIdx;
+            return (
+              <button
+                key={s.id}
+                onClick={() => setActiveStageIdx(idx)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
+                  isSelected
+                    ? 'bg-[#1f4d3a] text-white font-semibold shadow-sm scale-[1.02]'
+                    : 'bg-white text-[#5a635d] hover:text-[#1a1f1c] hover:bg-[#eaf3ee] border border-[#dde1dc]'
+                }`}
+              >
+                <span className={`font-mono text-[11px] ${isSelected ? 'text-emerald-300' : 'text-[#5a635d]'}`}>{s.number}</span>
+                <span>{s.title}</span>
+              </button>
+            );
+          })}
+        </div>
 
-                  <span className="block text-6xl md:text-8xl font-black text-white/10 leading-none">
-                    {String(idx + 1).padStart(2, '0')}
-                  </span>
-                  
-                  <h3 className="font-sans text-4xl md:text-6xl font-black text-white tracking-tight leading-[1.05]">
-                    {stage.title}
-                  </h3>
-                  
-                  <p className="text-base md:text-lg text-slate-200 font-medium leading-relaxed max-w-lg">
-                    {stage.body}
-                  </p>
-
-                  {/* Progress Indicators */}
-                  <div className="flex items-center gap-2 pt-4">
-                    {stages.map((_, i) => (
-                      <div
-                        key={i}
-                        className={`h-1.5 rounded-full transition-all duration-300 ${
-                          i === idx ? 'w-8 bg-emerald-400' : 'w-1.5 bg-white/25'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Right Column: Visual Component Card in Cream Style */}
-                <div className="relative h-[26rem] md:h-[32rem] rounded-[32px] bg-[#F5F2EB] border border-emerald-900/10 p-8 flex items-center justify-center overflow-hidden shadow-xl">
-                  <StageVisuals index={idx} />
-                </div>
-
+        {/* Active Stage Detailed Breakdown (2 Columns) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+          
+          {/* Left Column (6 cols): Stage Narrative & Protocol Checklist */}
+          <div className="lg:col-span-6 space-y-6">
+            
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#eaf3ee] text-[#1f4d3a] font-mono text-xs font-semibold uppercase tracking-wider border border-[#b8dbc8]">
+                STAGE {activeStage.number} &bull; {activeStage.subtitle}
               </div>
+              <h3 className="font-serif font-semibold text-2xl text-[#1a1f1c] leading-snug pt-1">
+                {activeStage.title}
+              </h3>
             </div>
-          ))}
-        </motion.div>
+
+            <p className="text-[#1a1f1c] text-base leading-[1.611]">
+              {activeStage.summary}
+            </p>
+
+            {/* Protocol checklist */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-[#f0f7f3] to-[#ffffff] border border-[#b8dbc8] space-y-3 shadow-2xs">
+              <div className="font-mono text-[11px] uppercase tracking-wider text-[#1f4d3a] font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#10b981]" />
+                <span>Protocol Standards &amp; Controls</span>
+              </div>
+              <ul className="space-y-2 text-xs text-[#1a1f1c] list-none p-0">
+                {activeStage.details.map((detail, dIdx) => (
+                  <li key={dIdx} className="flex items-start gap-2 leading-relaxed">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] mt-1.5 flex-shrink-0" />
+                    <span>{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Stage Quantitative Metrics Matrix */}
+            <div className="grid grid-cols-3 gap-3">
+              {activeStage.metrics.map((m, mIdx) => (
+                <div key={mIdx} className="p-3.5 rounded-xl bg-white border border-[#dde1dc] hover:border-[#1f4d3a] transition-all space-y-1 shadow-2xs">
+                  <span className="text-[10px] text-[#5a635d] font-mono block">{m.label}</span>
+                  <span className="font-semibold text-xs text-[#1a1f1c] block">{m.value}</span>
+                </div>
+              ))}
+            </div>
+
+          </div>
+
+          {/* Right Column (6 cols): Dedicated Interactive Stage Visual Component */}
+          <div className="lg:col-span-6 space-y-3">
+            <div className="rounded-2xl border border-[#dde1dc] bg-[#ffffff] p-5 shadow-sm">
+              <StageVisualInteractive stageIndex={activeStageIdx} />
+            </div>
+            <figcaption className="caption-text text-xs text-[#5a635d]">
+              {activeStage.subtitle} protocol specification and diagnostic schematic.
+            </figcaption>
+          </div>
+
+        </div>
 
       </div>
-
-      {/* Invisible triggers layered vertically to drive active state transitions during scroll */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
-        {stages.map((_, i) => (
-          <div
-            key={i}
-            ref={(el) => { triggerRefs.current[i] = el; }}
-            data-index={i}
-            className="h-screen w-full"
-          />
-        ))}
-      </div>
-
-    </div>
+    </section>
   );
 }
 
-function StageVisuals({ index }: { index: number }) {
-  if (index === 0) {
-    // Study Design: Map with recorders appearing one by one
-    const loop = { duration: 4.5, repeat: Infinity, ease: 'easeInOut' as const };
-
-    const pinPositions = [
-      { x: 50, y: 95, delay: 0.0 },
-      { x: 105, y: 110, delay: 0.1 },
-    ];
-
+function StageVisualInteractive({ stageIndex }: { stageIndex: number }) {
+  if (stageIndex === 0) {
+    // Stage 1: Spatial Transect Deployment Map
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 200 200" className="w-80 h-80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs font-mono text-[#5a635d] border-b border-[#dde1dc] pb-2">
+          <span className="flex items-center gap-1.5 text-[#1a1f1c] font-semibold">
+            <MapPin className="w-3.5 h-3.5 text-[#1f4d3a]" />
+            ELEVATION TRANSECT MAPPING
+          </span>
+          <span>CRS: EPSG:4326</span>
+        </div>
 
-          {/* Folded faded-yellow map */}
-          <g>
-            {/* Map base */}
-            <path
-              d="M 40 60 L 80 45 L 120 60 L 160 45 L 160 125 L 120 140 L 80 125 L 40 140 Z"
-              fill="#F7E7A3"
-              stroke="#0F3A20"
-              strokeWidth="2"
-              strokeLinejoin="round"
-            />
-            {/* Fold lines */}
-            <line x1="80" y1="45" x2="80" y2="125" stroke="rgba(15,58,32,0.15)" strokeWidth="1.5" />
-            <line x1="120" y1="60" x2="120" y2="140" stroke="rgba(15,58,32,0.15)" strokeWidth="1.5" />
+        <div className="relative h-48 rounded-xl bg-[#f5f6f4] border border-[#dde1dc] overflow-hidden p-4">
+          <svg viewBox="0 0 320 160" className="w-full h-full" fill="none">
+            {/* Topo contour lines */}
+            <path d="M 0 130 C 80 90 160 140 240 90 C 280 65 300 80 320 50" stroke="#dde1dc" strokeWidth="1.5" />
+            <path d="M 0 85 C 80 55 160 95 240 55 C 280 35 300 45 320 20" stroke="#dde1dc" strokeWidth="1.5" />
+            
+            {/* Transect line */}
+            <line x1="40" y1="120" x2="280" y2="35" stroke="#1f4d3a" strokeWidth="2" strokeDasharray="4 4" />
 
-            {/* Gray hills */}
-            <path d="M 55 75 L 75 50 L 95 75 Z" fill="#94A3B8" stroke="#0F3A20" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 75 75 L 100 45 L 125 75 Z" fill="#CBD5E1" stroke="#0F3A20" strokeWidth="1.5" strokeLinejoin="round" />
-
-            {/* Blue pond */}
-            <ellipse cx="100" cy="120" rx="14" ry="8" fill="#60A5FA" stroke="#0F3A20" strokeWidth="1.5" />
-
-            {/* Trees in blank spaces */}
+            {/* Recorders with 250m Buffer Radii */}
             {[
-              { x: 55, y: 125 },
-              { x: 55, y: 110 },
-              { x: 130, y: 100 },
-              { x: 140, y: 125 },
-              { x: 145, y: 60 },
-            ].map((pos, i) => (
-              <g key={i} transform={`translate(${pos.x}, ${pos.y})`}>
-                <line x1="0" y1="0" x2="0" y2="6" stroke="#0F3A20" strokeWidth="1.5" />
-                <path d="M -7 0 L 0 -12 L 7 0 Z" fill="#10B981" stroke="#0F3A20" strokeWidth="1.5" strokeLinejoin="round" />
+              { cx: 40, cy: 120, label: 'NL-01 (620m)' },
+              { cx: 120, cy: 90, label: 'NL-02 (1,150m)' },
+              { cx: 200, cy: 60, label: 'NL-03 (1,840m)' },
+              { cx: 280, cy: 35, label: 'NL-04 (2,120m)' },
+            ].map((node, i) => (
+              <g key={i}>
+                <circle cx={node.cx} cy={node.cy} r="22" fill="rgba(31, 77, 58, 0.08)" stroke="#1f4d3a" strokeWidth="1" strokeDasharray="2 2" />
+                <circle cx={node.cx} cy={node.cy} r="4" fill="#1f4d3a" />
+                <text x={node.cx - 20} y={node.cy + 16} fill="#1a1f1c" fontSize="8" fontFamily="IBM Plex Mono" fontWeight="600">{node.label}</text>
               </g>
             ))}
-          </g>
+          </svg>
+        </div>
 
-          {/* Recorder pins appearing one by one */}
-          {pinPositions.map((pin) => {
-            const appear = 0.1 + pin.delay;
-            const settle = appear + 0.05;
-            const leave = 0.7;
-            const gone = 0.75;
-            return (
-              <motion.g
-                key={`${pin.x}-${pin.y}`}
-                initial={{ x: pin.x, y: pin.y - 20, opacity: 0 }}
-                animate={{
-                  x: pin.x,
-                  y: [pin.y - 20, pin.y - 20, pin.y, pin.y, pin.y - 20, pin.y - 20],
-                  opacity: [0, 0, 1, 1, 0, 0],
-                }}
-                transition={{
-                  ...loop,
-                  ease: 'backOut' as const,
-                  times: [0, appear, settle, leave, gone, 1],
-                }}
-              >
-                <path
-                  d="M 0 0 C -5 -8 -12 -16 -12 -24 C -12 -34 -7 -40 0 -40 C 7 -40 12 -34 12 -24 C 12 -16 5 -8 0 0 Z"
-                  fill="#DC2626"
-                  stroke="#0F3A20"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-                <circle cx="0" cy="-24" r="4" fill="#FFFFFF" stroke="#0F3A20" strokeWidth="1.5" />
-              </motion.g>
-            );
-          })}
-        </svg>
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#5a635d]">
+          <div className="p-2 rounded bg-[#f5f6f4]">Grid spacing: 250m acoustic radius</div>
+          <div className="p-2 rounded bg-[#f5f6f4]">Elevation: 620m – 2,120m Shola</div>
+        </div>
       </div>
     );
   }
 
-  if (index === 1) {
-    // Data Collection: Custom geometric origami bird emitting waves to a curved rectangular recorder (wider layout)
-    const loopTransition = {
-      duration: 5,
-      repeat: Infinity,
-      ease: "linear" as const,
-    };
-
+  if (stageIndex === 1) {
+    // Stage 2: Lossless WAV Ingest & Audio Buffer Schematic
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 200 200" className="w-80 h-80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs font-mono text-[#5a635d] border-b border-[#dde1dc] pb-2">
+          <span className="flex items-center gap-1.5 text-[#1a1f1c] font-semibold">
+            <Radio className="w-3.5 h-3.5 text-[#1f4d3a]" />
+            LOSSLESS WAV INGESTION ENGINE
+          </span>
+          <span>48 kHz / 24-bit</span>
+        </div>
 
-          {/* Green origami bird on the Left */}
-          <g transform="translate(4, 28) scale(0.2)">
-            <polygon points="66,79 315,273 185,352" fill="#7ed492" stroke="#0F3A20" strokeWidth="3" strokeLinejoin="round" />
-            <polygon points="319,191 403,235 315,244" fill="#4fa862" stroke="#0F3A20" strokeWidth="3" strokeLinejoin="round" />
-            <polygon points="39,440 319,191 315,273" fill="#245530" stroke="#0F3A20" strokeWidth="3" strokeLinejoin="round" />
-            <polygon points="315,273 194,345 118,40" fill="#2f6b3c" stroke="#0F3A20" strokeWidth="3" strokeLinejoin="round" />
-          </g>
+        <div className="p-4 rounded-xl bg-[#f5f6f4] border border-[#dde1dc] space-y-3">
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-[#5a635d]">Audio Stream Amplitude</span>
+            <span className="font-semibold text-[#1f4d3a]">2.3 GB / Day / Site</span>
+          </div>
 
-          {/* Sound Wave Ripples (Emerging from beak at x=85, y=78 and traveling to x=150) */}
-          <g>
-            {/* Arc 1 */}
-            <motion.path
-              d="M 90 72 A 8 8 0 0 1 90 84"
-              animate={{
-                x: [0, 65],
-                opacity: [0, 1, 1, 0],
-              }}
-              transition={{
-                duration: 5,
-                repeat: Infinity,
-                times: [0, 0.08, 0.32, 0.36],
-                ease: "linear",
-              }}
-              stroke="#10B981"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-            {/* Arc 2 */}
-            <motion.path
-              d="M 95 67 A 14 14 0 0 1 95 89"
-              animate={{
-                x: [0, 65],
-                opacity: [0, 0, 1, 1, 0],
-              }}
-              transition={{
-                duration: 5,
-                repeat: Infinity,
-                times: [0, 0.06, 0.14, 0.38, 0.42],
-                ease: "linear",
-              }}
-              stroke="#10B981"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            {/* Arc 3 */}
-            <motion.path
-              d="M 100 62 A 20 20 0 0 1 100 94"
-              animate={{
-                x: [0, 65],
-                opacity: [0, 0, 1, 1, 0],
-              }}
-              transition={{
-                duration: 5,
-                repeat: Infinity,
-                times: [0, 0.12, 0.2, 0.44, 0.48],
-                ease: "linear",
-              }}
-              stroke="#10B981"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </g>
+          <div className="flex items-end gap-1 h-20 bg-white p-2 rounded-lg border border-[#dde1dc]">
+            {[25, 40, 80, 55, 95, 30, 60, 90, 45, 75, 100, 35, 65, 85, 40, 70, 90, 50, 80, 30].map((h, i) => (
+              <div key={i} className="flex-1 bg-[#1f4d3a] rounded-t-sm" style={{ height: `${h}%` }} />
+            ))}
+          </div>
 
-          {/* PAM (Passive Acoustic Monitoring) Field Recorder (Right side, wider spacing at x=150) */}
-          <g>
-            {/* Top strap mounting loop */}
-            <rect x="164" y="48" width="14" height="10" rx="3" fill="none" stroke="#0F3A20" strokeWidth="2.5" />
+          <div className="flex justify-between text-[11px] font-mono text-[#5a635d]">
+            <span>Dawn: 05:30–08:30 IST</span>
+            <span>Dusk: 18:00–20:00 IST</span>
+          </div>
+        </div>
 
-            {/* Weatherproof outer casing */}
-            <rect x="148" y="56" width="46" height="86" rx="8" fill="#DCD4B8" stroke="#0F3A20" strokeWidth="2.5" />
-
-            {/* Corner screws */}
-            <circle cx="154" cy="62" r="1.8" fill="#0F3A20" />
-            <circle cx="188" cy="62" r="1.8" fill="#0F3A20" />
-            <circle cx="154" cy="136" r="1.8" fill="#0F3A20" />
-            <circle cx="188" cy="136" r="1.8" fill="#0F3A20" />
-
-            {/* Circular microphone grille */}
-            <circle cx="171" cy="82" r="15" fill="#F5F2EB" stroke="#0F3A20" strokeWidth="2" />
-            <circle cx="171" cy="82" r="11" fill="none" stroke="#0F3A20" strokeWidth="1" />
-            <circle cx="171" cy="82" r="7" fill="none" stroke="#0F3A20" strokeWidth="1" />
-            {/* Mic grille dot pattern */}
-            {[-6, 0, 6].flatMap((dx) =>
-              [-6, 0, 6].map((dy) => (
-                <circle key={`${dx}-${dy}`} cx={171 + dx} cy={82 + dy} r="1" fill="#0F3A20" />
-              ))
-            )}
-
-            {/* Side vent slats */}
-            <line x1="152" y1="102" x2="158" y2="102" stroke="#0F3A20" strokeWidth="1.5" />
-            <line x1="152" y1="106" x2="158" y2="106" stroke="#0F3A20" strokeWidth="1.5" />
-            <line x1="152" y1="110" x2="158" y2="110" stroke="#0F3A20" strokeWidth="1.5" />
-            <line x1="184" y1="102" x2="190" y2="102" stroke="#0F3A20" strokeWidth="1.5" />
-            <line x1="184" y1="106" x2="190" y2="106" stroke="#0F3A20" strokeWidth="1.5" />
-            <line x1="184" y1="110" x2="190" y2="110" stroke="#0F3A20" strokeWidth="1.5" />
-
-            {/* Status LED, blinks green when the bird call wave arrives */}
-            <motion.rect
-              x="165"
-              y="119"
-              width="12"
-              height="8"
-              rx="3"
-              animate={{
-                fill: ['#94A3B8', '#94A3B8', '#10B981', '#10B981', '#94A3B8', '#94A3B8'],
-              }}
-              transition={{
-                duration: 5,
-                repeat: Infinity,
-                times: [0, 0.32, 0.36, 0.84, 0.92, 1.0],
-                ease: 'linear',
-              }}
-              stroke="#0F3A20"
-              strokeWidth="1"
-            />
-
-            {/* Bottom strap mounting loop */}
-            <rect x="164" y="140" width="14" height="10" rx="3" fill="none" stroke="#0F3A20" strokeWidth="2.5" />
-          </g>
-        </svg>
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#5a635d]">
+          <div className="p-2 rounded bg-[#f5f6f4]">Checksum: SHA-256 Verified</div>
+          <div className="p-2 rounded bg-[#f5f6f4]">Archival: Dual Cloud Storage</div>
+        </div>
       </div>
     );
   }
 
-  if (index === 2) {
-    // Analysis: Magnifying glass scanning over equalizer-style dancing vertical soundwave bars
-    const barsX = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180];
-    const baseHeights = [20, 35, 50, 45, 30, 65, 75, 40, 30, 50, 80, 65, 40, 55, 70, 45, 20];
-
-    // Generate cyclic offset height keyframes for each bar
-    const getBarKeyframes = (i: number, baseH: number) => {
-      const factors = [0.4, 1.1, 0.6, 1.3, 0.5, 0.9, 0.4];
-      const y1 = factors.map(f => 110 - (baseH * f) / 2);
-      const y2 = factors.map(f => 110 + (baseH * f) / 2);
-      const shift = i % factors.length;
-      return {
-        y1: [...y1.slice(shift), ...y1.slice(0, shift)],
-        y2: [...y2.slice(shift), ...y2.slice(0, shift)]
-      };
-    };
-
-    // Glass scanning transition (scans back and forth horizontally)
-    const scanTransition = {
-      duration: 6,
-      repeat: Infinity,
-      repeatType: "mirror" as const,
-      ease: "easeInOut",
-    };
-
+  if (stageIndex === 2) {
+    // Stage 3: Neural Bioacoustic AI Identification
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 200 200" className="w-80 h-80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            {/* Dynamic Clip Path: moving circular mask for the magnifying glass lens (direct attribute animation) */}
-            <clipPath id="magnifyClip">
-              <motion.circle
-                r="28"
-                animate={{
-                  cx: [50, 150],
-                  cy: [110, 122, 98, 122, 98, 110]
-                }}
-                transition={scanTransition}
-              />
-            </clipPath>
-          </defs>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs font-mono text-[#5a635d] border-b border-[#dde1dc] pb-2">
+          <span className="flex items-center gap-1.5 text-[#1a1f1c] font-semibold">
+            <Cpu className="w-3.5 h-3.5 text-[#1f4d3a]" />
+            NEURAL CLASSIFIER INFERENCE
+          </span>
+          <span className="text-[#1f4d3a] font-semibold">BirdNET v2.4</span>
+        </div>
 
+        <div className="p-4 rounded-xl bg-[#f5f6f4] border border-[#dde1dc] space-y-3">
+          <div className="flex justify-between text-xs font-mono">
+            <span>Harmonic Detection Matrix</span>
+            <span>Sliding Window: 3.0s</span>
+          </div>
 
-          {/* Background Equalizer Waveform Bars (thin, semi-transparent forest green) */}
-          {barsX.map((x, i) => {
-            const keyframes = getBarKeyframes(i, baseHeights[i]);
-            return (
-              <motion.line
-                key={`bg-bar-${i}`}
-                x1={x}
-                y1={keyframes.y1[0]}
-                x2={x}
-                y2={keyframes.y2[0]}
-                animate={{
-                  y1: keyframes.y1,
-                  y2: keyframes.y2,
-                }}
-                transition={{
-                  duration: 2.0,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                stroke="rgba(15, 58, 32, 0.25)"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-              />
-            );
-          })}
+          <div className="p-3 bg-white rounded-lg border border-[#dde1dc] space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-xs text-[#1a1f1c]">Nilgiri Laughingthrush</div>
+                <div className="font-serif italic text-[11px] text-[#5a635d]">Trochalopteron cachinnans</div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-[#eaf2ed] text-[#1f4d3a] border border-[#b7d6c3]">
+                Score: 0.942
+              </span>
+            </div>
+            <div className="w-full bg-[#f5f6f4] h-2 rounded-full overflow-hidden">
+              <div className="bg-[#1f4d3a] h-full rounded-full" style={{ width: '94.2%' }} />
+            </div>
+          </div>
+        </div>
 
-          {/* Highlighted Equalizer Waveform Bars (thick, bright emerald, visible inside magnifying glass only) */}
-          <g clipPath="url(#magnifyClip)">
-            {barsX.map((x, i) => {
-              const keyframes = getBarKeyframes(i, baseHeights[i]);
-              return (
-                <motion.line
-                  key={`fg-bar-${i}`}
-                  x1={x}
-                  y1={keyframes.y1[0]}
-                  x2={x}
-                  y2={keyframes.y2[0]}
-                  animate={{
-                    y1: keyframes.y1,
-                    y2: keyframes.y2,
-                  }}
-                  transition={{
-                    duration: 2.0,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  stroke="#10B981"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                />
-              );
-            })}
-          </g>
-
-          {/* Scanning Magnifying Glass components (following same scan transition with direct attributes) */}
-          <g>
-            {/* Handle shadow/outline */}
-            <motion.line
-              animate={{
-                x1: [70, 170],
-                y1: [130, 142, 118, 142, 118, 130],
-                x2: [105, 205],
-                y2: [165, 177, 153, 177, 153, 165]
-              }}
-              transition={scanTransition}
-              stroke="#0F3A20"
-              strokeWidth="6"
-              strokeLinecap="round"
-            />
-            {/* Outer frame */}
-            <motion.circle
-              r="32"
-              animate={{
-                cx: [50, 150],
-                cy: [110, 122, 98, 122, 98, 110]
-              }}
-              transition={scanTransition}
-              stroke="#0F3A20"
-              strokeWidth="3.5"
-              fill="rgba(16, 185, 129, 0.04)"
-            />
-            {/* Inner lens border reflection */}
-            <motion.circle
-              r="28"
-              animate={{
-                cx: [50, 150],
-                cy: [110, 122, 98, 122, 98, 110]
-              }}
-              transition={scanTransition}
-              stroke="rgba(15, 58, 32, 0.15)"
-              strokeWidth="1"
-            />
-          </g>
-        </svg>
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#5a635d]">
+          <div className="p-2 rounded bg-[#f5f6f4]">Threshold: Score ≥ 0.80</div>
+          <div className="p-2 rounded bg-[#f5f6f4]">Verification: Expert Queue</div>
+        </div>
       </div>
     );
   }
 
-  if (index === 3) {
-    // Graphical Insights: Multi-stage line chart animation with scattered points, active bouncing, staggered lock-in, and late line connection (uniform speed)
-    const dotX = [20, 46.67, 73.33, 100, 126.67, 153.33, 180];
-    const scatteredY = [110, 100, 60, 120, 105, 45, 40];
-    const chartY = [135, 122, 118, 85, 100, 98, 65];
-    const baselineY = 160;
-
-    // Generate 96 uniform samples from 0.0s to 9.5s with exactly 0.1s steps
-    // This ensures a 100% constant, uniform speed throughout the loop
-    const timeSamples: number[] = [];
-    for (let t = 0; t <= 9.5; t += 0.1) {
-      timeSamples.push(Math.round(t * 10) / 10);
-    }
-
-    const getFinalSequenceY = (i: number, t: number) => {
-      // 0.0s - 1.0s: Baseline y = 160
-      if (t <= 1.0) return baselineY;
-      
-      // 9.0s - 9.5s: Reset back to baselineY
-      if (t >= 9.0) {
-        const ratio = (t - 9.0) / 0.5;
-        return chartY[i] + (baselineY - chartY[i]) * ratio;
-      }
-
-      // Active bouncing calculation (deterministic simulation of random bouncing above baseline)
-      const bounceY = baselineY - Math.abs(40 + 50 * Math.sin(4.5 * t + i * 1.7) * Math.sin(2.8 * t - i * 0.9));
-
-      // 1.0s - 2.5s: Transition from baseline to bouncing state
-      if (t > 1.0 && t < 2.5) {
-        const ratio = (t - 1.0) / 1.5;
-        return baselineY + (bounceY - baselineY) * ratio;
-      }
-
-      // 2.5s - 5.5s: Staggered settle (locked in one-by-one, others continue to bounce)
-      const settleTime = 2.5 + i * 0.5;
-      if (t >= 2.5 && t < 5.5) {
-        if (t >= settleTime) return chartY[i];
-        return bounceY;
-      }
-
-      // 5.5s onwards: all points are settled at chartY
-      return chartY[i];
-    };
-
-    // Generate keyframes for each dot
-    const dotKeyframes = dotX.map((_, i) => {
-      return timeSamples.map(t => getFinalSequenceY(i, t));
-    });
-
-    const linePaths: string[] = [];
-    const areaPaths: string[] = [];
-    const areaOpacities: number[] = [];
-    const lineOpacities: number[] = [];
-
-    for (let step = 0; step < timeSamples.length; step++) {
-      const t = timeSamples[step];
-      const stepY = dotX.map((_, i) => dotKeyframes[i][step]);
-      
-      const pathStr = stepY.reduce((acc, y, i) => {
-        return acc + (i === 0 ? `M ${dotX[i]} ${y}` : ` L ${dotX[i]} ${y}`);
-      }, "");
-      linePaths.push(pathStr);
-
-      const areaPathStr = pathStr + ` L 180 160 L 20 160 Z`;
-      areaPaths.push(areaPathStr);
-
-      // Line and area are hidden (opacity = 0) until all points settle at their final positions (t < 5.5).
-      // They fade in between 5.5s and 7.0s, then hold complete (for 2 seconds: 7.0s to 9.0s), then reset to 0.
-      const isMovingOrScattered = t <= 5.5;
-      const isFullChart = t >= 7.0 && t <= 9.0;
-      const isReset = t >= 9.0;
-
-      // Line connecting fade in
-      if (isMovingOrScattered || isReset) {
-        lineOpacities.push(0);
-      } else if (isFullChart) {
-        lineOpacities.push(1);
-      } else {
-        // Fade in: t goes from 5.5 to 7.0
-        const ratio = (t - 5.5) / 1.5;
-        lineOpacities.push(ratio);
-      }
-
-      // Area fill fade in (starts slightly after line connects)
-      if (t <= 6.0 || isReset) {
-        areaOpacities.push(0);
-      } else if (isFullChart) {
-        areaOpacities.push(1);
-      } else {
-        // Fade in: t goes from 6.0 to 7.0
-        const ratio = (t - 6.0) / 1.0;
-        areaOpacities.push(ratio);
-      }
-    }
-
-    const times = timeSamples.map(t => t / 9.5);
-    const duration = 13;
-    const loopTransition = {
-      duration,
-      ease: "linear",
-      times,
-      repeat: Infinity,
-      repeatType: "loop" as const,
-    };
-
-    const blueTeal = "#0F4C5C";
-
+  if (stageIndex === 3) {
+    // Stage 4: Empirical Biodiversity Metrics
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 200 200" className="w-80 h-80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={blueTeal} stopOpacity="0.4" />
-              <stop offset="100%" stopColor={blueTeal} stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs font-mono text-[#5a635d] border-b border-[#dde1dc] pb-2">
+          <span className="flex items-center gap-1.5 text-[#1a1f1c] font-semibold">
+            <BarChart3 className="w-3.5 h-3.5 text-[#1f4d3a]" />
+            EMPIRICAL BIODIVERSITY INVENTORY
+          </span>
+          <span>Observed Metrics</span>
+        </div>
 
-          {/* Area Fill */}
-          <motion.path
-            d={areaPaths[0]}
-            animate={{
-              d: areaPaths,
-              opacity: areaOpacities,
-            }}
-            transition={loopTransition}
-            fill="url(#chartGradient)"
-          />
+        <div className="p-4 rounded-xl bg-[#f5f6f4] border border-[#dde1dc] space-y-3">
+          <div className="flex justify-between text-xs font-mono text-[#5a635d]">
+            <span>Observed Species Richness</span>
+            <span className="font-semibold text-[#1a1f1c]">64 Verified Taxa</span>
+          </div>
 
-          {/* Connecting Line */}
-          <motion.path
-            d={linePaths[0]}
-            animate={{
-              d: linePaths,
-              opacity: lineOpacities,
-            }}
-            transition={loopTransition}
-            stroke={blueTeal}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          {/* Clean Diurnal Activity Bars */}
+          <div className="space-y-1.5 bg-white p-3 rounded-lg border border-[#dde1dc] font-mono text-xs">
+            <div className="flex justify-between text-[11px] text-[#5a635d]">
+              <span>Dawn Chorus (05:00–09:00)</span>
+              <span className="font-semibold text-[#1f4d3a]">3,420 Detections</span>
+            </div>
+            <div className="w-full bg-[#f5f6f4] h-2.5 rounded-full overflow-hidden">
+              <div className="bg-[#1f4d3a] h-full rounded-full" style={{ width: '85%' }} />
+            </div>
 
-          {/* Animated Dots */}
-          {dotX.map((x, i) => (
-            <motion.circle
-              key={i}
-              cx={x}
-              animate={{
-                cy: dotKeyframes[i],
-                opacity: timeSamples.map(t => (t >= 9.5 ? 0 : 1)),
-              }}
-              transition={loopTransition}
-              r="5.5"
-              fill={blueTeal}
-            />
-          ))}
-        </svg>
+            <div className="flex justify-between text-[11px] text-[#5a635d] pt-1">
+              <span>Mid-Day (10:00–16:00)</span>
+              <span className="font-semibold text-[#1a1f1c]">840 Detections</span>
+            </div>
+            <div className="w-full bg-[#f5f6f4] h-2.5 rounded-full overflow-hidden">
+              <div className="bg-[#5a635d] h-full rounded-full" style={{ width: '25%' }} />
+            </div>
+
+            <div className="flex justify-between text-[11px] text-[#5a635d] pt-1">
+              <span>Dusk (17:00–20:00)</span>
+              <span className="font-semibold text-[#1f4d3a]">1,890 Detections</span>
+            </div>
+            <div className="w-full bg-[#f5f6f4] h-2.5 rounded-full overflow-hidden">
+              <div className="bg-[#1f4d3a] h-full rounded-full" style={{ width: '52%' }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#5a635d]">
+          <div className="p-2 rounded bg-[#f5f6f4]">Indices: Observed Richness</div>
+          <div className="p-2 rounded bg-[#f5f6f4]">Temporal: Hourly Resolution</div>
+        </div>
       </div>
     );
   }
 
-  if (index === 4) {
-    // Reporting: Enlarged report sheet (larger scale) with dynamic moving line graph and expanding text lines (no green arrow)
-    const lineTransition = {
-      duration: 3,
-      repeat: Infinity,
-      repeatType: "reverse" as const,
-      ease: "easeInOut",
-    };
-
-    const graphTransition = {
-      duration: 5,
-      repeat: Infinity,
-      repeatType: "mirror" as const,
-      ease: "easeInOut",
-    };
-
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 200 200" className="w-80 h-80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="reportGraphGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10B981" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
-
-
-          {/* Report Sheet (Enlarged to 140x180) */}
-          <rect x="30" y="10" width="140" height="180" rx="6" fill="#FFFFFF" stroke="#0F3A20" strokeWidth="2.5" />
-          
-          {/* Top header layout */}
-          <rect x="42" y="25" width="60" height="8" rx="2" fill="#0F3A20" />
-          
-          {/* Graph box container inside report */}
-          <rect x="42" y="42" width="116" height="60" rx="4" fill="#F5F2EB" stroke="#0F3A20" strokeWidth="1.5" />
-
-          {/* Moving Line Graph - Area Fill */}
-          <motion.path
-            d="M 46 100 L 46 85 L 62 70 L 82 90 L 102 55 L 122 75 L 142 65 L 154 80 L 154 100 Z"
-            animate={{
-              d: [
-                "M 46 100 L 46 85 L 62 70 L 82 90 L 102 55 L 122 75 L 142 65 L 154 80 L 154 100 Z",
-                "M 46 100 L 46 75 L 62 85 L 82 60 L 102 80 L 122 55 L 142 70 L 154 65 L 154 100 Z",
-                "M 46 100 L 46 80 L 62 65 L 82 75 L 102 70 L 122 85 L 142 60 L 154 75 L 154 100 Z"
-              ]
-            }}
-            transition={graphTransition}
-            fill="url(#reportGraphGradient)"
-          />
-
-          {/* Moving Line Graph - Stroke Line */}
-          <motion.path
-            d="M 46 85 L 62 70 L 82 90 L 102 55 L 122 75 L 142 65 L 154 80"
-            animate={{
-              d: [
-                "M 46 85 L 62 70 L 82 90 L 102 55 L 122 75 L 142 65 L 154 80",
-                "M 46 75 L 62 85 L 82 60 L 102 80 L 122 55 L 142 70 L 154 65",
-                "M 46 80 L 62 65 L 82 75 L 102 70 L 122 85 L 142 60 L 154 75"
-              ]
-            }}
-            transition={graphTransition}
-            stroke="#10B981"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
-          {/* Text lines beneath graph (animating width with stable left side, straight and parallel) */}
-          <motion.line
-            x1="42"
-            y1="117"
-            y2="117"
-            x2="158"
-            animate={{ x2: [120, 158, 100, 140, 120] }}
-            transition={{ ...lineTransition, delay: 0.1 }}
-            stroke="#0F3A20"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <motion.line
-            x1="42"
-            y1="131"
-            y2="131"
-            x2="150"
-            animate={{ x2: [140, 90, 150, 110, 140] }}
-            transition={{ ...lineTransition, delay: 0.3 }}
-            stroke="#0F3A20"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <motion.line
-            x1="42"
-            y1="145"
-            y2="145"
-            x2="158"
-            animate={{ x2: [100, 150, 110, 140, 100] }}
-            transition={{ ...lineTransition, delay: 0.5 }}
-            stroke="#0F3A20"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <motion.line
-            x1="42"
-            y1="159"
-            y2="159"
-            x2="140"
-            animate={{ x2: [140, 110, 150, 95, 140] }}
-            transition={{ ...lineTransition, delay: 0.7 }}
-            stroke="#0F3A20"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          
-          {/* Little handwritten check mark */}
-          <path d="M 140 28 L 144 33 L 153 23" stroke="#10B981" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-        </svg>
+  // Stage 5: Auditable Reporting
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between text-xs font-mono text-[#5a635d] border-b border-[#dde1dc] pb-2">
+        <span className="flex items-center gap-1.5 text-[#1a1f1c] font-semibold">
+          <FileText className="w-3.5 h-3.5 text-[#1f4d3a]" />
+          CONSERVATION AUDIT DOSSIER
+        </span>
+        <span className="text-[#1f4d3a] font-semibold">AUDITED</span>
       </div>
-    );
-  }
 
-  return null;
+      <div className="p-4 rounded-xl bg-[#f5f6f4] border border-[#dde1dc] space-y-3 font-sans">
+        <div className="p-3 bg-white rounded-lg border border-[#dde1dc] space-y-2">
+          <div className="flex items-center justify-between border-b border-[#dde1dc] pb-2">
+            <div>
+              <div className="font-semibold text-xs text-[#1a1f1c]">Lantana Removal Ecological Audit</div>
+              <div className="font-mono text-[10px] text-[#5a635d]">Report ID: BIO-2026-TN04</div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#eaf2ed] text-[#1f4d3a]">
+              Validated
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <span className="text-[10px] text-[#5a635d] block">Cleared Sites:</span>
+              <strong className="text-[#1f4d3a]">48 Species Recorded</strong>
+            </div>
+            <div>
+              <span className="text-[10px] text-[#5a635d] block">Infested Sites:</span>
+              <strong className="text-[#1a1f1c]">22 Species Recorded</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-xs text-[#5a635d] leading-relaxed">
+          &ldquo;Significant increase in understory insectivorous and ground-foraging bird vocal activity across restored native forest corridors.&rdquo;
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#5a635d]">
+        <div className="p-2 rounded bg-[#f5f6f4]">Delivery: Forest Department</div>
+        <div className="p-2 rounded bg-[#f5f6f4]">Archival: Open Research DOI</div>
+      </div>
+    </div>
+  );
 }

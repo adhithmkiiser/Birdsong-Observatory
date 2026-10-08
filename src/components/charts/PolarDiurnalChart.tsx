@@ -22,24 +22,24 @@ export function PolarDiurnalChart({ hourlyData, totalDetections }: PolarDiurnalC
   const option = {
     tooltip: {
       trigger: 'item',
-      formatter: (params: any) => `${params.name}: <strong>${params.value}</strong> detections`
+      formatter: (params: any) => `<div style="font-family:Inter,sans-serif;padding:2px 4px"><span style="font-weight:600">${params.name}:</span> <strong style="color:#1f4d3a">${params.value} calls</strong></div>`
     },
     angleAxis: {
       type: 'category',
       data: hoursLabels,
       startAngle: 90,
       clockwise: true,
-      axisLine: { lineStyle: { color: '#cbd5e1' } },
-      axisLabel: { color: '#475569', fontSize: 11, fontWeight: 'bold' }
+      axisLine: { lineStyle: { color: '#dde1dc' } },
+      axisLabel: { color: '#5a635d', fontSize: 10, fontWeight: 600 }
     },
     radiusAxis: {
       min: 0,
       axisLine: { show: false },
       axisLabel: { show: false },
-      splitLine: { lineStyle: { color: '#f1f5f9' } }
+      splitLine: { lineStyle: { color: '#f0f4f1' } }
     },
     polar: {
-      radius: '70%'
+      radius: '72%'
     },
     series: [
       {
@@ -48,7 +48,7 @@ export function PolarDiurnalChart({ hourlyData, totalDetections }: PolarDiurnalC
           value: val,
           name: hoursLabels[idx],
           itemStyle: {
-            color: val > 0 ? '#2e7d32' : 'transparent',
+            color: val > 0 ? '#1f4d3a' : 'transparent',
             borderRadius: [4, 4, 0, 0]
           }
         })),
@@ -59,12 +59,12 @@ export function PolarDiurnalChart({ hourlyData, totalDetections }: PolarDiurnalC
   };
 
   return (
-    <div className="w-full flex flex-col items-center font-sans space-y-2">
+    <div className="w-full flex flex-col items-center font-sans space-y-3">
       <div className="w-full h-[320px]">
         <ReactECharts option={option} style={{ height: '100%', width: '100%' }} />
       </div>
-      <div className="text-xs font-black text-slate-700 bg-slate-100 px-4 py-1.5 rounded-full border border-slate-200">
-        Total Detect: <span className="text-emerald-700 font-mono font-black text-sm">{totalDetections}</span>
+      <div className="text-xs font-mono font-semibold text-[#1f4d3a] bg-[#f0f7f3] px-3.5 py-1.5 rounded-lg border border-[#dde1dc]">
+        Total Detections: <span className="font-bold font-mono text-sm ml-1 text-[#1f4d3a]">{totalDetections.toLocaleString()}</span>
       </div>
     </div>
   );

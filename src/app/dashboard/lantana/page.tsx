@@ -8,8 +8,30 @@ import { useRole } from '@/components/layout/RoleContext';
 // ─── Client-only imports to avoid SSR issues ────────────────────────────────
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 const LantanaMap = dynamic(() => import('@/components/map/LantanaMap'), { ssr: false });
-import AnalysisCharts from './AnalysisCharts';
+import AnalysisCharts, { AnalysisChartsHandle } from './AnalysisCharts';
 import DashboardLoader from '@/components/ui/DashboardLoader';
+
+import { 
+  LayoutDashboard, 
+  MapPin, 
+  Grid, 
+  BarChart3, 
+  Search, 
+  Leaf, 
+  LineChart, 
+  Download, 
+  ChevronRight, 
+  Activity, 
+  Layers,
+  Sparkles,
+  Volume2,
+  SlidersHorizontal,
+  Compass,
+  ArrowUpRight,
+  TrendingUp,
+  Radio,
+  Sliders
+} from 'lucide-react';
 
 // ─── Exact Audio Player replication from BirdSearch.tsx ──────────────────────
 const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, speciesName }) => {
@@ -50,7 +72,7 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
   };
 
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const sliderBg = `linear-gradient(to right, #4f46e5 ${pct}%, #e2e8f0 ${pct}%)`;
+  const sliderBg = `linear-gradient(to right, #1f4d3a ${pct}%, #e2e8f0 ${pct}%)`;
 
   return (
     <div className={`audio-player-card${!src ? ' disabled' : ''}`}>
@@ -76,7 +98,7 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
         </button>
 
         <div className="player-details">
-          <span className="player-subtitle">{src ? speciesName : 'From Xenocanto'}</span>
+          <span className="player-subtitle">{src ? speciesName : 'Audio from Xenocanto'}</span>
           {isPlaying && (
             <div className="soundwave-anim">
               <div className="wave-bar" />
@@ -110,7 +132,8 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
 
 // ─── Main Lantana Dashboard Page ──────────────────────────────────────────────
 export default function LantanaDashboardPage() {
-  const { currentRole, currentUser } = useRole();
+  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
+  const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'richness' | 'explorer' | 'indicators' | 'performance'>('summary');
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_LANTANA');
 
@@ -119,6 +142,7 @@ export default function LantanaDashboardPage() {
   const [rawDetections, setRawDetections] = useState<any[]>([]);
   const [rawSpeciesList, setRawSpeciesList] = useState<string[]>([]);
   const [rawSpeciesMetadata, setRawSpeciesMetadata] = useState<Record<string, any>>({});
+  const [metaLoaded, setMetaLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState<number | undefined>(undefined);
 
@@ -132,6 +156,7 @@ export default function LantanaDashboardPage() {
   const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const analysisChartsRef = useRef<AnalysisChartsHandle>(null);
 
   // Heatmap controls – exact same as HeatmapPanel.tsx
   const [matrixSearch, setMatrixSearch] = useState('');
@@ -159,13 +184,10 @@ export default function LantanaDashboardPage() {
           const assigned = currentUser?.assignedProjects || [];
           lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
         } else if (currentRole === 'Site Manager') {
-          // Site Managers might not have assignedProjects directly if derived from assignedSites, 
-          // but if they do, we'll filter on assignedProjects just like PAM.
           const assigned = currentUser?.assignedProjects || [];
           if (assigned.length > 0) {
               lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
           } else {
-              // fallback to assignedSites
               const siteIds = currentUser?.assignedSites || [];
               const { data: sData } = await supabase.from('lantana_sites').select('project_id').in('id', siteIds);
               const allowedProjIds = new Set((sData || []).map((s: any) => s.project_id));
@@ -209,13 +231,19 @@ export default function LantanaDashboardPage() {
         setRawSpeciesList(speciesList);
         setRawSpeciesMetadata(speciesMetadata);
         setSelectedSpecies(prev => prev ? prev : firstEndemic);
-      } catch (e) { console.error(e); }
+        setMetaLoaded(true);
+      } catch (e) {
+        console.error(e);
+        setMetaLoaded(true);
+      }
     }
     loadMeta();
   }, [currentRole, currentUser]);
 
   // Load Lantana sites/detections when selected project changes
   useEffect(() => {
+    let isCurrent = true;
+
     async function loadProject() {
       setLoading(true);
       setLoadingProgress(0);
@@ -235,7 +263,6 @@ export default function LantanaDashboardPage() {
            }
         }
         
-        // Further filter sites for Site Managers
         if (currentRole === 'Site Manager') {
             const allowedSites = currentUser?.assignedSites || [];
             if (allowedSites.length > 0) {
@@ -244,7 +271,7 @@ export default function LantanaDashboardPage() {
         }
 
         const buildDetQuery = () => {
-          let q = supabase.from('lantana_detections').select('*').order('id');
+          let q = supabase.from('lantana_detections').select('site_name, recorder_id, time, start_time, common_name, threshold').order('id');
           if (selectedProjectId !== 'ALL_LANTANA') {
             q = q.eq('project_id', selectedProjectId);
           } else {
@@ -261,45 +288,64 @@ export default function LantanaDashboardPage() {
           return q;
         };
 
-        const { data: sbSites } = await siteQuery;
-        const sbDets = await (async () => {
-          // Get the total count first
-          const { count, error } = await supabase.from('lantana_detections')
-            .select('*', { count: 'exact', head: true })
-            .eq(selectedProjectId !== 'ALL_LANTANA' ? 'project_id' : 'id', selectedProjectId !== 'ALL_LANTANA' ? selectedProjectId : 'NONE'); // simplification for count
-            
-          // Better logic: reuse detQuery to get count
-          const countQuery = supabase.from('lantana_detections').select('*', { count: 'exact', head: true });
-          if (selectedProjectId !== 'ALL_LANTANA') countQuery.eq('project_id', selectedProjectId);
-          else if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
-            const allowedProjIds = projectsList.map(p => p.id);
-            if (allowedProjIds.length > 0) countQuery.in('project_id', allowedProjIds);
-            else countQuery.eq('id', 'NONE');
-          }
-          if (currentRole === 'Site Manager') {
-            const allowedSites = currentUser?.assignedSites || [];
-            if (allowedSites.length > 0) countQuery.in('site_name', allowedSites);
-          }
-          
-          const { count: totalCount } = await countQuery;
-          
-          if (!totalCount || totalCount === 0) return [];
+        const countQuery = supabase.from('lantana_detections').select('*', { count: 'exact', head: true });
+        if (selectedProjectId !== 'ALL_LANTANA') countQuery.eq('project_id', selectedProjectId);
+        else if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
+          const allowedProjIds = projectsList.map(p => p.id);
+          if (allowedProjIds.length > 0) countQuery.in('project_id', allowedProjIds);
+          else countQuery.eq('id', 'NONE');
+        }
+        if (currentRole === 'Site Manager') {
+          const allowedSites = currentUser?.assignedSites || [];
+          if (allowedSites.length > 0) countQuery.in('site_name', allowedSites);
+        }
 
-          const pageSize = 1000;
-          const numPages = Math.ceil(totalCount / pageSize);
-          
-          // Fire all requests in parallel
-          const promises = [];
-          for (let i = 0; i < numPages; i++) {
-            const offset = i * pageSize;
-            promises.push(
-               buildDetQuery().range(offset, offset + pageSize - 1).then(res => res.data || [])
-            );
+        // Check in-memory cache first for instant loads
+        const cacheKey = `lantana_dets_${selectedProjectId}_${currentRole}`;
+        const cachedDets = typeof window !== 'undefined' ? (window as any)[cacheKey] : null;
+
+        let sbSites: any[] = [];
+        let sbDets: any[] = [];
+
+        if (cachedDets) {
+          const [sitesRes] = await Promise.all([siteQuery]);
+          if (!isCurrent) return;
+          sbSites = sitesRes.data || [];
+          sbDets = cachedDets;
+        } else {
+          const [sitesRes, countRes] = await Promise.all([siteQuery, countQuery]);
+          if (!isCurrent) return;
+          sbSites = sitesRes.data || [];
+          const totalCount = countRes.count || 0;
+
+          if (totalCount > 0) {
+            const pageSize = 5000;
+            const numPages = Math.ceil(totalCount / pageSize);
+            
+            const promises = [];
+            for (let i = 0; i < numPages; i++) {
+              const offset = i * pageSize;
+              promises.push(
+                buildDetQuery().range(offset, offset + pageSize - 1).then(res => res.data || [])
+              );
+            }
+            
+            let completed = 0;
+            const results = await Promise.all(promises.map(async p => {
+              const res = await p;
+              if (!isCurrent) return [];
+              completed++;
+              setLoadingProgress(prev => Math.max(prev || 0, Math.min(100, (completed / numPages) * 100)));
+              return res;
+            }));
+
+            if (!isCurrent) return;
+            sbDets = results.flat();
+            if (typeof window !== 'undefined') {
+              (window as any)[cacheKey] = sbDets;
+            }
           }
-          
-          let completed = 0; const results = await Promise.all(promises.map(async p => { const res = await p; completed++; setLoadingProgress((completed / numPages) * 100); return res; }));
-          return results.flat();
-        })();
+        }
 
         const recorders = (sbSites || []).map((s: any) => {
           const combined = `${s.habitat_type || ''} ${s.site_name || ''} ${s.recorder_id || ''}`.toLowerCase();
@@ -321,10 +367,15 @@ export default function LantanaDashboardPage() {
         setRawRecorders(recorders);
         setRawDetections(sbDets || []);
       } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+      finally { 
+        if (isCurrent) setLoading(false); 
+      }
     }
     loadProject();
-  }, [selectedProjectId, projectsList, currentRole, currentUser]);
+    return () => {
+      isCurrent = false;
+    };
+  }, [metaLoaded, selectedProjectId, projectsList, currentRole, currentUser]);
 
   // Click outside dropdown
   useEffect(() => {
@@ -769,6 +820,46 @@ export default function LantanaDashboardPage() {
 
   const indicatorChartHeight = useMemo(() => `${Math.max(300, indYCats.length * 20 + 100)}px`, [indYCats]);
 
+  // Top species list for summary view (only species with > 0 detections)
+  const topSpeciesSummary = useMemo(() => {
+    return speciesList
+      .map(sp => {
+        let total = 0;
+        filteredRecorders.forEach((r: any) => {
+          total += stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0;
+        });
+        const meta = speciesMetadata[sp] || {};
+        return {
+          name: sp,
+          scientific: meta.scientific || '',
+          detections: total,
+          iucn: meta.iucn || 'LC',
+          indicator: meta.indicator_group && meta.indicator_group !== 'nan' && meta.indicator_group !== 'None' ? meta.indicator_group : null,
+          audio: meta.audio || ''
+        };
+      })
+      .filter(sp => sp.detections > 0)
+      .sort((a, b) => b.detections - a.detections)
+      .slice(0, 6);
+  }, [speciesList, filteredRecorders, stats.spSiteMatrix, speciesMetadata]);
+
+  // Habitat breakdown stats
+  const habitatStats = useMemo(() => {
+    let lcCount = 0, liCount = 0, lcDets = 0, liDets = 0;
+    filteredRecorders.forEach((r: any) => {
+      const k = `${r.site_group}/${r.recorder_id}`;
+      const dets = stats.siteDetections[k] || 0;
+      if (r.habitat === 'LC') {
+        lcCount++;
+        lcDets += dets;
+      } else {
+        liCount++;
+        liDets += dets;
+      }
+    });
+    return { lcCount, liCount, lcDets, liDets };
+  }, [filteredRecorders, stats.siteDetections]);
+
   // CSV Exporters
   const triggerDownload = (content: string, filename: string) => {
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -795,382 +886,653 @@ export default function LantanaDashboardPage() {
     triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `lantana_matrix_${selectedSiteGroup}.csv`);
   };
 
+  const downloadIndicatorMatrixCSV = () => {
+    const hdr = ['Indicator Species', 'Scientific Name', 'Indicator Class', ...indicatorRecs.map((r: any) => `${r.site_group}_${r.recorder_id}`)];
+    const rows = indicatorSpecies.map(sp => {
+      const meta = speciesMetadata[sp.name];
+      const counts = indicatorRecs.map((r: any) => stats.spSiteMatrix[sp.name]?.[`${r.site_group}/${r.recorder_id}`] || 0);
+      return [`"${sp.name}"`, `"${meta?.scientific || ''}"`, `"${meta?.indicator_group || ''}"`, ...counts];
+    });
+    triggerDownload([hdr.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n'), `lantana_indicator_matrix_${indicatorClass}_${selectedSiteGroup}.csv`);
+  };
+
+  const allNavMenuItems = [
+    { id: 'summary', label: 'Summary', icon: LayoutDashboard },
+    { id: 'map', label: 'Survey Site Map', icon: MapPin },
+    { id: 'heatmap', label: 'Species Detection (Heatmap)', icon: Grid },
+    { id: 'richness', label: 'Species Richness: LC vs LI Comparison', icon: BarChart3 },
+    { id: 'explorer', label: 'Avian Species Explorer', icon: Search },
+    { id: 'indicators', label: 'Restoration Indicator Species Analysis', icon: Leaf },
+    { id: 'performance', label: 'Species Detections by Site and Site-Level Performance & Detections', icon: LineChart },
+  ];
+
+  const scopeKey = selectedSiteGroup !== 'All' ? `${selectedProjectId}:${selectedSiteGroup}` : selectedProjectId;
+
+  const navMenuItems = useMemo(() => {
+    if (currentRole !== 'Public') return allNavMenuItems;
+    return allNavMenuItems.filter(item => isTabVisibleForPublic('lantanaPam', item.id, scopeKey));
+  }, [currentRole, isTabVisibleForPublic, scopeKey]);
+
+  // If activeTab is hidden from public, redirect to first visible tab
+  useEffect(() => {
+    if (currentRole === 'Public' && navMenuItems.length > 0) {
+      const isCurrentVisible = navMenuItems.some(item => item.id === activeTab);
+      if (!isCurrentVisible) {
+        setActiveTab(navMenuItems[0].id as any);
+      }
+    }
+  }, [currentRole, navMenuItems, activeTab]);
+
   if (loading) return <DashboardLoader message="Loading Lantana bioacoustics..." progress={loadingProgress} />;
 
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+    <div className="w-full h-[calc(100vh-80px)] overflow-hidden text-[#1a1f1c] font-sans flex flex-col md:flex-row bg-[#f8faf8]">
 
-      {/* ─── HERO SECTION (exact same as Hero.tsx) ─────────────────────────── */}
-      <div className="hero-section">
-        <div className="hero-content">
-          <div className="hero-grid">
-            <div className="hero-text">
-              <h1 className="hero-title">Bioacoustics for restoration monitoring.</h1>
-              <p className="hero-subtitle">
-                An interactive dashboard exploring how bird communities respond to lantana clearance across monitored sites using passive acoustic monitoring and BirdNET-based detections.
-              </p>
-              <p className="hero-description">
-                This project uses sound to assess ecological change in restored and lantana-infested habitats. By combining passive acoustic recorder deployments, automated species detections, and site-level comparisons, the dashboard helps reveal patterns in species richness, indicator species, and bird activity across the landscape. Passive Acoustic Monitoring (PAM) captures continuous soundscapes to track ecological recovery without disturbing wildlife.
-              </p>
-              <p className="hero-description">
-                By analyzing thousands of hours of audio recordings across diverse stations, this platform provides forest departments, conservationists, NGOs, and CSR partners with robust, evidence-based insights into ecosystem health to guide future restoration efforts.
-              </p>
+      {/* ─── LEFT SIDEBAR NAVIGATION ────────────────────────────────────────── */}
+      <aside className="w-full md:w-72 lg:w-80 bg-white border-r border-[#dde1dc] flex flex-col justify-between shrink-0 h-full overflow-y-auto shadow-sm">
+        <div className="p-4 space-y-4">
+          
+          {/* Observatory Header Badge */}
+          <div className="p-3.5 bg-[#f0f7f3] border border-[#dde1dc] rounded-xl">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#1f4d3a]">Lantana Observatory</div>
+            <div className="text-xs font-bold text-[#1a1f1c]">Monitoring Dashboard</div>
+          </div>
+
+          {/* Navigation Menu Links */}
+          <div className="space-y-1">
+            <div className="px-2 py-1 text-[10px] font-mono font-semibold uppercase tracking-wider text-[#5a635d]">
+              Dashboard Menu
             </div>
-            <div className="hero-visual">
-              <div className="featured-image-card">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lantana/hero_bird.jpg" alt="Forest Bird" className="featured-img" onError={(e) => (e.currentTarget.style.display = 'none')} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ─── FILTER BAR (exact same as FilterBar.tsx) ──────────────────────── */}
-      <div className="filter-bar">
-        <div className="filter-grid">
-          <div className="filter-item">
-            <label className="filter-label">Lantana Project</label>
-            <select className="select-input" value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}>
-              <option value="ALL_LANTANA">All Lantana Projects</option>
-              {projectsList.map((p: any) => <option key={p.id} value={p.id}>{p.name || p.title}</option>)}
-            </select>
-          </div>
-
-          <div className="filter-item">
-            <label className="filter-label">Landscape / Site Group</label>
-            <select className="select-input" value={selectedSiteGroup} onChange={e => setSelectedSiteGroup(e.target.value)}>
-              <option value="All">All Landscapes</option>
-              {siteGroups.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </div>
-
-          <div className="filter-item">
-            <label className="filter-label">Recorder Site</label>
-            <select className="select-input" value={selectedRecorder} onChange={e => setSelectedRecorder(e.target.value)}>
-              <option value="All">All Recorders</option>
-              {recordersList.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-
-          <div className="filter-item">
-            <label className="filter-label">
-              BirdNet Confidence Cutoff
-              <span style={{ float: 'right', color: '#4f46e5', fontWeight: 700 }}>{confidenceThreshold.toFixed(2)}</span>
-            </label>
-            <div className="slider-wrapper">
-              <input
-                type="range" min="0.0" max="1.0" step="0.05"
-                value={confidenceThreshold}
-                onChange={e => setConfidenceThreshold(Number(e.target.value))}
-                className="range-slider"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── SUMMARY KPI CARDS (exact same as SummaryCards.tsx) ─────────────── */}
-      <div className="summary-cards">
-        <div className="kpi-card">
-          <span className="kpi-label">Species Richness</span>
-          <span className="kpi-value">{stats.uniqueSpecies}</span>
-          <span className="kpi-subtext">Unique avian species detected</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Total Detections</span>
-          <span className="kpi-value">{stats.totalDetections.toLocaleString()}</span>
-          <span className="kpi-subtext">BirdNET classification triggers</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Active Recorders</span>
-          <span className="kpi-value">{filteredRecorders.length}</span>
-          <span className="kpi-subtext">Recorder stations monitored</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Acoustic Survey Effort</span>
-          <span className="kpi-value">{stats.filesProcessed.toLocaleString()}</span>
-          <span className="kpi-subtext">{stats.filesProcessed} of {stats.filesExpected} clips parsed</span>
-        </div>
-      </div>
-
-      {/* ─── SURVEY SITE MAP ────────────────────────────────────────────────── */}
-      <div className="dashboard-section">
-        <div className="section-header">
-          <div>
-            <h2>Survey Site Map</h2>
-            <p>Recorder locations colored by species richness and detections.</p>
-          </div>
-        </div>
-        <LantanaMap sites={mapSites} center={[10.47, 76.87]} zoom={13} />
-      </div>
-
-      {/* ─── DASHBOARD GRID SECTIONS ────────────────────────────────────────── */}
-      <div className="dashboard-grid">
-
-        {/* ─── AVIAN SPECIES EXPLORER (exact same as BirdSearch.tsx) ───────── */}
-        <div className="dashboard-section" id="explorer-section">
-          <div className="section-header">
-            <div>
-              <h2>Avian Species Explorer</h2>
-              <p>Search for any detected bird species to view its ecological profile, IUCN status, and habitat associations.</p>
-            </div>
-          </div>
-
-          {/* Search Box with Autocomplete */}
-          <div className="search-box" ref={dropdownRef} style={{ maxWidth: '500px' }}>
-            <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search by Common or Scientific name..."
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setShowDropdown(true); }}
-              onFocus={() => searchQuery.trim() !== '' && setShowDropdown(true)}
-            />
-            {showDropdown && suggestions.length > 0 && (
-              <div className="autocomplete-suggestions">
-                {suggestions.map(sp => (
-                  <div key={sp} className="suggestion-item" onClick={() => {
-                    setSelectedSpecies(sp); setSearchQuery(''); setShowDropdown(false);
-                  }}>
-                    <span className="common">{sp}</span>
-                    <span className="scientific">{speciesMetadata[sp]?.scientific}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Species Profile Card */}
-          {profileData ? (
-            <div className="profile-card">
-              <div className="profile-left-col">
-                <div className="profile-image-container">
-                  {profileData.image && !profileData.image.includes('nan') && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={profileData.image}
-                      alt={profileData.name}
-                      className="profile-img"
-                      onError={e => (e.currentTarget.style.display = 'none')}
-                    />
-                  )}
-                  <div className="profile-placeholder">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '48px', height: '48px' }}>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Avian Species Profile</span>
-                  </div>
-                </div>
-                <AudioPlayer 
-                  src={profileData.audio ? (profileData.audio.startsWith('http') ? profileData.audio : `/${profileData.audio.replace(/^\/?audio\//, '')}`) : ''} 
-                  speciesName={profileData.name} 
-                />
-              </div>
-
-              <div className="profile-details">
-                <div className="profile-header">
-                  <h3>{profileData.name}</h3>
-                  <div className="scientific">{profileData.scientific}</div>
-                </div>
-
-                <div className="profile-meta-grid">
-                  <div className="meta-item">
-                    <span className="meta-label">Conservation Status</span>
-                    <span className="meta-value" style={{ color: profileData.iucn !== 'LC' ? '#ea580c' : 'inherit' }}>
-                      {profileData.iucn === 'LC' ? 'Least Concern (LC)' : profileData.iucn}
+            <nav className="space-y-1">
+              {navMenuItems.map((item, idx) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id as any)}
+                    className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all ${
+                      isActive
+                        ? 'bg-[#1f4d3a] text-white font-semibold shadow-sm'
+                        : 'text-[#374151] hover:bg-[#f0f7f3] hover:text-[#1f4d3a]'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
+                    }`}>
+                      {idx + 1}
                     </span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Foraging Guild</span>
-                    <span className="meta-value">{profileData.guild}</span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Endemic Status</span>
-                    <span className="meta-value">{profileData.endemic}</span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Vocal Activity</span>
-                    <span className="meta-value">{profileData.vocal_activity}</span>
-                  </div>
-                </div>
-
-                <div className="profile-meta-grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: '-0.5rem' }}>
-                  <div className="meta-item">
-                    <span className="meta-label">Preferred Habitat / Foraging Stratum</span>
-                    <span className="meta-value" style={{ fontWeight: 500, fontSize: '0.8rem' }}>
-                      {profileData.preferred_habitat} ({profileData.foraging_stratum})
+                    <span className={`text-xs ${isActive ? 'font-bold' : 'font-medium'} leading-snug flex-1`}>
+                      {item.label}
                     </span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Indicator Class</span>
-                    <span className="meta-value" style={{ color: profileData.indicator_group !== 'Nil' ? '#4f46e5' : 'inherit' }}>
-                      {profileData.indicator_group}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="profile-compare-block">
-                  <span className="profile-compare-title">Habitat Distribution &amp; Relative Abundance</span>
-                  <div className="profile-compare-grid">
-                    <div className="compare-col lc">
-                      <span className="compare-header lc">Lantana-Cleared (LC)</span>
-                      <div className="compare-stats">
-                        <span className="compare-large">{profileData.lcDetections.toLocaleString()}</span>
-                        <span className="compare-label lc">detections</span>
-                      </div>
-                      <span className="kpi-subtext" style={{ color: '#14532d' }}>Present in {profileData.lcRecordersCount} LC stations</span>
-                    </div>
-                    <div className="compare-col li">
-                      <span className="compare-header li">Lantana-Infested (LI)</span>
-                      <div className="compare-stats">
-                        <span className="compare-large">{profileData.liDetections.toLocaleString()}</span>
-                        <span className="compare-label li">detections</span>
-                      </div>
-                      <span className="kpi-subtext" style={{ color: '#991b1b' }}>Present in {profileData.liRecordersCount} LI stations</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '1rem', borderTop: '1px solid #e2e8f0', paddingTop: '1.5rem' }}>
-                  <span className="profile-compare-title">Diurnal Detections Pattern (Detections by Hour of Day)</span>
-                  <div style={{ height: '180px', width: '100%', marginTop: '0.5rem' }}>
-                    <ReactECharts option={diurnalOption} style={{ height: '100%', width: '100%' }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <span>Search or select a species from the auto-suggest list.</span>
-            </div>
-          )}
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-white shrink-0" />}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
 
-        {/* ─── SPECIES DETECTION HEATMAP (exact same as HeatmapPanel.tsx) ───── */}
-        <div className="dashboard-section" id="heatmap-section">
-          <div className="section-header">
-            <div>
-              <h2>Species Detection Heatmap</h2>
-              <p>Distribution and relative abundance (call counts) of species across physical recorders.</p>
+        {/* Sidebar Footer Quick Stats */}
+        <div className="p-4 border-t border-[#dde1dc] bg-[#fafbfa]">
+          <div className="p-3 bg-white rounded-xl border border-[#dde1dc] flex flex-col gap-2 shadow-xs">
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="text-[#5a635d]">MONITORED SITES</span>
+              <span className="font-bold text-[#1f4d3a] bg-[#eaf2ed] px-2 py-0.5 rounded">{filteredRecorders.length} Stations</span>
             </div>
-            <button className="btn-primary" onClick={downloadMatrixCSV}>
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download Matrix CSV
-            </button>
-          </div>
-
-          {/* Heatmap Controls – exact same layout as HeatmapPanel.tsx */}
-          <div className="heatmap-controls">
-            <div className="search-box">
-              <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '18px', height: '18px' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text" className="search-input"
-                placeholder="Search species common name..."
-                value={matrixSearch} onChange={e => setMatrixSearch(e.target.value)}
-              />
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="text-[#5a635d]">AVIAN RICHNESS</span>
+              <span className="font-bold text-[#1f4d3a] bg-[#eaf2ed] px-2 py-0.5 rounded">{stats.uniqueSpecies} Species</span>
             </div>
-
-            <div className="filter-item" style={{ minWidth: '150px' }}>
-              <select className="select-input" value={topN} onChange={e => setTopN(e.target.value)}>
-                <option value="15">Top 15 Species</option>
-                <option value="25">Top 25 Species</option>
-                <option value="50">Top 50 Species</option>
-                <option value="All">All Species</option>
-              </select>
-            </div>
-
-            <div className="filter-item" style={{ minWidth: '150px' }}>
-              <select className="select-input" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-                <option value="detections">Sort by Detections</option>
-                <option value="alphabetical">Sort Alphabetically</option>
-              </select>
-            </div>
-
-            <div className="filter-item">
-              <div className="scale-toggle-group">
-                <button type="button" className={`scale-toggle-btn${!useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(false)}>
-                  Linear
-                </button>
-                <button type="button" className={`scale-toggle-btn${useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(true)}>
-                  Log Scale ln(x+1)
-                </button>
-              </div>
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="text-[#5a635d]">TOTAL DETECTIONS</span>
+              <span className="font-bold text-[#1f4d3a] bg-[#eaf2ed] px-2 py-0.5 rounded">{stats.totalDetections.toLocaleString()}</span>
             </div>
           </div>
-
-          {yCategories.length === 0 ? (
-            <div className="empty-state"><span>No species match your query.</span></div>
-          ) : (
-            <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-              <div style={{ minWidth: '800px', padding: '1rem 0' }}>
-                <ReactECharts option={heatmapOption} style={{ height: heatmapHeight, width: '100%' }} />
-              </div>
-            </div>
-          )}
         </div>
+      </aside>
 
-        {/* ─── RESTORATION INDICATOR SPECIES ANALYSIS (exact same as IndicatorPanel.tsx) */}
-        <div className="dashboard-section" id="indicator-section">
-          <div className="section-header">
+      {/* ─── MAIN CONTENT AREA (RIGHT SIDE) ─────────────────────────────────── */}
+      <main className="flex-1 min-w-0 h-full p-4 sm:p-6 lg:p-8 space-y-5 overflow-y-auto">
+
+        {/* ─── TOP FILTER BAR & VIEW HEADER ───────────────────────────────────── */}
+        <div className="bg-white border border-[#dde1dc] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#dde1dc]">
             <div>
-              <h2>Restoration Indicator Species Analysis</h2>
-              <p>Detections of ecologically significant indicator species across Lantana-Cleared (LC) vs Lantana-Infested (LI) habitats.</p>
-            </div>
-          </div>
-
-          <div className="heatmap-controls">
-            <div className="filter-item" style={{ minWidth: '200px' }}>
-              <select className="select-input" value={indicatorClass} onChange={e => setIndicatorClass(e.target.value as any)}>
-                <option value="recovery">Recovery-associated Species</option>
-                <option value="lantana">Lantana-associated Species</option>
-                <option value="all">All Indicator Species</option>
-              </select>
-            </div>
-
-            <div className="filter-item">
-              <div className="scale-toggle-group">
-                <button type="button" className={`scale-toggle-btn${!indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(false)}>
-                  Linear
-                </button>
-                <button type="button" className={`scale-toggle-btn${indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(true)}>
-                  Log Scale ln(x+1)
-                </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#1f4d3a] bg-[#eaf2ed] px-2.5 py-0.5 rounded-md">
+                  Active View
+                </span>
+                <span className="text-xs text-[#5a635d] font-mono">/</span>
+                <span className="text-xs font-medium text-[#5a635d]">
+                  {navMenuItems.find(i => i.id === activeTab)?.label}
+                </span>
               </div>
+              <h1 className="text-xl sm:text-2xl font-bold font-serif text-[#1a1f1c] tracking-tight mt-1">
+                {navMenuItems.find(i => i.id === activeTab)?.label}
+              </h1>
             </div>
-          </div>
 
-          <div style={{ width: '100%' }}>
-            <div>
-              {indYCats.length === 0 ? (
-                <div className="empty-state"><span>No indicator species detected in current filter.</span></div>
-              ) : (
-                <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                  <div style={{ minWidth: '800px', padding: '1rem 0' }}>
-                    <ReactECharts option={indicatorOption} style={{ height: indicatorChartHeight, width: '100%' }} />
-                  </div>
-                </div>
+            <div className="flex items-center gap-2">
+              {activeTab === 'summary' && (
+                <button onClick={downloadSummaryCSV} className="btn-primary text-xs" title="Download Summary CSV">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Summary CSV</span>
+                </button>
+              )}
+              {activeTab === 'map' && (
+                <button onClick={downloadSummaryCSV} className="btn-primary text-xs" title="Download Sites Geo CSV">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Sites CSV</span>
+                </button>
+              )}
+              {activeTab === 'heatmap' && (
+                <button onClick={downloadMatrixCSV} className="btn-primary text-xs" title="Download Species Matrix CSV">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Matrix CSV</span>
+                </button>
+              )}
+              {activeTab === 'richness' && (
+                <button onClick={() => analysisChartsRef.current?.downloadRichness()} className="btn-primary text-xs" title="Download Species Richness Graph (PNG)">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Graph</span>
+                </button>
+              )}
+              {activeTab === 'indicators' && (
+                <button onClick={downloadIndicatorMatrixCSV} className="btn-primary text-xs" title="Download Indicator Matrix CSV">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Matrix CSV</span>
+                </button>
+              )}
+              {activeTab === 'performance' && (
+                <button onClick={() => analysisChartsRef.current?.downloadPerformance()} className="btn-primary text-xs" title="Download Site Performance Graph (PNG)">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Graph</span>
+                </button>
               )}
             </div>
           </div>
+
+          {/* Filter Controls Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">Lantana Project</label>
+              <select className="select-input" value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}>
+                <option value="ALL_LANTANA">All Lantana Projects</option>
+                {projectsList.map((p: any) => <option key={p.id} value={p.id}>{p.name || p.title}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">Landscape / Site Group</label>
+              <select className="select-input" value={selectedSiteGroup} onChange={e => setSelectedSiteGroup(e.target.value)}>
+                <option value="All">All Landscapes</option>
+                {siteGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">Recorder Site</label>
+              <select className="select-input" value={selectedRecorder} onChange={e => setSelectedRecorder(e.target.value)}>
+                <option value="All">All Recorders</option>
+                {recordersList.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">
+                <span>BirdNet Cutoff</span>
+                <span className="slider-val">{confidenceThreshold.toFixed(2)}</span>
+              </label>
+              <div className="slider-wrapper">
+                <input
+                  type="range" min="0.0" max="1.0" step="0.05"
+                  value={confidenceThreshold}
+                  onChange={e => setConfidenceThreshold(Number(e.target.value))}
+                  className="range-slider"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <AnalysisCharts
-          recs={landscapeRecorders}
-          spSiteMatrix={stats.spSiteMatrix}
-          siteRichness={stats.siteRichness}
-          siteDetections={stats.siteDetections}
-          speciesList={speciesList}
-          speciesMetadata={speciesMetadata}
-        />
-      </div>
+        {/* ─── TAB 1: SUMMARY / OVERVIEW ──────────────────────────────────────── */}
+        {activeTab === 'summary' && (
+          <div className="space-y-5">
+            {/* 4 Summary KPI Cards */}
+            <div className="summary-cards">
+              <div className="kpi-card">
+                <span className="kpi-label">Species Richness</span>
+                <span className="kpi-value">{stats.uniqueSpecies}</span>
+                <span className="kpi-subtext">Unique avian species detected</span>
+              </div>
+              <div className="kpi-card">
+                <span className="kpi-label">Total Detections</span>
+                <span className="kpi-value">{stats.totalDetections.toLocaleString()}</span>
+                <span className="kpi-subtext">BirdNET classification triggers</span>
+              </div>
+              <div className="kpi-card">
+                <span className="kpi-label">Active Recorders</span>
+                <span className="kpi-value">{filteredRecorders.length}</span>
+                <span className="kpi-subtext">Recorder stations monitored</span>
+              </div>
+              <div className="kpi-card">
+                <span className="kpi-label">Acoustic Survey Effort</span>
+                <span className="kpi-value">{stats.filesProcessed.toLocaleString()}</span>
+                <span className="kpi-subtext">{stats.filesProcessed} of {stats.filesExpected} clips parsed</span>
+              </div>
+            </div>
+
+            {/* 2-Column Summary Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              
+              {/* Left Column: Habitat Distribution Card */}
+              <div className="dashboard-section">
+                <div className="section-header">
+                  <div>
+                    <h2>Habitat Distribution &amp; Coverage</h2>
+                    <p>Comparative telemetry across Lantana-Cleared (LC) and Lantana-Infested (LI) sites.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="compare-col lc">
+                    <span className="compare-header lc">Lantana-Cleared (LC)</span>
+                    <div className="compare-stats">
+                      <span className="compare-large">{habitatStats.lcDets.toLocaleString()}</span>
+                      <span className="compare-label lc">detections</span>
+                    </div>
+                    <span className="kpi-subtext" style={{ color: '#14532d' }}>
+                      {habitatStats.lcCount} active LC monitoring stations
+                    </span>
+                  </div>
+
+                  <div className="compare-col li">
+                    <span className="compare-header li">Lantana-Infested (LI)</span>
+                    <div className="compare-stats">
+                      <span className="compare-large">{habitatStats.liDets.toLocaleString()}</span>
+                      <span className="compare-label li">detections</span>
+                    </div>
+                    <span className="kpi-subtext" style={{ color: '#991b1b' }}>
+                      {habitatStats.liCount} active LI monitoring stations
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Top Species Detected */}
+              <div className="dashboard-section">
+                <div className="section-header">
+                  <div>
+                    <h2>Top Detected Avian Species</h2>
+                    <p>Most frequently classified birds by automated acoustic recognition.</p>
+                  </div>
+                  {topSpeciesSummary.length > 0 && (
+                    <button onClick={() => setActiveTab('explorer')} className="text-xs font-semibold text-[#1f4d3a] hover:underline flex items-center gap-1">
+                      Explore All <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {topSpeciesSummary.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '2.5rem 1rem' }}>
+                    <span>No species detections found under the current filter criteria.</span>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[#f1f5f9]">
+                    {topSpeciesSummary.map((sp, idx) => (
+                      <div key={sp.name} className="py-2.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-[#f0f7f3] text-[#1f4d3a] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-sm font-bold text-[#1a1f1c] truncate">{sp.name}</div>
+                            <div className="text-xs italic text-[#5a635d] truncate">{sp.scientific}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          {sp.indicator && (
+                            <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              {sp.indicator}
+                            </span>
+                          )}
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-[#1f4d3a]">{sp.detections.toLocaleString()}</span>
+                            <span className="text-[10px] text-[#5a635d] block">calls</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedSpecies(sp.name);
+                              setActiveTab('explorer');
+                            }}
+                            className="p-1.5 hover:bg-[#f0f7f3] rounded-lg text-[#1f4d3a] transition-colors"
+                            title="Inspect Species Profile"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── TAB 2: SURVEY SITE MAP ─────────────────────────────────────────── */}
+        {activeTab === 'map' && (
+          <div className="dashboard-section">
+            <div className="section-header">
+              <div>
+                <h2>Survey Site Map</h2>
+                <p>Physical recorder locations colored by species richness and acoustic detections.</p>
+              </div>
+              <div className="flex items-center gap-3 text-xs font-semibold">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#10b981]" /> LC (Cleared)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#ef4444]" /> LI (Infested)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#a855f7]" /> CS (Control)</span>
+              </div>
+            </div>
+            <div className="h-[520px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
+              <LantanaMap 
+                sites={mapSites} 
+                center={[10.47, 76.87]} 
+                zoom={13} 
+                onSelectSite={(siteName) => {
+                  setSelectedSiteGroup(siteName);
+                  setActiveTab('summary');
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ─── TAB 3: SPECIES DETECTION HEATMAP ───────────────────────────────── */}
+        {activeTab === 'heatmap' && (
+          <div className="dashboard-section" id="heatmap-section">
+            <div className="section-header">
+              <div>
+                <h2>Species Detection Heatmap</h2>
+                <p>Distribution and relative abundance (call counts) of species across physical recorders.</p>
+              </div>
+            </div>
+
+            {/* Heatmap Controls */}
+            <div className="heatmap-controls">
+              <div className="search-box">
+                <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text" className="search-input"
+                  placeholder="Search species common name..."
+                  value={matrixSearch} onChange={e => setMatrixSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="filter-item" style={{ minWidth: '150px' }}>
+                <select className="select-input" value={topN} onChange={e => setTopN(e.target.value)}>
+                  <option value="15">Top 15 Species</option>
+                  <option value="25">Top 25 Species</option>
+                  <option value="50">Top 50 Species</option>
+                  <option value="All">All Species</option>
+                </select>
+              </div>
+
+              <div className="filter-item" style={{ minWidth: '150px' }}>
+                <select className="select-input" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                  <option value="detections">Sort by Detections</option>
+                  <option value="alphabetical">Sort Alphabetically</option>
+                </select>
+              </div>
+
+              <div className="filter-item">
+                <div className="scale-toggle-group">
+                  <button type="button" className={`scale-toggle-btn${!useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(false)}>
+                    Linear
+                  </button>
+                  <button type="button" className={`scale-toggle-btn${useLogScale ? ' active' : ''}`} onClick={() => setUseLogScale(true)}>
+                    Log Scale ln(x+1)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {yCategories.length === 0 ? (
+              <div className="empty-state"><span>No species match your query.</span></div>
+            ) : (
+              <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #dde1dc', borderRadius: '10px' }}>
+                <div style={{ minWidth: '800px', padding: '1rem 0' }}>
+                  <ReactECharts option={heatmapOption} style={{ height: heatmapHeight, width: '100%' }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── TAB 4: SPECIES RICHNESS (LC vs LI) ─────────────────────────────── */}
+        {activeTab === 'richness' && (
+          <AnalysisCharts
+            ref={analysisChartsRef}
+            recs={landscapeRecorders}
+            spSiteMatrix={stats.spSiteMatrix}
+            siteRichness={stats.siteRichness}
+            siteDetections={stats.siteDetections}
+            speciesList={speciesList}
+            speciesMetadata={speciesMetadata}
+            view="richness"
+          />
+        )}
+
+        {/* ─── TAB 5: AVIAN SPECIES EXPLORER ──────────────────────────────────── */}
+        {activeTab === 'explorer' && (
+          <div className="dashboard-section" id="explorer-section">
+            <div className="section-header">
+              <div>
+                <h2>Avian Species Explorer</h2>
+                <p>Search for any detected bird species to view its ecological profile, IUCN status, and habitat associations.</p>
+              </div>
+            </div>
+
+            {/* Search Box with Autocomplete */}
+            <div className="search-box" ref={dropdownRef} style={{ maxWidth: '500px' }}>
+              <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search by Common or Scientific name..."
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setShowDropdown(true); }}
+                onFocus={() => searchQuery.trim() !== '' && setShowDropdown(true)}
+              />
+              {showDropdown && suggestions.length > 0 && (
+                <div className="autocomplete-suggestions">
+                  {suggestions.map(sp => (
+                    <div key={sp} className="suggestion-item" onClick={() => {
+                      setSelectedSpecies(sp); setSearchQuery(''); setShowDropdown(false);
+                    }}>
+                      <span className="common">{sp}</span>
+                      <span className="scientific">{speciesMetadata[sp]?.scientific}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Species Profile Card */}
+            {profileData ? (
+              <div className="profile-card">
+                <div className="profile-left-col">
+                  <div className="profile-image-container">
+                    {profileData.image && !profileData.image.includes('nan') && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={profileData.image}
+                        alt={profileData.name}
+                        className="profile-img"
+                        onError={e => (e.currentTarget.style.display = 'none')}
+                      />
+                    )}
+                    <div className="profile-placeholder">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '48px', height: '48px' }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Avian Species Profile</span>
+                    </div>
+                  </div>
+                  <AudioPlayer 
+                    src={profileData.audio ? (profileData.audio.startsWith('http') ? profileData.audio : `/${profileData.audio.replace(/^\/?audio\//, '')}`) : ''} 
+                    speciesName={profileData.name} 
+                  />
+                </div>
+
+                <div className="profile-details">
+                  <div className="profile-header">
+                    <h3>{profileData.name}</h3>
+                    <div className="scientific">{profileData.scientific}</div>
+                  </div>
+
+                  <div className="profile-meta-grid">
+                    <div className="meta-item">
+                      <span className="meta-label">Conservation Status</span>
+                      <span className="meta-value" style={{ color: profileData.iucn !== 'LC' ? '#ea580c' : 'inherit' }}>
+                        {profileData.iucn === 'LC' ? 'Least Concern (LC)' : profileData.iucn}
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="meta-label">Foraging Guild</span>
+                      <span className="meta-value">{profileData.guild}</span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="meta-label">Endemic Status</span>
+                      <span className="meta-value">{profileData.endemic}</span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="meta-label">Vocal Activity</span>
+                      <span className="meta-value">{profileData.vocal_activity}</span>
+                    </div>
+                  </div>
+
+                  <div className="profile-meta-grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: '-0.5rem' }}>
+                    <div className="meta-item">
+                      <span className="meta-label">Preferred Habitat / Foraging Stratum</span>
+                      <span className="meta-value" style={{ fontWeight: 500, fontSize: '0.8rem' }}>
+                        {profileData.preferred_habitat} ({profileData.foraging_stratum})
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="meta-label">Indicator Class</span>
+                      <span className="meta-value" style={{ color: profileData.indicator_group !== 'Nil' ? '#1f4d3a' : 'inherit', fontWeight: 700 }}>
+                        {profileData.indicator_group}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="profile-compare-block">
+                    <span className="profile-compare-title">Habitat Distribution &amp; Relative Abundance</span>
+                    <div className="profile-compare-grid">
+                      <div className="compare-col lc">
+                        <span className="compare-header lc">Lantana-Cleared (LC)</span>
+                        <div className="compare-stats">
+                          <span className="compare-large">{profileData.lcDetections.toLocaleString()}</span>
+                          <span className="compare-label lc">detections</span>
+                        </div>
+                        <span className="kpi-subtext" style={{ color: '#14532d' }}>Present in {profileData.lcRecordersCount} LC stations</span>
+                      </div>
+                      <div className="compare-col li">
+                        <span className="compare-header li">Lantana-Infested (LI)</span>
+                        <div className="compare-stats">
+                          <span className="compare-large">{profileData.liDetections.toLocaleString()}</span>
+                          <span className="compare-label li">detections</span>
+                        </div>
+                        <span className="kpi-subtext" style={{ color: '#991b1b' }}>Present in {profileData.liRecordersCount} LI stations</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '1rem', borderTop: '1px solid #dde1dc', paddingTop: '1.25rem' }}>
+                    <span className="profile-compare-title">Diurnal Detections Pattern (Calls by Hour of Day)</span>
+                    <div style={{ height: '180px', width: '100%', marginTop: '0.5rem' }}>
+                      <ReactECharts option={diurnalOption} style={{ height: '100%', width: '100%' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <span>Search or select a species from the auto-suggest list to view profile and audio.</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── TAB 6: RESTORATION INDICATOR SPECIES ANALYSIS ─────────────────── */}
+        {activeTab === 'indicators' && (
+          <div className="dashboard-section" id="indicator-section">
+            <div className="section-header">
+              <div>
+                <h2>Restoration Indicator Species Analysis</h2>
+                <p>Detections of ecologically significant indicator species across Lantana-Cleared (LC) vs Lantana-Infested (LI) habitats.</p>
+              </div>
+            </div>
+
+            <div className="heatmap-controls">
+              <div className="filter-item" style={{ minWidth: '220px' }}>
+                <select className="select-input" value={indicatorClass} onChange={e => setIndicatorClass(e.target.value as any)}>
+                  <option value="recovery">Recovery-associated Species</option>
+                  <option value="lantana">Lantana-associated Species</option>
+                  <option value="all">All Indicator Species</option>
+                </select>
+              </div>
+
+              <div className="filter-item">
+                <div className="scale-toggle-group">
+                  <button type="button" className={`scale-toggle-btn${!indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(false)}>
+                    Linear
+                  </button>
+                  <button type="button" className={`scale-toggle-btn${indicatorLogScale ? ' active' : ''}`} onClick={() => setIndicatorLogScale(true)}>
+                    Log Scale ln(x+1)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ width: '100%' }}>
+              <div>
+                {indYCats.length === 0 ? (
+                  <div className="empty-state"><span>No indicator species detected in current filter.</span></div>
+                ) : (
+                  <div style={{ overflowX: 'auto', width: '100%', border: '1px solid #dde1dc', borderRadius: '10px' }}>
+                    <div style={{ minWidth: '800px', padding: '1rem 0' }}>
+                      <ReactECharts option={indicatorOption} style={{ height: indicatorChartHeight, width: '100%' }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── TAB 7: SPECIES DETECTIONS BY SITE & PERFORMANCE ────────────────── */}
+        {activeTab === 'performance' && (
+          <AnalysisCharts
+            ref={analysisChartsRef}
+            recs={landscapeRecorders}
+            spSiteMatrix={stats.spSiteMatrix}
+            siteRichness={stats.siteRichness}
+            siteDetections={stats.siteDetections}
+            speciesList={speciesList}
+            speciesMetadata={speciesMetadata}
+            view="performance"
+          />
+        )}
+
+      </main>
     </div>
   );
 }

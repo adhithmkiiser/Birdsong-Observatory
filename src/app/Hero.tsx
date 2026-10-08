@@ -1,57 +1,70 @@
 'use client';
 
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import Link from 'next/link';
 
 export default function HomeHero() {
-  const { scrollY } = useScroll();
-
-  // Smooth transforms linked to scroll position
-  const yBg = useTransform(scrollY, [0, 800], ['0%', '20%']);
-  const opacityText = useTransform(scrollY, [0, 400], [1, 0]);
-  const yText = useTransform(scrollY, [0, 400], [0, 40]);
-
   return (
-    <section className="home-hero relative w-full min-h-[calc(100dvh-4.5rem)] md:h-[calc(100dvh-4.5rem)] bg-[#081C16] overflow-hidden flex flex-col justify-center">
-      <div className="grid md:grid-cols-2 h-full min-h-[calc(100dvh-4.5rem)]">
-        {/* Left content */}
-        <motion.div
-          style={{ opacity: opacityText, y: yText }}
-          className="relative z-10 flex flex-col justify-center px-6 sm:px-10 md:px-10 lg:px-16 xl:px-20 py-12 md:py-6 bg-[#081C16]"
-        >
-          <div className="max-w-lg lg:max-w-xl space-y-4 md:space-y-5 lg:space-y-6">
-            <h1 className="font-sans text-4xl sm:text-5xl md:text-5xl lg:text-6xl xl:text-7xl font-black tracking-tight leading-[1.08] text-white">
-              Birdsong{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">
-                Observatory
-              </span>
-            </h1>
-            <p className="text-emerald-400 text-xs sm:text-sm md:text-base font-bold tracking-wide">
-              Bird Ecology Lab, IISER Tirupati
-            </p>
-            <p className="text-slate-300 text-xs sm:text-sm md:text-base font-medium leading-relaxed max-w-md">
-              A unified cloud analytics platform for landscape-scale avian acoustics. Integrating automated Raspberry Pi field recording nodes with offline passive monitoring (PAM) survey pipelines.
-            </p>
-            <a
-              href="#projects"
-              className="inline-flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 rounded-full bg-emerald-500 text-slate-950 font-black text-xs sm:text-sm hover:bg-emerald-400 transition w-fit shadow-lg shadow-emerald-500/20 active:scale-95"
-            >
-              Explore Projects <ArrowRight className="w-4 h-4" />
-            </a>
-          </div>
-        </motion.div>
-
-        {/* Right image + overlay */}
-        <div className="relative h-[40vh] md:h-full overflow-hidden">
-          <motion.img
-            style={{ y: yBg }}
+    <section className="relative w-full bg-[#0a1610] py-6 sm:py-8 border-b border-[#dde1dc]">
+      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Large Prominent Hero Image Container with White/Light Text Overlay */}
+        <div className="relative w-full min-h-[480px] sm:min-h-[540px] md:min-h-[580px] rounded-3xl overflow-hidden border border-black/10 shadow-xl flex items-center">
+          
+          {/* Background Image */}
+          <img
             src="/Image/Hero%20Image.png"
-            alt="Aerial forest canopy"
-            className="absolute inset-0 w-full h-full object-cover scale-105"
+            alt="Birdsong Observatory Field Acoustic Monitoring"
+            className="absolute inset-0 w-full h-full object-cover object-center transform scale-105"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/64789.jpg';
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#081C16] via-transparent to-transparent md:bg-gradient-to-r md:from-[#081C16] md:via-[#081C16]/20 md:to-transparent" />
+
+          {/* Multi-layer Dark Gradient Scrim to ensure crisp light/white font legibility */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/30" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+
+          {/* Foreground Text in White/Light Colors */}
+          <div className="relative z-10 p-8 sm:p-12 md:p-16 max-w-3xl space-y-6">
+            
+            {/* Headline in Crisp White with Emerald Accent */}
+            <h1 className="text-white font-serif font-semibold text-4xl sm:text-5xl lg:text-[56px] leading-[1.12] tracking-tight">
+              Acoustic monitoring for{' '}
+              <span className="text-emerald-400 underline decoration-emerald-500/50 decoration-2 underline-offset-8">
+                forest biodiversity
+              </span>
+              .
+            </h1>
+
+            {/* 2-Sentence Summary in Light Gray/White */}
+            <p className="text-slate-200 text-lg sm:text-xl leading-[1.611] max-w-2xl font-light">
+              Continuous passive acoustic sensing and automated species classification across Western Ghats and tropical forest corridors. Quantifying ecosystem health and restoration trajectories through soundscape analytics.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="pt-3 flex flex-wrap items-center gap-6 font-sans">
+              <a
+                href="#projects"
+                className="px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shadow-lg shadow-emerald-950/40 transition-all duration-200 hover:scale-[1.02] active:scale-[0.99] inline-flex items-center gap-2"
+              >
+                <span>View survey projects</span>
+                <span className="text-emerald-200">&rarr;</span>
+              </a>
+
+              <a
+                href="#method"
+                className="text-white hover:text-emerald-300 text-[15px] font-semibold transition-colors inline-flex items-center gap-1.5 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/30"
+              >
+                <span>How it works</span>
+                <span className="text-sm">&rarr;</span>
+              </a>
+            </div>
+
+          </div>
+
         </div>
+
       </div>
     </section>
   );
