@@ -136,7 +136,8 @@ export default function PamAdminPage() {
   const [isDetectionsLoading, setIsDetectionsLoading] = useState(false);
   const [selectedDetectionIds, setSelectedDetectionIds] = useState<Set<number>>(new Set());
   const [detectionPage, setDetectionPage] = useState(0);
-  const [detectionPageSize, setDetectionPageSize] = useState(250);
+  const [detectionPageSize, setDetectionPageSize] = useState(500);
+  const [pamSearchSpecies, setPamSearchSpecies] = useState('');
   const [hasMoreDetections, setHasMoreDetections] = useState(false);
   type PamSortColumn = 'date' | 'species' | 'confidence';
   const [pamSortColumn, setPamSortColumn] = useState<PamSortColumn>('date');
@@ -263,7 +264,7 @@ export default function PamAdminPage() {
     }
   }, [pamSelectedSite, scopedSites, lantanaSitesList, detectionsTabScope, pamSelectedProject, availableCommonRecorders]);
 
-  const handleLoadDetections = async (targetPage = 0, customPageSize?: number) => {
+  const handleLoadDetections = async (targetPage = 0, customPageSize?: number, customSearch?: string) => {
     if (pamSelectedSite === 'Select Site') return;
     setIsDetectionsLoading(true);
     if (targetPage === 0) {
@@ -272,54 +273,81 @@ export default function PamAdminPage() {
     }
     
     const pageSize = customPageSize || detectionPageSize;
+    const searchTerm = (customSearch !== undefined ? customSearch : pamSearchSpecies).trim();
     const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
     const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
     const siteName = siteItem ? siteItem.name : pamSelectedSite;
 
     try {
-      const start = targetPage * pageSize;
-      const end = start + pageSize - 1;
+      const baseStart = targetPage * pageSize;
+      const baseEnd = baseStart + pageSize - 1;
 
-      let query = supabase.from(table).select('*');
-      query = query.eq('site_name', siteName);
+      // When pageSize is > 1000 (e.g. 2,500, 5,000, 10,000), fetch in parallel 1000-row chunks
+      if (pageSize > 1000) {
+        const chunkSize = 1000;
+        const totalChunks = Math.ceil(pageSize / chunkSize);
+        const chunkPromises = [];
 
-      if (pamSelectedRecorder !== 'All') {
-        if (detectionsTabScope === 'Lantana') {
-          query = query.eq('recorder_id', pamSelectedRecorder);
-        } else {
-          query = query.eq('recorder_name', pamSelectedRecorder);
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkStart = baseStart + i * chunkSize;
+          const chunkEnd = Math.min(baseStart + (i + 1) * chunkSize - 1, baseEnd);
+          
+          let q = supabase.from(table).select('*').eq('site_name', siteName);
+          if (pamSelectedRecorder !== 'All') {
+            if (detectionsTabScope === 'Lantana') {
+              q = q.eq('recorder_id', pamSelectedRecorder);
+            } else {
+              q = q.eq('recorder_name', pamSelectedRecorder);
+            }
+          }
+          if (searchTerm) {
+            q = q.or(`common_name.ilike.%${searchTerm}%,scientific_name.ilike.%${searchTerm}%`);
+          }
+          chunkPromises.push(q.range(chunkStart, chunkEnd));
         }
-      }
 
-      // Fast indexed fetch with range
-      query = query.order('date', { ascending: false }).range(start, end);
-
-      const { data, error } = await query;
-      
-      if (error) {
-        console.warn('Ordered query error, falling back to natural range scan:', error);
-        let fallback = supabase.from(table).select('*').eq('site_name', siteName);
-        if (pamSelectedRecorder !== 'All') {
-          if (detectionsTabScope === 'Lantana') {
-            fallback = fallback.eq('recorder_id', pamSelectedRecorder);
-          } else {
-            fallback = fallback.eq('recorder_name', pamSelectedRecorder);
+        const chunkResults = await Promise.all(chunkPromises);
+        let aggregatedRows: any[] = [];
+        for (const res of chunkResults) {
+          if (res.error) {
+            console.warn('Chunk error:', res.error);
+          } else if (res.data) {
+            aggregatedRows.push(...res.data);
           }
         }
-        const fallbackRes = await fallback.range(start, end);
-        if (fallbackRes.error) {
-          alert('Error loading detections: ' + fallbackRes.error.message);
+
+        setPamDetectionsList(aggregatedRows);
+        setDetectionPage(targetPage);
+        setHasMoreDetections(aggregatedRows.length >= pageSize);
+      } else {
+        // Standard single query for <= 1000 rows
+        let query = supabase.from(table).select('*').eq('site_name', siteName);
+
+        if (pamSelectedRecorder !== 'All') {
+          if (detectionsTabScope === 'Lantana') {
+            query = query.eq('recorder_id', pamSelectedRecorder);
+          } else {
+            query = query.eq('recorder_name', pamSelectedRecorder);
+          }
+        }
+
+        if (searchTerm) {
+          query = query.or(`common_name.ilike.%${searchTerm}%,scientific_name.ilike.%${searchTerm}%`);
+        }
+
+        query = query.range(baseStart, baseEnd);
+
+        const { data, error } = await query;
+        
+        if (error) {
+          console.error('Error loading detections:', error);
+          alert('Error loading detections: ' + error.message);
         } else {
-          const list = fallbackRes.data || [];
+          const list = data || [];
           setPamDetectionsList(list);
           setDetectionPage(targetPage);
           setHasMoreDetections(list.length === pageSize);
         }
-      } else {
-        const list = data || [];
-        setPamDetectionsList(list);
-        setDetectionPage(targetPage);
-        setHasMoreDetections(list.length === pageSize);
       }
     } catch (err: any) {
       console.error('Error in handleLoadDetections:', err);
@@ -2227,8 +2255,50 @@ export default function PamAdminPage() {
                     </select>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[120px]">
-                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">Page Size</label>
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[220px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase flex items-center gap-1">
+                      <Search className="w-3 h-3 text-indigo-500" /> 4. Search Species (Optional)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={pamSearchSpecies}
+                        onChange={e => {
+                          setPamSearchSpecies(e.target.value);
+                          setDetectionPage(0);
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (pamSelectedSite !== 'Select Site') {
+                              handleLoadDetections(0);
+                            }
+                          }
+                        }}
+                        placeholder="e.g. Peafowl, Bulbul, Dove..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-8 py-2 font-bold text-slate-700 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      {pamSearchSpecies && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPamSearchSpecies('');
+                            setDetectionPage(0);
+                            if (pamSelectedSite !== 'Select Site') {
+                              handleLoadDetections(0, undefined, '');
+                            }
+                          }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                          title="Clear search"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[130px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">Batch Size</label>
                     <select 
                       value={detectionPageSize} 
                       onChange={e => {
@@ -2241,9 +2311,11 @@ export default function PamAdminPage() {
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm"
                     >
                       <option value={100}>100 rows</option>
-                      <option value={250}>250 rows</option>
                       <option value={500}>500 rows</option>
                       <option value={1000}>1,000 rows</option>
+                      <option value={2500}>2,500 rows</option>
+                      <option value={5000}>5,000 rows</option>
+                      <option value={10000}>10,000 rows</option>
                     </select>
                   </div>
 
