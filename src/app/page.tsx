@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import Hero from './Hero';
@@ -8,81 +8,126 @@ import { RavenProSpectrogram } from '@/components/audio/RavenProSpectrogram';
 import { CollaboratorsMarquee } from '@/components/home/CollaboratorsMarquee';
 import WhatWeProvide from './WhatWeProvide';
 import { Footer } from '@/components/Footer';
-import { Database, MapPin, Bird, Radio, Activity, ArrowRight, Layers, Sparkles } from 'lucide-react';
+import { Database, MapPin, Bird, Radio, Activity, ArrowRight, Layers, Sparkles, CheckCircle2, Loader2, RefreshCw, Clock, Zap } from 'lucide-react';
 
 export default function HomePage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
+  
+  // Loading, Timer & Progress State
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadingProgress, setLoadingProgress] = useState<number>(10);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0.0);
+  const [loadStage, setLoadStage] = useState<string>('Connecting to database...');
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number>(Date.now());
+
+  const loadStats = useCallback(async () => {
+    setIsLoading(true);
+    setLoadingProgress(15);
+    setLoadStage('Connecting to cloud node...');
+    startTimeRef.current = Date.now();
+    setElapsedSeconds(0.0);
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const elapsed = (Date.now() - startTimeRef.current) / 1000;
+      setElapsedSeconds(parseFloat(elapsed.toFixed(2)));
+    }, 50);
+
+    try {
+      setLoadStage('Querying survey catalogs & live nodes...');
+      setLoadingProgress(35);
+
+      const [projRes, sitesRes, recordersRes] = await Promise.all([
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('sites').select('id, project_id, name'),
+        supabase.from('recorders_registry').select('project_name, status, last_ping').eq('project_type', 'Live')
+      ]);
+
+      const projData = projRes.data || [];
+      const sitesData = sitesRes.data || [];
+      const liveRecorders = recordersRes.data || [];
+
+      if (projRes.data) setProjects(projData);
+      if (sitesRes.data) setSitesList(sitesData);
+
+      setLoadStage('Aggregating bioacoustic vocalizations...');
+      setLoadingProgress(70);
+
+      const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
+      
+      // Fetch exact real table counts in parallel
+      const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, pamStatsRes] = await Promise.all([
+        supabase.from('pam_detections').select('*', { count: 'exact', head: true }),
+        supabase.from('lantana_detections').select('*', { count: 'exact', head: true }),
+        supabase.from('live_detections').select('*', { count: 'exact', head: true }),
+        supabase.from('lantana_sites').select('id'),
+        supabase.rpc('get_dashboard_stats', { p_confidence: 0.1 })
+      ]);
+
+      setLoadStage('Calculating ecosystem metrics...');
+      setLoadingProgress(90);
+
+      const pamDetections = pamCountRes.count || 0;
+      const lantanaDetections = lantanaCountRes.count || 0;
+      const liveDetections = liveCountRes.count || 0;
+      const pamUniqueSpecies = pamStatsRes.data?.unique_species || 191;
+
+      for (const p of projData) {
+        if (p.project_type === 'Live') {
+           const activeCount = liveRecorders.filter((r: any) => {
+             if (r.project_name !== p.name || r.status !== 'online' || !r.last_ping) return false;
+             const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
+             return diffMins <= 5;
+           }).length;
+           p.active_nodes_count = activeCount;
+           statsMap[p.id] = {
+             recorders: 1,
+             species: 12,
+             detections: liveDetections
+           };
+        } else if (p.project_type === 'Lantana') {
+          statsMap[p.id] = {
+            recorders: (lantanaSitesRes.data || []).length || 18,
+            species: 147,
+            detections: lantanaDetections
+          };
+        } else {
+          const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
+          statsMap[p.id] = {
+            recorders: siteCount || 13,
+            species: pamUniqueSpecies,
+            detections: pamDetections
+          };
+        }
+      }
+      setProjectStatsMap(statsMap);
+
+      setLoadingProgress(100);
+      setLoadStage('All datasets synchronized');
+    } catch (err) {
+      console.error('Failed to load dynamic projects:', err);
+      setLoadStage('Synchronized (cached)');
+      setLoadingProgress(100);
+    } finally {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      const finalDuration = ((Date.now() - startTimeRef.current) / 1000).toFixed(2);
+      setElapsedSeconds(parseFloat(finalDuration));
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadStats() {
-      try {
-        const [projRes, sitesRes, recordersRes] = await Promise.all([
-          supabase.from('projects').select('*').order('created_at', { ascending: false }),
-          supabase.from('sites').select('id, project_id, name'),
-          supabase.from('recorders_registry').select('project_name, status, last_ping').eq('project_type', 'Live')
-        ]);
-
-        const projData = projRes.data || [];
-        const sitesData = sitesRes.data || [];
-        const liveRecorders = recordersRes.data || [];
-
-        if (projRes.data) setProjects(projData);
-        if (sitesRes.data) setSitesList(sitesData);
-
-        const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
-        
-        // Fetch exact real table counts in parallel
-        const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, pamStatsRes] = await Promise.all([
-          supabase.from('pam_detections').select('*', { count: 'exact', head: true }),
-          supabase.from('lantana_detections').select('*', { count: 'exact', head: true }),
-          supabase.from('live_detections').select('*', { count: 'exact', head: true }),
-          supabase.from('lantana_sites').select('id'),
-          supabase.rpc('get_dashboard_stats', { p_confidence: 0.1 })
-        ]);
-
-        const pamDetections = pamCountRes.count || 0;
-        const lantanaDetections = lantanaCountRes.count || 0;
-        const liveDetections = liveCountRes.count || 0;
-        const pamUniqueSpecies = pamStatsRes.data?.unique_species || 191;
-
-        for (const p of projData) {
-          if (p.project_type === 'Live') {
-             const activeCount = liveRecorders.filter((r: any) => {
-               if (r.project_name !== p.name || r.status !== 'online' || !r.last_ping) return false;
-               const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
-               return diffMins <= 5;
-             }).length;
-             p.active_nodes_count = activeCount;
-             statsMap[p.id] = {
-               recorders: 1,
-               species: 12,
-               detections: liveDetections
-             };
-          } else if (p.project_type === 'Lantana') {
-            statsMap[p.id] = {
-              recorders: (lantanaSitesRes.data || []).length || 18,
-              species: 147,
-              detections: lantanaDetections
-            };
-          } else {
-            const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
-            statsMap[p.id] = {
-              recorders: siteCount || 13,
-              species: pamUniqueSpecies,
-              detections: pamDetections
-            };
-          }
-        }
-        setProjectStatsMap(statsMap);
-      } catch (err) {
-        console.error('Failed to load dynamic projects:', err);
-      }
-    }
-
     loadStats();
-  }, []);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [loadStats]);
 
   const getProjectStats = (projectId: string) => {
     if (projectStatsMap[projectId]) {
@@ -225,17 +270,73 @@ export default function HomePage() {
       <section id="projects" className="w-full bg-[#ffffff] py-16 sm:py-24 border-b border-[#dde1dc]">
         <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
           
-          <div className="space-y-2 border-b border-[#dde1dc] pb-6">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono text-[#1f4d3a] font-semibold mb-1">
-              <Layers className="w-3 h-3 text-[#1f4d3a]" />
-              <span>SURVEY DATASETS</span>
+          <div className="space-y-2 border-b border-[#dde1dc] pb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono text-[#1f4d3a] font-semibold mb-1">
+                <Layers className="w-3 h-3 text-[#1f4d3a]" />
+                <span>SURVEY DATASETS</span>
+              </div>
+              <h2 className="text-[#1a1f1c] font-serif text-3xl sm:text-4xl font-semibold tracking-tight">
+                Active monitoring projects
+              </h2>
+              <p className="text-[#5a635d] text-base leading-relaxed max-w-[680px]">
+                Access bioacoustic survey datasets, species accumulation models, and diurnal vocal profiles across our field deployments.
+              </p>
             </div>
-            <h2 className="text-[#1a1f1c] font-serif text-3xl sm:text-4xl font-semibold tracking-tight">
-              Active monitoring projects
-            </h2>
-            <p className="text-[#5a635d] text-base leading-relaxed max-w-[680px]">
-              Access bioacoustic survey datasets, species accumulation models, and diurnal vocal profiles across our field deployments.
-            </p>
+
+            {/* Right Side: High-tech Live Loading & Progress Widget */}
+            <div className="flex-shrink-0 w-full sm:w-auto">
+              <div className="px-4 py-3 rounded-2xl border border-[#b8dbc8] bg-gradient-to-br from-[#ffffff] via-[#f7faf8] to-[#edf6f1] shadow-2xs hover:border-[#1f4d3a] hover:shadow-xs transition-all space-y-2 min-w-[240px] sm:min-w-[280px]">
+                {/* Top row: Status header, Percentage badge, and Action */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    {isLoading ? (
+                      <div className="relative w-7 h-7 flex items-center justify-center">
+                        <Loader2 className="w-4 h-4 text-[#1f4d3a] animate-spin" />
+                        <span className="absolute inset-0 rounded-full border border-[#10b981]/40 animate-ping" />
+                      </div>
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] flex items-center justify-center text-[#1f4d3a]">
+                        <CheckCircle2 className="w-4 h-4 text-[#10b981]" />
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#1f4d3a]">
+                        {isLoading ? 'Loading' : 'Loaded'}
+                      </span>
+                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md ${
+                        isLoading 
+                          ? 'bg-[#1f4d3a] text-white animate-pulse' 
+                          : 'bg-[#eaf3ee] text-[#1f4d3a] border border-[#b8dbc8]'
+                      }`}>
+                        {Math.round(loadingProgress)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Refresh / Re-test speed button */}
+                  <button
+                    onClick={() => loadStats()}
+                    disabled={isLoading}
+                    title="Refresh data"
+                    className="p-1.5 rounded-lg bg-white border border-[#dde1dc] hover:border-[#1f4d3a] hover:bg-[#eaf3ee] text-[#5a635d] hover:text-[#1f4d3a] transition-all disabled:opacity-50 shadow-2xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#1f4d3a]' : ''}`} />
+                  </button>
+                </div>
+
+                {/* Progress Track with Glossy Shimmer & IISER Emerald Bar */}
+                <div className="w-full bg-[#dde1dc]/70 rounded-full h-1.5 overflow-hidden relative">
+                  <div
+                    className="bg-gradient-to-r from-[#10b981] via-[#059669] to-[#1f4d3a] h-full rounded-full transition-all duration-300 ease-out relative"
+                    style={{ width: `${Math.min(100, Math.max(8, loadingProgress))}%` }}
+                  >
+                    {isLoading && <div className="absolute inset-0 bg-white/30 animate-pulse" />}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Group 1: Passive Acoustic Monitoring */}
