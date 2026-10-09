@@ -1121,6 +1121,9 @@ export default function PamAdminPage() {
   };
 
   const handleDeleteSite = async (site: SiteItem) => {
+    if (!confirm(`Are you sure you want to delete site "${site.name}"? This will permanently delete this site and ALL of its associated detections from the database.`)) {
+      return;
+    }
     const isLantana = site.source === 'Lantana';
     const table = isLantana ? 'lantana_sites' : 'sites';
     try {
@@ -1135,7 +1138,7 @@ export default function PamAdminPage() {
     } else {
       setSitesList(prev => prev.filter(s => s.id !== site.id));
     }
-    showNotification(`Site ${site.name} removed.`);
+    showNotification(`Site "${site.name}" and all associated detections were permanently deleted.`);
   };
 
   const handleEditSite = async (e: React.FormEvent) => {

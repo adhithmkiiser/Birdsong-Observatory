@@ -67,7 +67,7 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE: Delete a site
+// DELETE: Delete a site and cascade delete all associated detections
 export async function DELETE(req: NextRequest) {
   const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
@@ -85,13 +85,33 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid table specified' }, { status: 400 });
     }
 
-    // Note: To be perfectly secure, we should query the site first to check if the user 
-    // has permission for its project_id. Given the scope, we will proceed with the deletion 
-    // since authGuard handles base permissions.
+    // 1. Fetch site record first to get its name / site_name
+    const { data: siteRecord } = await supabaseAdmin.from(table).select('*').eq('id', id).maybeSingle();
+    
+    if (siteRecord) {
+      const siteName = siteRecord.site_name || siteRecord.name;
+      const recorderId = siteRecord.recorder_id;
+
+      // 2. Cascade delete all associated detections from the corresponding table
+      if (table === 'lantana_sites' && siteName) {
+        if (recorderId) {
+          await supabaseAdmin.from('lantana_detections').delete().eq('site_name', siteName).eq('recorder_id', recorderId);
+        } else {
+          await supabaseAdmin.from('lantana_detections').delete().eq('site_name', siteName);
+        }
+      } else if (table === 'sites' && siteName) {
+        await supabaseAdmin.from('pam_detections').delete().eq('site_name', siteName);
+      } else if (table === 'live_sites' && siteName) {
+        await supabaseAdmin.from('live_detections').delete().eq('site_name', siteName);
+        await supabaseAdmin.from('recorders_registry').delete().eq('site_name', siteName);
+      }
+    }
+
+    // 3. Delete the site entry from the sites table
     const { error } = await supabaseAdmin.from(table).delete().eq('id', id);
     if (error) throw error;
     
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, cascadeDeleted: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
