@@ -14,7 +14,10 @@ import {
   Layers, 
   Trash2,
   Bird,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -132,6 +135,9 @@ export default function PamAdminPage() {
   const [isRecordersLoading, setIsRecordersLoading] = useState(false);
   const [isDetectionsLoading, setIsDetectionsLoading] = useState(false);
   const [selectedDetectionIds, setSelectedDetectionIds] = useState<Set<number>>(new Set());
+  const [detectionPage, setDetectionPage] = useState(0);
+  const [detectionPageSize, setDetectionPageSize] = useState(250);
+  const [hasMoreDetections, setHasMoreDetections] = useState(false);
   type PamSortColumn = 'date' | 'species' | 'confidence';
   const [pamSortColumn, setPamSortColumn] = useState<PamSortColumn>('date');
   const [pamSortDesc, setPamSortDesc] = useState(true);
@@ -257,48 +263,70 @@ export default function PamAdminPage() {
     }
   }, [pamSelectedSite, scopedSites, lantanaSitesList, detectionsTabScope, pamSelectedProject, availableCommonRecorders]);
 
-  const handleLoadDetections = async () => {
+  const handleLoadDetections = async (targetPage = 0, customPageSize?: number) => {
     if (pamSelectedSite === 'Select Site') return;
     setIsDetectionsLoading(true);
-    setPamDetectionsList([]);
-    setSelectedDetectionIds(new Set());
+    if (targetPage === 0) {
+      setPamDetectionsList([]);
+      setSelectedDetectionIds(new Set());
+    }
     
+    const pageSize = customPageSize || detectionPageSize;
     const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
     const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
     const siteName = siteItem ? siteItem.name : pamSelectedSite;
 
-    let allData: any[] = [];
-    let start = 0;
-    const limit = 1000;
-    
-    while (start < 100000) { // cap at 100,000 rows to prevent infinite loops
-      let query = supabase.from(table).select('*').eq('site_name', siteName).range(start, start + limit - 1);
-      
+    try {
+      const start = targetPage * pageSize;
+      const end = start + pageSize - 1;
+
+      let query = supabase.from(table).select('*');
+      query = query.eq('site_name', siteName);
+
       if (pamSelectedRecorder !== 'All') {
-        // In case some rows use recorder_id and some use recorder_name
-        // we filter by recorder_name which is populated in upload logic
-        query = query.eq('recorder_name', pamSelectedRecorder);
+        if (detectionsTabScope === 'Lantana') {
+          query = query.eq('recorder_id', pamSelectedRecorder);
+        } else {
+          query = query.eq('recorder_name', pamSelectedRecorder);
+        }
       }
+
+      // Fast indexed fetch with range
+      query = query.order('date', { ascending: false }).range(start, end);
 
       const { data, error } = await query;
       
       if (error) {
-        alert('Error loading detections: ' + error.message);
-        break;
-      } 
-      
-      if (data) {
-        allData = [...allData, ...data];
-        if (data.length < limit) break; // Reached the end
+        console.warn('Ordered query error, falling back to natural range scan:', error);
+        let fallback = supabase.from(table).select('*').eq('site_name', siteName);
+        if (pamSelectedRecorder !== 'All') {
+          if (detectionsTabScope === 'Lantana') {
+            fallback = fallback.eq('recorder_id', pamSelectedRecorder);
+          } else {
+            fallback = fallback.eq('recorder_name', pamSelectedRecorder);
+          }
+        }
+        const fallbackRes = await fallback.range(start, end);
+        if (fallbackRes.error) {
+          alert('Error loading detections: ' + fallbackRes.error.message);
+        } else {
+          const list = fallbackRes.data || [];
+          setPamDetectionsList(list);
+          setDetectionPage(targetPage);
+          setHasMoreDetections(list.length === pageSize);
+        }
       } else {
-        break;
+        const list = data || [];
+        setPamDetectionsList(list);
+        setDetectionPage(targetPage);
+        setHasMoreDetections(list.length === pageSize);
       }
-      
-      start += limit;
+    } catch (err: any) {
+      console.error('Error in handleLoadDetections:', err);
+      alert('Failed to load detections: ' + (err.message || 'Unknown network error'));
+    } finally {
+      setIsDetectionsLoading(false);
     }
-    
-    setPamDetectionsList(allData);
-    setIsDetectionsLoading(false);
   };
 
   const handleDeletePamDetection = async (id: number) => {
@@ -2111,10 +2139,22 @@ export default function PamAdminPage() {
                 </h3>
                 
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-slate-500">Showing {filteredPamDetections.length} of {pamDetectionsList.length} rows</span>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {pamDetectionsList.length > 0 
+                      ? `Page ${detectionPage + 1} (${filteredPamDetections.length} loaded)` 
+                      : '0 records loaded'}
+                  </span>
                   <select
                     value={detectionsTabScope}
-                    onChange={(e) => setDetectionsTabScope(e.target.value as 'Lantana' | 'Common')}
+                    onChange={(e) => {
+                      setDetectionsTabScope(e.target.value as 'Lantana' | 'Common');
+                      setPamSelectedProject('Select Project');
+                      setPamSelectedSite('Select Site');
+                      setPamSelectedRecorder('All');
+                      setPamDetectionsList([]);
+                      setDetectionPage(0);
+                      setSelectedDetectionIds(new Set());
+                    }}
                     className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
                   >
                     <option value="Lantana">Lantana Offline Data</option>
@@ -2134,6 +2174,7 @@ export default function PamAdminPage() {
                         setPamSelectedSite('Select Site');
                         setPamSelectedRecorder('All');
                         setPamDetectionsList([]);
+                        setDetectionPage(0);
                         setSelectedDetectionIds(new Set());
                       }} 
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm"
@@ -2151,6 +2192,7 @@ export default function PamAdminPage() {
                         setPamSelectedSite(e.target.value);
                         setPamSelectedRecorder('All');
                         setPamDetectionsList([]);
+                        setDetectionPage(0);
                         setSelectedDetectionIds(new Set());
                       }} 
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm disabled:opacity-50"
@@ -2168,6 +2210,7 @@ export default function PamAdminPage() {
                       onChange={e => {
                         setPamSelectedRecorder(e.target.value);
                         setPamDetectionsList([]);
+                        setDetectionPage(0);
                         setSelectedDetectionIds(new Set());
                       }}
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm disabled:opacity-50"
@@ -2184,13 +2227,34 @@ export default function PamAdminPage() {
                     </select>
                   </div>
 
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto min-w-[120px]">
+                    <label className="text-[10px] font-black tracking-wider text-slate-500 uppercase">Page Size</label>
+                    <select 
+                      value={detectionPageSize} 
+                      onChange={e => {
+                        const newSize = parseInt(e.target.value, 10);
+                        setDetectionPageSize(newSize);
+                        if (pamSelectedSite !== 'Select Site') {
+                          handleLoadDetections(0, newSize);
+                        }
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm"
+                    >
+                      <option value={100}>100 rows</option>
+                      <option value={250}>250 rows</option>
+                      <option value={500}>500 rows</option>
+                      <option value={1000}>1,000 rows</option>
+                    </select>
+                  </div>
+
                   <div className="flex flex-col gap-1.5 w-full sm:w-auto mt-auto pt-[2px]">
                     <button
-                      onClick={handleLoadDetections}
+                      onClick={() => handleLoadDetections(0)}
                       disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading}
-                      className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md disabled:opacity-50 transition-colors"
+                      className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-md disabled:opacity-50 transition-colors flex items-center gap-2"
                     >
-                      {isDetectionsLoading ? 'Loading...' : 'Load Data'}
+                      {isDetectionsLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{isDetectionsLoading ? 'Loading...' : 'Load Data'}</span>
                     </button>
                   </div>
                 </div>
@@ -2262,7 +2326,13 @@ export default function PamAdminPage() {
                 <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                   {filteredPamDetections.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400">No detections found.</td>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        {isDetectionsLoading 
+                          ? 'Fetching detections from database...' 
+                          : pamSelectedSite === 'Select Site' 
+                            ? 'Please select a Project and Site, then click "Load Data".' 
+                            : 'No detections found for the selected filter.'}
+                      </td>
                     </tr>
                   ) : (
                     filteredPamDetections.map(det => (
@@ -2287,7 +2357,7 @@ export default function PamAdminPage() {
                         </td>
                         <td className="py-2.5 px-4">
                           <div className="font-bold text-slate-900">{det.project_name || 'N/A'}</div>
-                          <div className="text-[10px] text-slate-400">{det.site_name}</div>
+                          <div className="text-[10px] text-slate-400">{det.site_name} {det.recorder_id || det.recorder_name ? `(${det.recorder_id || det.recorder_name})` : ''}</div>
                         </td>
                         <td className="py-2.5 px-4">
                           <div className="font-bold text-slate-900">{det.common_name}</div>
@@ -2317,6 +2387,40 @@ export default function PamAdminPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {pamDetectionsList.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 text-xs">
+                <div className="text-slate-500 font-medium">
+                  Showing <span className="font-bold text-slate-800">{detectionPage * detectionPageSize + 1}</span> to{' '}
+                  <span className="font-bold text-slate-800">{detectionPage * detectionPageSize + filteredPamDetections.length}</span> records
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleLoadDetections(detectionPage - 1)}
+                    disabled={detectionPage === 0 || isDetectionsLoading}
+                    className="px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Previous</span>
+                  </button>
+
+                  <div className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-100 font-mono font-bold text-indigo-700">
+                    Page {detectionPage + 1}
+                  </div>
+
+                  <button
+                    onClick={() => handleLoadDetections(detectionPage + 1)}
+                    disabled={!hasMoreDetections || isDetectionsLoading}
+                    className="px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
