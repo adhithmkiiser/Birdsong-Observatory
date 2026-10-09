@@ -59,11 +59,12 @@ export default function HomePage() {
       const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
       
       // Fetch exact real table counts in parallel
-      const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, pamStatsRes] = await Promise.all([
+      const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, lantanaSpeciesRes, pamStatsRes] = await Promise.all([
         supabase.from('pam_detections').select('*', { count: 'exact', head: true }),
         supabase.from('lantana_detections').select('*', { count: 'exact', head: true }),
         supabase.from('live_detections').select('*', { count: 'exact', head: true }),
         supabase.from('lantana_sites').select('id'),
+        supabase.from('lantana_species_ecology').select('*', { count: 'exact', head: true }),
         supabase.rpc('get_dashboard_stats', { p_confidence: 0.1 })
       ]);
 
@@ -74,6 +75,7 @@ export default function HomePage() {
       const lantanaDetections = lantanaCountRes.count || 0;
       const liveDetections = liveCountRes.count || 0;
       const pamUniqueSpecies = pamStatsRes.data?.unique_species || 191;
+      const lantanaUniqueSpecies = lantanaSpeciesRes.count || 128;
 
       for (const p of projData) {
         if (p.project_type === 'Live') {
@@ -90,8 +92,8 @@ export default function HomePage() {
            };
         } else if (p.project_type === 'Lantana') {
           statsMap[p.id] = {
-            recorders: (lantanaSitesRes.data || []).length || 18,
-            species: 147,
+            recorders: (lantanaSitesRes.data || []).length || 25,
+            species: lantanaUniqueSpecies,
             detections: lantanaDetections
           };
         } else {
