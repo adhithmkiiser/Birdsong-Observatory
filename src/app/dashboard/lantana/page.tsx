@@ -1369,21 +1369,25 @@ export default function LantanaDashboardPage() {
               <div className="profile-card">
                 <div className="profile-left-col">
                   <div className="profile-image-container">
-                    {profileData.image && !profileData.image.includes('nan') && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={profileData.image}
-                        alt={profileData.name}
-                        className="profile-img"
-                        onError={e => (e.currentTarget.style.display = 'none')}
-                      />
-                    )}
-                    <div className="profile-placeholder">
+                    <div className="profile-placeholder" style={{ zIndex: 1 }}>
                       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '48px', height: '48px' }}>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                       </svg>
                       <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Avian Species Profile</span>
                     </div>
+                    {profileData.image && !profileData.image.includes('nan') && profileData.image !== 'null' && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={profileData.name}
+                        src={profileData.image}
+                        alt={profileData.name}
+                        className="profile-img"
+                        style={{ position: 'relative', zIndex: 2, width: '100%', height: '100%', objectFit: 'cover' }}
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        onError={e => (e.currentTarget.style.display = 'none')}
+                      />
+                    )}
                   </div>
                   <AudioPlayer 
                     src={profileData.audio ? (profileData.audio.startsWith('http') ? profileData.audio : `/${profileData.audio.replace(/^\/?audio\//, '')}`) : ''} 
