@@ -1007,14 +1007,21 @@ export default function PamAdminPage() {
       alert('Site Managers cannot register new sites.');
       return;
     }
-    if (!permittedProjectIds.has(newSiteProjId)) {
-      alert('You do not have permission to add a site to this project.');
+    
+    const targetProjId = selectedProjectId || newSiteProjId || getFilteredProjects()[0]?.id;
+    if (!targetProjId || !permittedProjectIds.has(targetProjId)) {
+      alert('You do not have permission to add a site to this project, or no project is selected.');
       return;
     }
-    if (!newSiteId || !newRecorderId) return;
+    if (!newSiteId || !newRecorderId) {
+      alert('Please provide both Site ID / Name and Recorder Hardware ID.');
+      return;
+    }
 
     const siteName = normalizeSiteCode(newSiteId).toUpperCase();
-    const proj = projectsList.find(p => p.id === newSiteProjId);
+    // Normalize recorder ID (e.g., 'lc_01' -> 'LC_01', 'lc_o1' -> 'LC_01')
+    const normalizedRecorderId = newRecorderId.trim().toUpperCase().replace(/_O([0-9])/i, '_0$1');
+    const proj = projectsList.find(p => p.id === targetProjId);
     const projName = proj?.title || 'PAM Project';
 
     const siteLatitude = newSiteLat !== '' ? Number(newSiteLat) : null;
@@ -1023,21 +1030,21 @@ export default function PamAdminPage() {
 
     // Keep Lantana and Common PAM site records in their separate tables.
     const newSite = isLantana ? {
-      id: `${newSiteProjId}_${siteName}_${newRecorderId}`,
-      site_name: newSiteId,
-      project_id: newSiteProjId,
+      id: `${targetProjId}_${siteName}_${normalizedRecorderId}`,
+      site_name: siteName,
+      project_id: targetProjId,
       project_name: projName,
-      recorder_id: newRecorderId,
+      recorder_id: normalizedRecorderId,
       lat: siteLatitude,
       long: siteLongitude,
       number_of_files: 0,
       number_of_hours: 0,
       total_size_bytes: 0
     } : {
-      id: `${newSiteProjId}_${siteName}`,
-      project_id: newSiteProjId,
+      id: `${targetProjId}_${siteName}`,
+      project_id: targetProjId,
       name: siteName,
-      elevation: newSiteElev,
+      elevation: newSiteElev || '',
       status: 'Active',
       latitude: siteLatitude,
       longitude: siteLongitude
@@ -1059,29 +1066,33 @@ export default function PamAdminPage() {
     // Update only the selected dataset's local state.
     if (isLantana) {
       setlantanaSitesList(prev => {
-        if (prev.some(s => s.id === newSite.id)) return prev;
-        return [...prev, newSite];
+        const filtered = prev.filter(s => s.id !== newSite.id);
+        return [...filtered, newSite];
       });
     } else {
       setSitesList(prev => {
-        const scopedSiteId = `${newSiteProjId}_${siteName}`;
-        if (prev.some(s => s.id === scopedSiteId)) return prev;
-        return [...prev, {
+        const scopedSiteId = `${targetProjId}_${siteName}`;
+        const filtered = prev.filter(s => s.id !== scopedSiteId);
+        return [...filtered, {
           id: scopedSiteId,
-          projectId: newSiteProjId,
+          projectId: targetProjId,
           name: siteName,
-          elevation: newSiteElev,
+          elevation: newSiteElev || '',
           status: 'Active',
           latitude: siteLatitude ?? 0,
           longitude: siteLongitude ?? 0,
+          recorderId: normalizedRecorderId,
           source: 'common'
         }];
       });
     }
 
     setNewSiteId('');
-    setNewRecorderId('');
-    showNotification(`Recorder "${newRecorderId}" and Site "${newSiteId}" registered!`);
+    setNewRecorderId('LC_01');
+    setNewSiteElev('');
+    setNewSiteLat('');
+    setNewSiteLng('');
+    showNotification(`Recorder "${normalizedRecorderId}" and Site "${siteName}" registered successfully under ${targetProjId}!`);
   };
 
   const handleAddSpeciesEcology = async (e: React.FormEvent) => {
@@ -1676,9 +1687,12 @@ export default function PamAdminPage() {
                   />
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Elevation</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">
+                    Elevation <span className="font-normal text-slate-400">(Optional)</span>
+                  </label>
                   <input
                     type="text"
+                    placeholder="e.g. 920m (Optional)"
                     value={newSiteElev}
                     onChange={(e) => setNewSiteElev(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
@@ -1710,7 +1724,7 @@ export default function PamAdminPage() {
                   <div>
                     <div className="font-extrabold text-slate-900">{s.name} <span className="font-mono text-[10px] text-slate-400">({s.id})</span></div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      Recorder: {s.recorderId || 'Not registered'} · GPS: {s.latitude}°N, {s.longitude}°E · Elev: {s.elevation}
+                      Recorder: {s.recorderId || 'Not registered'} · GPS: {s.latitude != null ? `${s.latitude}°N` : 'N/A'}, {s.longitude != null ? `${s.longitude}°E` : 'N/A'}{s.elevation ? ` · Elev: ${s.elevation}` : ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">

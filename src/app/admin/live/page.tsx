@@ -168,11 +168,37 @@ export default function LiveAdminPage() {
   useEffect(() => {
     async function loadLiveAdminData() {
       try {
-        const [{ data: projs }, { data: recordersData }, { data: detectionsData }] = await Promise.all([
+        const [
+          { data: projs },
+          { data: recordersData },
+          { count: liveCount }
+        ] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(2000)
+          supabase.from('live_detections').select('*', { count: 'exact', head: true })
         ]);
+
+        const totalCount = liveCount || 0;
+        let detectionsData: any[] = [];
+
+        if (totalCount > 0) {
+          const pageSize = 1000;
+          const numPages = Math.ceil(totalCount / pageSize);
+          const chunkPromises = [];
+          for (let i = 0; i < numPages; i++) {
+            const offset = i * pageSize;
+            chunkPromises.push(
+              supabase
+                .from('live_detections')
+                .select('*')
+                .order('timestamp', { ascending: false })
+                .range(offset, offset + pageSize - 1)
+                .then(res => res.data || [])
+            );
+          }
+          const chunks = await Promise.all(chunkPromises);
+          detectionsData = chunks.flat();
+        }
 
         if (projs) {
           setLiveProjects(projs.map((p: any) => ({

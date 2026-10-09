@@ -20,15 +20,23 @@ export async function GET(request: NextRequest) {
     console.warn('Could not read species_data.json:', err);
   }
 
-  // Fetch detections across all three pipelines (Live, PAM, Lantana)
-  const [
-    { data: liveDets },
-    { data: pamDets },
-    { data: lantanaDets }
-  ] = await Promise.all([
-    supabase.from('live_detections').select('common_name, scientific_name, recorder_id, project_name, site_name, timestamp').limit(1000),
-    supabase.from('pam_detections').select('common_name, scientific_name, recorder_name, project_name, site_name, date, time').limit(3000),
-    supabase.from('lantana_detections').select('common_name, scientific_name, recorder_name, project_name, site_name, date, time').limit(3000)
+  // Fetch detections across all three pipelines (Live, PAM, Lantana) using parallel 1k chunks
+  const fetchChunked = async (table: string, selectFields: string, targetChunks: number = 3) => {
+    const promises = [];
+    for (let i = 0; i < targetChunks; i++) {
+      const offset = i * 1000;
+      promises.push(
+        supabase.from(table).select(selectFields).range(offset, offset + 999).then(res => res.data || [])
+      );
+    }
+    const chunks = await Promise.all(promises);
+    return chunks.flat();
+  };
+
+  const [liveDets, pamDets, lantanaDets] = await Promise.all([
+    supabase.from('live_detections').select('common_name, scientific_name, recorder_id, project_name, site_name, timestamp').limit(1000).then(r => r.data || []),
+    fetchChunked('pam_detections', 'common_name, scientific_name, recorder_name, project_name, site_name, date, time', 3),
+    fetchChunked('lantana_detections', 'common_name, scientific_name, recorder_name, project_name, site_name, date, time', 3)
   ]);
 
   const normalizedLive = (liveDets || []).map((r: any) => ({

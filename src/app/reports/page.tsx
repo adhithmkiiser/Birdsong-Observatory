@@ -192,15 +192,44 @@ export default function ReportsPage() {
 
   // CSV Export for Raw Detections
   const handleExportRawDetectionsCSV = async () => {
-    let query = supabase.from('pam_detections').select('*').limit(5000);
+    const buildQuery = () => {
+      let q = supabase.from('pam_detections').select('*');
+      if (selectedStation && selectedStation.station_name) {
+        q = q.eq('site_name', selectedStation.station_name);
+      } else if (availableStations.length > 0) {
+        q = q.in('site_name', availableStations.map(s => s.station_name));
+      }
+      return q;
+    };
+
+    // Get count first
+    let countQ = supabase.from('pam_detections').select('*', { count: 'exact', head: true });
     if (selectedStation && selectedStation.station_name) {
-      query = query.eq('site_name', selectedStation.station_name);
+      countQ = countQ.eq('site_name', selectedStation.station_name);
     } else if (availableStations.length > 0) {
-      query = query.in('site_name', availableStations.map(s => s.station_name));
+      countQ = countQ.in('site_name', availableStations.map(s => s.station_name));
+    }
+    const { count } = await countQ;
+    const totalCount = count || 0;
+
+    let records: any[] = [];
+    if (totalCount > 0) {
+      const pageSize = 1000;
+      const numPages = Math.ceil(totalCount / pageSize);
+      const promises = [];
+      for (let i = 0; i < numPages; i++) {
+        const offset = i * pageSize;
+        promises.push(
+          buildQuery().range(offset, offset + pageSize - 1).then(res => res.data || [])
+        );
+      }
+      const chunks = await Promise.all(promises);
+      records = chunks.flat();
+    } else {
+      const { data } = await buildQuery().limit(1000);
+      records = data || [];
     }
 
-    const { data } = await query;
-    const records = data || [];
     const headers = ['Timestamp', 'Site Name', 'Recorder', 'Common Name', 'Confidence', 'Status'];
     const rows = records.map((d: any) => [
       `"${d.timestamp || d.date || ''}"`,

@@ -319,7 +319,7 @@ export default function LantanaDashboardPage() {
           const totalCount = countRes.count || 0;
 
           if (totalCount > 0) {
-            const pageSize = 5000;
+            const pageSize = 1000;
             const numPages = Math.ceil(totalCount / pageSize);
             
             const promises = [];

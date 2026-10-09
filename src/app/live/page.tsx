@@ -56,12 +56,39 @@ export default function LiveDetectionsPage() {
   React.useEffect(() => {
     async function loadLiveData() {
       try {
-        const [{ data: projData }, { data: recordersData }, { data: sitesData }, { data: detData }] = await Promise.all([
+        const [
+          { data: projData },
+          { data: recordersData },
+          { data: sitesData },
+          { count: liveCount }
+        ] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('sites').select('*').order('name'),
-          supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(200)
+          supabase.from('live_detections').select('*', { count: 'exact', head: true })
         ]);
+
+        const totalCount = liveCount || 0;
+        let detData: any[] = [];
+
+        if (totalCount > 0) {
+          const pageSize = 1000;
+          const numPages = Math.ceil(totalCount / pageSize);
+          const chunkPromises = [];
+          for (let i = 0; i < numPages; i++) {
+            const offset = i * pageSize;
+            chunkPromises.push(
+              supabase
+                .from('live_detections')
+                .select('*')
+                .order('timestamp', { ascending: false })
+                .range(offset, offset + pageSize - 1)
+                .then(res => res.data || [])
+            );
+          }
+          const chunks = await Promise.all(chunkPromises);
+          detData = chunks.flat();
+        }
 
         const liveProjectIds = new Set((projData || []).map(p => p.id));
         const liveSites = (sitesData || []).filter(s => liveProjectIds.has(s.project_id));
