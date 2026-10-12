@@ -129,17 +129,11 @@ export default function SatelliteMap() {
         >
           <ZoomControl position="bottomright" />
 
-          {/* High Resolution ESRI World Satellite Imagery */}
+          {/* Cloud-Free Google Satellite & Hybrid Imagery */}
           <TileLayer
-            attribution='&copy; <a href="https://www.esri.com/">Esri World Imagery</a>'
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={18}
-          />
-
-          {/* Transportation & Reference Overlay */}
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={18}
+            attribution='&copy; Google Maps'
+            url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+            maxZoom={20}
           />
 
           {/* Field Recorder Markers */}

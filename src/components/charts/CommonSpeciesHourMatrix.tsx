@@ -52,7 +52,9 @@ export default function CommonSpeciesHourMatrix({ p_project_names, p_site_name, 
       counts
     }));
 
-    let filtered = totals.filter(item => item.name.toLowerCase().includes(matrixSearch.toLowerCase()));
+    let filtered = totals
+      .filter(item => item.total > 0)
+      .filter(item => item.name.toLowerCase().includes(matrixSearch.toLowerCase()));
     if (matrixSort === 'detections') filtered.sort((a, b) => b.total - a.total);
     else filtered.sort((a, b) => a.name.localeCompare(b.name));
     if (matrixTopN !== 'All') filtered = filtered.slice(0, parseInt(matrixTopN, 10));

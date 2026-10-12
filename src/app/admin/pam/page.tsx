@@ -23,6 +23,8 @@ import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/apiClient';
 import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
+import { ShapefileUploadField } from '@/components/admin/ShapefileUploadField';
+import { ParsedShapefileResult } from '@/lib/shapefileParser';
 
 interface ProjectItem {
   id: string;
@@ -552,6 +554,7 @@ export default function PamAdminPage() {
   const [newProjCollab, setNewProjCollab] = useState('');
   const [newProjDesc, setNewProjDesc] = useState('');
   const [newProjImage, setNewProjImage] = useState('');
+  const [newProjShapefile, setNewProjShapefile] = useState<ParsedShapefileResult | null>(null);
 
   // Edit Project Modal States
   const [editingProj, setEditingProj] = useState<ProjectItem | null>(null);
@@ -560,6 +563,7 @@ export default function PamAdminPage() {
   const [editProjCollab, setEditProjCollab] = useState('');
   const [editProjImage, setEditProjImage] = useState('');
   const [editProjType, setEditProjType] = useState('PAM');
+  const [editProjShapefile, setEditProjShapefile] = useState<ParsedShapefileResult | null>(null);
 
   // Edit Site Modal States
   const [editingSite, setEditingSite] = useState<SiteItem | null>(null);
@@ -569,6 +573,8 @@ export default function PamAdminPage() {
   const [editSiteLng, setEditSiteLng] = useState<number | ''>(75.64);
   const [editSiteProjId, setEditSiteProjId] = useState('');
   const [editRecorderId, setEditRecorderId] = useState('');
+  const [newSiteShapefile, setNewSiteShapefile] = useState<ParsedShapefileResult | null>(null);
+  const [editSiteShapefile, setEditSiteShapefile] = useState<ParsedShapefileResult | null>(null);
 
   // Synchronize project selection when project type changes
   useEffect(() => {
@@ -956,6 +962,27 @@ export default function PamAdminPage() {
     }
 
     setProjectsList(prev => [...prev, mapDbProjectToItem(newProj)]);
+
+    if (newProjShapefile) {
+      try {
+        await fetch('/api/db/shapefiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetId: projectId,
+            targetType: 'project',
+            name: newProjTitle,
+            habitat: newProjCategory,
+            geojson: newProjShapefile.geojson,
+            centroid: newProjShapefile.centroid
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save project shapefile:', err);
+      }
+      setNewProjShapefile(null);
+    }
+
     setNewProjId('');
     setNewProjTitle('');
     setNewProjTag('');
@@ -995,6 +1022,26 @@ export default function PamAdminPage() {
       collaboration: editProjCollab,
       image: editProjImage || p.image
     } : p));
+
+    if (editProjShapefile) {
+      try {
+        await fetch('/api/db/shapefiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetId: editingProj.id,
+            targetType: 'project',
+            name: editProjTitle,
+            habitat: editProjType,
+            geojson: editProjShapefile.geojson,
+            centroid: editProjShapefile.centroid
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save project shapefile:', err);
+      }
+      setEditProjShapefile(null);
+    }
 
     setEditingProj(null);
     showNotification('Project updated successfully!');
@@ -1085,6 +1132,28 @@ export default function PamAdminPage() {
           source: 'common'
         }];
       });
+    }
+
+    if (newSiteShapefile) {
+      const habitatToken = (normalizedRecorderId || siteName).split(/[-_/]/)[0];
+      const detectedHabitat = isLantana ? (habitatToken === 'LI' ? 'LI' : habitatToken === 'CS' ? 'CS' : 'LC') : 'common';
+      try {
+        await fetch('/api/db/shapefiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetId: newSite.id,
+            targetType: 'site',
+            name: siteName,
+            habitat: detectedHabitat,
+            geojson: newSiteShapefile.geojson,
+            centroid: newSiteShapefile.centroid
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save site shapefile:', err);
+      }
+      setNewSiteShapefile(null);
     }
 
     setNewSiteId('');
@@ -1188,6 +1257,29 @@ export default function PamAdminPage() {
         recorderId: editRecorderId || s.recorderId
       } : s));
     }
+
+    if (editSiteShapefile) {
+      const habitatToken = (editRecorderId || editSiteName).split(/[-_/]/)[0];
+      const detectedHabitat = isLantana ? (habitatToken === 'LI' ? 'LI' : habitatToken === 'CS' ? 'CS' : 'LC') : 'common';
+      try {
+        await fetch('/api/db/shapefiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetId: editingSite.id,
+            targetType: 'site',
+            name: editSiteName,
+            habitat: detectedHabitat,
+            geojson: editSiteShapefile.geojson,
+            centroid: editSiteShapefile.centroid
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save site shapefile:', err);
+      }
+      setEditSiteShapefile(null);
+    }
+
     setEditingSite(null);
     showNotification('Site and recorder details updated successfully!');
   };
@@ -1533,16 +1625,12 @@ export default function PamAdminPage() {
                 />
               </div>
 
-              <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Project Image URL (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="https://images.unsplash.com/... or /Shola_Trust.png"
-                  value={newProjImage}
-                  onChange={(e) => setNewProjImage(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+              <ShapefileUploadField
+                shapefile={newProjShapefile}
+                onShapefileChange={setNewProjShapefile}
+                label="Project Landscape Shapefile / GeoJSON (.zip, .geojson)"
+                targetHabitat={newProjCategory === 'Lantana' ? 'LC' : 'common'}
+              />
 
               <div className="flex justify-end">
                 <button
@@ -1699,6 +1787,21 @@ export default function PamAdminPage() {
                   />
                 </div>
               </div>
+
+              <ShapefileUploadField
+                shapefile={newSiteShapefile}
+                onShapefileChange={setNewSiteShapefile}
+                label="Site Boundary Shapefile / GeoJSON (.zip, .geojson)"
+                targetHabitat={
+                  selectedProjectType === 'Lantana'
+                    ? (newRecorderId.toUpperCase().startsWith('LI') ? 'LI' : newRecorderId.toUpperCase().startsWith('CS') ? 'CS' : 'LC')
+                    : 'common'
+                }
+                onCentroidExtracted={(lat, lng) => {
+                  if (newSiteLat === '') setNewSiteLat(lat);
+                  if (newSiteLng === '') setNewSiteLng(lng);
+                }}
+              />
 
               <div className="flex justify-end">
                 <button
@@ -2047,6 +2150,13 @@ export default function PamAdminPage() {
                 />
               </div>
 
+              <ShapefileUploadField
+                shapefile={editProjShapefile}
+                onShapefileChange={setEditProjShapefile}
+                label="Update Landscape Shapefile (.zip, .geojson)"
+                targetHabitat={editProjType === 'Lantana' ? 'LC' : 'common'}
+              />
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -2152,6 +2262,21 @@ export default function PamAdminPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
                 />
               </div>
+
+              <ShapefileUploadField
+                shapefile={editSiteShapefile}
+                onShapefileChange={setEditSiteShapefile}
+                label="Update Site Boundary Shapefile (.zip, .geojson)"
+                targetHabitat={
+                  editingSite.source === 'Lantana'
+                    ? (editRecorderId.toUpperCase().startsWith('LI') ? 'LI' : editRecorderId.toUpperCase().startsWith('CS') ? 'CS' : 'LC')
+                    : 'common'
+                }
+                onCentroidExtracted={(lat, lng) => {
+                  if (editSiteLat === '') setEditSiteLat(lat);
+                  if (editSiteLng === '') setEditSiteLng(lng);
+                }}
+              />
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button

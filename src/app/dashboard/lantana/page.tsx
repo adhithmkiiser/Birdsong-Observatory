@@ -641,7 +641,9 @@ export default function LantanaDashboardPage() {
       return { name: sp, total: t };
     });
 
-    let filtered = totals.filter(item => item.name.toLowerCase().includes(matrixSearch.toLowerCase()));
+    let filtered = totals
+      .filter(item => item.total > 0)
+      .filter(item => item.name.toLowerCase().includes(matrixSearch.toLowerCase()));
     if (sortBy === 'detections') filtered.sort((a, b) => b.total - a.total);
     else filtered.sort((a, b) => a.name.localeCompare(b.name));
     if (topN !== 'All') filtered = filtered.slice(0, parseInt(topN, 10));
@@ -740,7 +742,9 @@ export default function LantanaDashboardPage() {
       let total = 0;
       indicatorRecs.forEach((r: any) => { total += stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0; });
       return { name: sp, total };
-    }).sort((a, b) => b.total - a.total);
+    })
+    .filter(item => item.total > 0)
+    .sort((a, b) => b.total - a.total);
   }, [activeIndicators, indicatorRecs, stats.spSiteMatrix]);
 
   const indicatorTotals = useMemo(() => {

@@ -71,10 +71,11 @@ export default function LightMap({
   return (
     <div className={`w-full rounded-3xl overflow-hidden border border-slate-200 shadow-sm relative ${heightClass}`}>
       <MapContainer center={center} zoom={zoom} scrollWheelZoom={false} className="w-full h-full z-0">
-        {/* Sleek Positron Light Map Tile Layer */}
+        {/* Sleek Esri Light Gray Canvas Map Tile Layer (Watermark-free, API-key free) */}
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.esri.com/">Esri</a> &copy; OpenStreetMap'
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+          maxNativeZoom={16}
         />
 
         <RecenterMap center={center} zoom={zoom} sites={sites} />
