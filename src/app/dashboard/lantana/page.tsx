@@ -30,8 +30,10 @@ import {
   ArrowUpRight,
   TrendingUp,
   Radio,
-  Sliders
+  Sliders,
+  ShieldCheck
 } from 'lucide-react';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 
 // ─── Exact Audio Player replication from BirdSearch.tsx ──────────────────────
 const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, speciesName }) => {
@@ -555,15 +557,20 @@ export default function LantanaDashboardPage() {
   const recoveryIndicators: string[] = configRaw?.indicator_species?.recovery || [];
   const lantanaIndicators: string[] = configRaw?.indicator_species?.lantana || [];
 
-  // Autocomplete suggestions
+  // Autocomplete suggestions (only species with > 0 detections in active scope)
   const suggestions = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
     return speciesList.filter(sp => {
+      let total = 0;
+      filteredRecorders.forEach((r: any) => {
+        total += stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0;
+      });
+      if (total === 0) return false;
       const m = speciesMetadata[sp];
       return sp.toLowerCase().includes(q) || (m?.scientific || '').toLowerCase().includes(q);
     }).slice(0, 8);
-  }, [searchQuery, speciesList, speciesMetadata]);
+  }, [searchQuery, speciesList, speciesMetadata, filteredRecorders, stats.spSiteMatrix]);
 
   // BirdSearch profile data (exact same as BirdSearch.tsx profileData)
   const profileData = useMemo(() => {
@@ -847,6 +854,79 @@ export default function LantanaDashboardPage() {
       .slice(0, 6);
   }, [speciesList, filteredRecorders, stats.spSiteMatrix, speciesMetadata]);
 
+  // Helper for IUCN status check: returns true if rare/threatened (CR, EN, VU, NT, DD)
+  const isThreatenedOrRare = (iucn?: string) => {
+    if (!iucn) return false;
+    const s = String(iucn).trim().toUpperCase();
+    if (['LC', 'LEAST CONCERN', 'NAN', 'NULL', 'UNKNOWN', 'NOT EVALUATED', 'NE', ''].includes(s)) return false;
+    return true;
+  };
+
+  const getIUCNBadgeInfo = (iucn?: string) => {
+    const code = String(iucn || '').trim().toUpperCase();
+    if (code === 'CR' || code.includes('CRITICALLY')) {
+      return { code: 'CR', label: 'Critically Endangered', color: 'bg-red-950/20 text-red-800 border-red-300' };
+    }
+    if (code === 'EN' || code.includes('ENDANGERED')) {
+      return { code: 'EN', label: 'Endangered', color: 'bg-rose-50 text-rose-700 border-rose-300' };
+    }
+    if (code === 'VU' || code.includes('VULNERABLE')) {
+      return { code: 'VU', label: 'Vulnerable', color: 'bg-orange-50 text-orange-700 border-orange-300' };
+    }
+    if (code === 'NT' || code.includes('NEAR')) {
+      return { code: 'NT', label: 'Near Threatened', color: 'bg-amber-50 text-amber-700 border-amber-300' };
+    }
+    if (code === 'DD' || code.includes('DATA')) {
+      return { code: 'DD', label: 'Data Deficient', color: 'bg-slate-50 text-slate-700 border-slate-300' };
+    }
+    return { code: code || 'LC', label: 'Least Concern', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+  };
+
+  // Detected rare / threatened species in current filter (detections > 0)
+  const rareThreatenedSpeciesSummary = useMemo(() => {
+    return speciesList
+      .map(sp => {
+        let total = 0;
+        let lcDet = 0, liDet = 0;
+        filteredRecorders.forEach((r: any) => {
+          const val = stats.spSiteMatrix[sp]?.[`${r.site_group}/${r.recorder_id}`] || 0;
+          total += val;
+          if (r.habitat === 'LC') lcDet += val;
+          else liDet += val;
+        });
+        const meta = speciesMetadata[sp] || {};
+        return {
+          name: sp,
+          scientific: meta.scientific || '',
+          detections: total,
+          lcDetections: lcDet,
+          liDetections: liDet,
+          iucn: meta.iucn || 'LC',
+          endemic: meta.endemic || 'No',
+          indicator: meta.indicator_group && meta.indicator_group !== 'nan' && meta.indicator_group !== 'None' ? meta.indicator_group : null,
+          audio: meta.audio || ''
+        };
+      })
+      .filter(sp => isThreatenedOrRare(sp.iucn))
+      .filter(sp => sp.detections > 0)
+      .sort((a, b) => b.detections - a.detections);
+  }, [speciesList, filteredRecorders, stats.spSiteMatrix, speciesMetadata]);
+
+  // Ensure selectedSpecies is always a species with > 0 detections in current filter
+  useEffect(() => {
+    if (topSpeciesSummary.length > 0) {
+      let currentDets = 0;
+      if (selectedSpecies) {
+        filteredRecorders.forEach((r: any) => {
+          currentDets += stats.spSiteMatrix[selectedSpecies]?.[`${r.site_group}/${r.recorder_id}`] || 0;
+        });
+      }
+      if (currentDets === 0) {
+        setSelectedSpecies(topSpeciesSummary[0].name);
+      }
+    }
+  }, [topSpeciesSummary, selectedSpecies, filteredRecorders, stats.spSiteMatrix]);
+
   // Habitat breakdown stats
   const habitatStats = useMemo(() => {
     let lcCount = 0, liCount = 0, lcDets = 0, liDets = 0;
@@ -1107,69 +1187,149 @@ export default function LantanaDashboardPage() {
             {/* 4 Summary KPI Cards */}
             <div className="summary-cards">
               <div className="kpi-card">
-                <span className="kpi-label">Species Richness</span>
+                <span className="kpi-label flex items-center justify-between">
+                  <span>Species Richness</span>
+                  <InfoTooltip text="Unique avian species acoustically detected in the selected site/project." />
+                </span>
                 <span className="kpi-value">{stats.uniqueSpecies}</span>
-                <span className="kpi-subtext">Unique avian species detected</span>
               </div>
               <div className="kpi-card">
-                <span className="kpi-label">Total Detections</span>
+                <span className="kpi-label flex items-center justify-between">
+                  <span>Total Detections</span>
+                  <InfoTooltip text="Total acoustic classification triggers verified across physical recorders." />
+                </span>
                 <span className="kpi-value">{stats.totalDetections.toLocaleString()}</span>
-                <span className="kpi-subtext">BirdNET classification triggers</span>
               </div>
               <div className="kpi-card">
-                <span className="kpi-label">Active Recorders</span>
+                <span className="kpi-label flex items-center justify-between">
+                  <span>Active Recorders</span>
+                  <InfoTooltip text="Number of physical acoustic monitoring stations active in this scope." />
+                </span>
                 <span className="kpi-value">{filteredRecorders.length}</span>
-                <span className="kpi-subtext">Recorder stations monitored</span>
               </div>
               <div className="kpi-card">
-                <span className="kpi-label">Acoustic Survey Effort</span>
+                <span className="kpi-label flex items-center justify-between">
+                  <span>Acoustic Survey Effort</span>
+                  <InfoTooltip text="Total audio recordings processed out of expected scheduled monitoring files." />
+                </span>
                 <span className="kpi-value">{stats.filesProcessed.toLocaleString()}</span>
-                <span className="kpi-subtext">{stats.filesProcessed} of {stats.filesExpected} clips parsed</span>
+                <span className="kpi-subtext font-mono text-[11px] text-[#5a635d]">
+                  {stats.filesProcessed} of {stats.filesExpected} clips parsed
+                </span>
               </div>
             </div>
 
             {/* 2-Column Summary Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
               
-              {/* Left Column: Habitat Distribution Card */}
-              <div className="dashboard-section">
-                <div className="section-header">
-                  <div>
-                    <h2>Habitat Distribution &amp; Coverage</h2>
-                    <p>Comparative telemetry across Lantana-Cleared (LC) and Lantana-Infested (LI) sites.</p>
+              {/* Left Column: Habitat Distribution Card & Rare/Threatened Detected Species Card */}
+              <div className="flex flex-col gap-5">
+                {/* 1. Habitat Distribution & Coverage */}
+                <div className="dashboard-section">
+                  <div className="section-header">
+                    <div className="flex items-center gap-2">
+                      <h2>Habitat Distribution &amp; Coverage</h2>
+                      <InfoTooltip text="Comparative telemetry across Lantana-Cleared (LC) and Lantana-Infested (LI) sites." />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="compare-col lc">
+                      <span className="compare-header lc">Lantana-Cleared (LC)</span>
+                      <div className="compare-stats">
+                        <span className="compare-large">{habitatStats.lcDets.toLocaleString()}</span>
+                        <span className="compare-label lc">detections</span>
+                      </div>
+                      <span className="kpi-subtext" style={{ color: '#14532d' }}>
+                        {habitatStats.lcCount} active LC monitoring stations
+                      </span>
+                    </div>
+
+                    <div className="compare-col li">
+                      <span className="compare-header li">Lantana-Infested (LI)</span>
+                      <div className="compare-stats">
+                        <span className="compare-large">{habitatStats.liDets.toLocaleString()}</span>
+                        <span className="compare-label li">detections</span>
+                      </div>
+                      <span className="kpi-subtext" style={{ color: '#991b1b' }}>
+                        {habitatStats.liCount} active LI monitoring stations
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="compare-col lc">
-                    <span className="compare-header lc">Lantana-Cleared (LC)</span>
-                    <div className="compare-stats">
-                      <span className="compare-large">{habitatStats.lcDets.toLocaleString()}</span>
-                      <span className="compare-label lc">detections</span>
+
+                {/* 2. Rare & Threatened Detected Species (Below Habitat Distribution) */}
+                <div className="dashboard-section">
+                  <div className="section-header">
+                    <div className="flex items-center gap-2">
+                      <h2>Rare &amp; Threatened Detected Species</h2>
+                      <InfoTooltip text="Avian species classified under IUCN Red List threatened or near-threatened categories (Critically Endangered, Endangered, Vulnerable, Near Threatened) detected in the selected site/project." />
                     </div>
-                    <span className="kpi-subtext" style={{ color: '#14532d' }}>
-                      {habitatStats.lcCount} active LC monitoring stations
-                    </span>
+                    {rareThreatenedSpeciesSummary.length > 0 && (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                        {rareThreatenedSpeciesSummary.length} Detected
+                      </span>
+                    )}
                   </div>
 
-                  <div className="compare-col li">
-                    <span className="compare-header li">Lantana-Infested (LI)</span>
-                    <div className="compare-stats">
-                      <span className="compare-large">{habitatStats.liDets.toLocaleString()}</span>
-                      <span className="compare-label li">detections</span>
+                  {rareThreatenedSpeciesSummary.length > 0 ? (
+                    <div className="divide-y divide-[#f1f5f9]">
+                      {rareThreatenedSpeciesSummary.map((sp) => {
+                        const badge = getIUCNBadgeInfo(sp.iucn);
+                        return (
+                          <div key={sp.name} className="py-2.5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${badge.color}`}>
+                                {badge.code}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-[#1a1f1c] truncate">{sp.name}</div>
+                                <div className="text-xs italic text-[#5a635d] truncate">{sp.scientific}</div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              {sp.endemic && sp.endemic !== 'No' && (
+                                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  Endemic
+                                </span>
+                              )}
+                              <div className="text-right">
+                                <span className="text-sm font-bold text-[#1f4d3a]">{sp.detections.toLocaleString()}</span>
+                                <span className="text-[10px] text-[#5a635d] block">calls</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setSelectedSpecies(sp.name);
+                                  setActiveTab('explorer');
+                                }}
+                                className="p-1.5 hover:bg-[#f0f7f3] rounded-lg text-[#1f4d3a] transition-colors"
+                                title="Inspect Species Profile"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <span className="kpi-subtext" style={{ color: '#991b1b' }}>
-                      {habitatStats.liCount} active LI monitoring stations
-                    </span>
-                  </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-[#f0f7f3]/60 border border-[#dde1dc] flex items-start gap-2.5">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-[#2d3731]">
+                        <span className="font-bold text-[#1f4d3a] block mb-0.5">No Threatened Species Detected in Current Filter</span>
+                        No IUCN threatened or near-threatened (CR, EN, VU, NT) species have been classified in the selected scope. All <strong>{stats.uniqueSpecies}</strong> detected species are classified as <strong>Least Concern (LC)</strong>.
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Right Column: Top Species Detected */}
               <div className="dashboard-section">
                 <div className="section-header">
-                  <div>
+                  <div className="flex items-center gap-2">
                     <h2>Top Detected Avian Species</h2>
-                    <p>Most frequently classified birds by automated acoustic recognition.</p>
+                    <InfoTooltip text="Most frequently classified birds by automated acoustic recognition." />
                   </div>
                   {topSpeciesSummary.length > 0 && (
                     <button onClick={() => setActiveTab('explorer')} className="text-xs font-semibold text-[#1f4d3a] hover:underline flex items-center gap-1">
@@ -1230,9 +1390,9 @@ export default function LantanaDashboardPage() {
         {activeTab === 'map' && (
           <div className="dashboard-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Survey Site Map</h2>
-                <p>Physical recorder locations colored by species richness and acoustic detections.</p>
+                <InfoTooltip text="Physical recorder locations colored by species richness and acoustic detections." />
               </div>
               <div className="flex items-center gap-3 text-xs font-semibold">
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#10b981]" /> LC (Cleared)</span>
@@ -1258,9 +1418,9 @@ export default function LantanaDashboardPage() {
         {activeTab === 'heatmap' && (
           <div className="dashboard-section" id="heatmap-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Species Detection Heatmap</h2>
-                <p>Distribution and relative abundance (call counts) of species across physical recorders.</p>
+                <InfoTooltip text="Distribution and relative abundance (call counts) of species across physical recorders." />
               </div>
             </div>
 
@@ -1335,9 +1495,9 @@ export default function LantanaDashboardPage() {
         {activeTab === 'explorer' && (
           <div className="dashboard-section" id="explorer-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Avian Species Explorer</h2>
-                <p>Search for any detected bird species to view its ecological profile, IUCN status, and habitat associations.</p>
+                <InfoTooltip text="Search for any detected bird species to view its ecological profile, IUCN status, and habitat associations." />
               </div>
             </div>
 
@@ -1483,9 +1643,9 @@ export default function LantanaDashboardPage() {
         {activeTab === 'indicators' && (
           <div className="dashboard-section" id="indicator-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Restoration Indicator Species Analysis</h2>
-                <p>Detections of ecologically significant indicator species across Lantana-Cleared (LC) vs Lantana-Infested (LI) habitats.</p>
+                <InfoTooltip text="Detections of ecologically significant indicator species across Lantana-Cleared (LC) vs Lantana-Infested (LI) habitats." />
               </div>
             </div>
 

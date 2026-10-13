@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect, useRef, forwardRef, useImperativeH
 import dynamic from 'next/dynamic';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false }) as any;
+import InfoTooltip from '@/components/ui/InfoTooltip';
 
 export interface AnalysisChartsHandle {
   downloadRichness: () => void;
@@ -318,9 +319,9 @@ const AnalysisCharts = forwardRef<AnalysisChartsHandle, AnalysisChartsProps>(fun
       {showSpeciesBySite && (
         <div className="dashboard-section">
           <div className="section-header">
-            <div>
+            <div className="flex items-center gap-2">
               <h2>Species Detections Across Sites</h2>
-              <p>Search and select birds to compare detections across active recorder sites.</p>
+              <InfoTooltip text="Search and select birds to compare detections across active recorder sites." />
             </div>
           </div>
 
@@ -421,9 +422,9 @@ const AnalysisCharts = forwardRef<AnalysisChartsHandle, AnalysisChartsProps>(fun
       {showRichness && (
         <div className="dashboard-section">
           <div className="section-header">
-            <div>
+            <div className="flex items-center gap-2">
               <h2>Species Richness: LC vs LI Comparison</h2>
-              <p>Avian species richness comparison between Lantana-Cleared (LC) and Lantana-Infested (LI) sites.</p>
+              <InfoTooltip text="Avian species richness comparison between Lantana-Cleared (LC) and Lantana-Infested (LI) sites." />
             </div>
           </div>
 
@@ -483,9 +484,9 @@ const AnalysisCharts = forwardRef<AnalysisChartsHandle, AnalysisChartsProps>(fun
       {showPerformance && (
         <div className="dashboard-section">
           <div className="section-header">
-            <div>
+            <div className="flex items-center gap-2">
               <h2>Site-Level Performance &amp; Detections</h2>
-              <p>Avian species counts paired with acoustic detection triggers per active recorder site.</p>
+              <InfoTooltip text="Avian species counts paired with acoustic detection triggers per active recorder site." />
             </div>
           </div>
 

@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboardStore } from '@/lib/store/useDashboardStore';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
@@ -161,11 +162,11 @@ export default function CommonSpeciesHourMatrix({ p_project_names, p_site_name, 
   return (
     <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-3">
-        <div>
+        <div className="flex items-center gap-2">
           <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
             <Search className="w-4 h-4 text-indigo-600" /> Species Detection Matrix by Hour of Day
           </h3>
-          <p className="text-[11px] text-slate-500 font-medium">24-hour diurnal call counts for each detected species.</p>
+          <InfoTooltip text="24-hour diurnal call counts for each detected species." />
         </div>
         <button
           onClick={downloadCSV}

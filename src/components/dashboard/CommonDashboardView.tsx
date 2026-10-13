@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import DashboardLoader from '@/components/ui/DashboardLoader';
 import { useDashboardStore } from '@/lib/store/useDashboardStore';
 import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 
 import { getSpeciesGradientColor } from '@/lib/colorUtils';
 const LantanaMap = dynamic(() => import('@/components/map/LantanaMap'), { ssr: false });
@@ -916,9 +917,9 @@ export default function CommonDashboardView({
             {/* Bioacoustic Highlights Grid */}
             <div className="dashboard-section">
               <div className="section-header">
-                <div>
+                <div className="flex items-center gap-2">
                   <h2>Survey Bioacoustic Insights</h2>
-                  <p>Automated ecological detections and significant vocalization records.</p>
+                  <InfoTooltip text="Automated ecological detections and significant vocalization records." />
                 </div>
               </div>
               
@@ -961,9 +962,9 @@ export default function CommonDashboardView({
         {activeTab === 'map' && (
           <div className="dashboard-section" id="map-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Survey Site Map</h2>
-                <p>Physical monitoring station locations colored by avian species richness (Green: Low → Red: High).</p>
+                <InfoTooltip text="Physical monitoring station locations colored by avian species richness (Green: Low → Red: High)." />
               </div>
             </div>
             <div className="h-[520px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
@@ -998,9 +999,9 @@ export default function CommonDashboardView({
         {activeTab === 'trends' && (
           <div className="dashboard-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Species Activity &amp; Trend Analysis</h2>
-                <p>Acoustic vocalization trigger rates across selected species over time (Max 10 species).</p>
+                <InfoTooltip text="Acoustic vocalization trigger rates across selected species over time (Max 10 species)." />
               </div>
               <div className="flex items-center gap-3">
                 {/* Time Interval Toggle */}
@@ -1155,9 +1156,9 @@ export default function CommonDashboardView({
         {activeTab === 'diurnal' && (
           <div className="dashboard-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Diurnal Activity Patterns</h2>
-                <p>24-hour daily call rhythm and vocalization activity cycles.</p>
+                <InfoTooltip text="24-hour daily call rhythm and vocalization activity cycles." />
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs font-semibold text-[#5a635d] flex items-center gap-1">
@@ -1188,9 +1189,9 @@ export default function CommonDashboardView({
         {activeTab === 'diversity' && (
           <div className="dashboard-section">
             <div className="section-header">
-              <div>
+              <div className="flex items-center gap-2">
                 <h2>Avian Diversity &amp; Richness Over Time</h2>
-                <p>Number of distinct species classified per day across the survey period.</p>
+                <InfoTooltip text="Number of distinct species classified per day across the survey period." />
               </div>
               <div className="flex items-center gap-2">
                 <select 
