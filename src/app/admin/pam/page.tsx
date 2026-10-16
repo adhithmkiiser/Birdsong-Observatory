@@ -148,7 +148,6 @@ export default function PamAdminPage() {
   // Delete all detections state
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [deleteAllScope, setDeleteAllScope] = useState<'recorder' | 'site'>('recorder');
-  const [deleteAllTargetDb, setDeleteAllTargetDb] = useState<'all' | 'current'>('all');
   const [deleteAllConfirmed, setDeleteAllConfirmed] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [siteToDeleteDetections, setSiteToDeleteDetections] = useState<SiteItem | null>(null);
@@ -433,7 +432,6 @@ export default function PamAdminPage() {
       setSiteToDeleteDetections(null);
       setDeleteAllScope(pamSelectedRecorder !== 'All' ? 'recorder' : 'site');
     }
-    setDeleteAllTargetDb('all');
     setDeleteAllConfirmed(false);
     setIsDeleteAllModalOpen(true);
   };
@@ -466,10 +464,6 @@ export default function PamAdminPage() {
     }
 
     try {
-      const targetTable = deleteAllTargetDb === 'all' 
-        ? 'all' 
-        : (detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections');
-
       const res = await apiFetch('/api/db/detections', {
         method: 'DELETE',
         body: JSON.stringify({
@@ -479,7 +473,7 @@ export default function PamAdminPage() {
             recorderId,
             projectName,
             projectId,
-            table: targetTable
+            table: 'all'
           }
         })
       }, currentUser);
@@ -2841,41 +2835,15 @@ export default function PamAdminPage() {
                   </div>
                 )}
 
-                {/* Database Scope */}
-                <div className="space-y-2">
-                  <label className="font-extrabold text-slate-700 block">Observatory Database Scope</label>
-                  <div className="space-y-1.5">
-                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
-                      <input
-                        type="radio"
-                        name="deleteAllTargetDb"
-                        value="all"
-                        checked={deleteAllTargetDb === 'all'}
-                        onChange={() => setDeleteAllTargetDb('all')}
-                        className="mt-0.5 text-rose-600 focus:ring-rose-500"
-                      />
-                      <div className="text-xs">
-                        <span className="font-bold text-slate-900 block">All related databases (Recommended)</span>
-                        <span className="text-[10px] text-slate-500">Purges matching records across PAM detections, Lantana detections, and Live detections in Supabase.</span>
-                      </div>
-                    </label>
-                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
-                      <input
-                        type="radio"
-                        name="deleteAllTargetDb"
-                        value="current"
-                        checked={deleteAllTargetDb === 'current'}
-                        onChange={() => setDeleteAllTargetDb('current')}
-                        className="mt-0.5 text-rose-600 focus:ring-rose-500"
-                      />
-                      <div className="text-xs">
-                        <span className="font-bold text-slate-900 block">Current dashboard dataset only</span>
-                        <span className="text-[10px] text-slate-500">
-                          Only cleans the {detectionsTabScope === 'Lantana' ? 'Lantana Offline' : 'Common PAM'} dataset table.
-                        </span>
-                      </div>
-                    </label>
+                {/* Database Scope Notice */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-extrabold text-slate-900 block">Database Synchronization</span>
+                    <span className="text-[10px] text-slate-500">Automatically purges records across all related observatory tables in Supabase.</span>
                   </div>
+                  <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap ml-2">
+                    All Related DBs
+                  </span>
                 </div>
 
                 {/* Warning Callout */}

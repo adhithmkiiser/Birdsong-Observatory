@@ -74,8 +74,20 @@ export default function HomePage() {
       const pamDetections = pamCountRes.count || 0;
       const lantanaDetections = lantanaCountRes.count || 0;
       const liveDetections = liveCountRes.count || 0;
-      const pamUniqueSpecies = pamStatsRes.data?.unique_species || 191;
-      const lantanaUniqueSpecies = lantanaSpeciesRes.count || 128;
+      const pamUniqueSpecies = pamDetections > 0 ? (pamStatsRes.data?.unique_species || 191) : 0;
+
+      let lantanaUniqueSpecies = 0;
+      if (lantanaDetections > 0) {
+        const { data: lantanaSample } = await supabase
+          .from('lantana_detections')
+          .select('common_name')
+          .limit(10000);
+        if (lantanaSample && lantanaSample.length > 0) {
+          lantanaUniqueSpecies = new Set(lantanaSample.map((d: any) => d.common_name).filter(Boolean)).size;
+        } else {
+          lantanaUniqueSpecies = lantanaSpeciesRes.count || 0;
+        }
+      }
 
       for (const p of projData) {
         if (p.project_type === 'Live') {
@@ -87,7 +99,7 @@ export default function HomePage() {
            p.active_nodes_count = activeCount;
            statsMap[p.id] = {
              recorders: 1,
-             species: 12,
+             species: liveDetections > 0 ? 12 : 0,
              detections: liveDetections
            };
         } else if (p.project_type === 'Lantana') {
