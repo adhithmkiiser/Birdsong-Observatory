@@ -34,6 +34,7 @@ import {
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 import { sendOneTimePasswordEmail } from '@/lib/emailService';
 import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 
@@ -60,7 +61,7 @@ interface LiveProjectItem {
 }
 
 export default function LiveAdminPage() {
-  const { usersList, updateUserCredentials, deleteUser, addUser } = useRole();
+  const { currentUser, usersList, updateUserCredentials, deleteUser, addUser } = useRole();
 
   // Active Tab: 'nodes' | 'generator' | 'projects' | 'users' | 'detections'
   const [activeTab, setActiveTab] = useState<'nodes' | 'generator' | 'projects' | 'users' | 'detections'>('nodes');
@@ -338,6 +339,40 @@ WantedBy=multi-user.target
       }
       setLiveDetections(prev => prev.filter(d => d.id !== id));
       showNotification('Detection row deleted successfully.');
+    }
+  };
+
+  const handleDeleteSiteOrRecorderDetections = async () => {
+    if (liveFilterSite === 'All' && liveFilterRecorder === 'All') return;
+    const targetLabel = liveFilterRecorder !== 'All' 
+      ? `recorder "${liveFilterRecorder}"${liveFilterSite !== 'All' ? ` at site "${liveFilterSite}"` : ''}`
+      : `site "${liveFilterSite}"`;
+
+    if (!confirm(`Are you sure you want to permanently delete ALL detections for ${targetLabel} from all observatory datasets in Supabase? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch('/api/db/detections', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          deleteAllForSite: {
+            siteName: liveFilterSite !== 'All' ? liveFilterSite : undefined,
+            recorderId: liveFilterRecorder !== 'All' ? liveFilterRecorder : undefined,
+            projectName: liveFilterProject !== 'All' ? liveFilterProject : undefined,
+            table: 'all'
+          }
+        })
+      }, currentUser);
+
+      setLiveDetections(prev => prev.filter(d => {
+        if (liveFilterSite !== 'All' && (d.site_name === liveFilterSite || d.station_name === liveFilterSite)) return false;
+        if (liveFilterRecorder !== 'All' && d.recorder_id === liveFilterRecorder) return false;
+        return true;
+      }));
+      showNotification(res.message || `All detections for ${targetLabel} were permanently deleted.`);
+    } catch (err: any) {
+      alert('Failed to delete detections: ' + err.message);
     }
   };
 
@@ -1315,6 +1350,18 @@ SYNC_INTERVAL=${genInterval}`}
                   <option value="All">All Recorders</option>
                   {liveFilterOptions.recorders.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
+
+                {(liveFilterSite !== 'All' || liveFilterRecorder !== 'All') && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteSiteOrRecorderDetections}
+                    className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border border-rose-200 font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Delete all detections for selected site/recorder from database"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Delete {liveFilterRecorder !== 'All' ? 'Recorder' : 'Site'} Detections</span>
+                  </button>
+                )}
               </div>
             </div>
 

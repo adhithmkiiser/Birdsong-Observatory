@@ -26,7 +26,7 @@ export default function AboutPage() {
             Mission and scope
           </h2>
           <p className="text-base sm:text-lg leading-[1.611]">
-            The Birdsong Observatory develops scalable computational ecology tools for continuous biodiversity monitoring. Rather than treating bioacoustics as an offline academic pursuit, the Observatory operates as an applied ecological platform.
+            The Birdsong Observatory develops scalable computational ecology tools for continuous biodiversity monitoring. The Observatory operates as an applied ecological platform.
           </p>
           <p className="text-base sm:text-lg leading-[1.611]">
             We partner with state forest departments, conservation non-profits, ecological restoration teams, and land managers to design, deploy, and analyze dense acoustic sensor arrays. Our mission is to generate quantitative, verifiable ecological evidence that directly informs forest restoration strategies, habitat management, and policy decisions.

@@ -145,6 +145,14 @@ export default function PamAdminPage() {
   const [pamSortColumn, setPamSortColumn] = useState<PamSortColumn>('date');
   const [pamSortDesc, setPamSortDesc] = useState(true);
 
+  // Delete all detections state
+  const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
+  const [deleteAllScope, setDeleteAllScope] = useState<'recorder' | 'site'>('recorder');
+  const [deleteAllTargetDb, setDeleteAllTargetDb] = useState<'all' | 'current'>('all');
+  const [deleteAllConfirmed, setDeleteAllConfirmed] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [siteToDeleteDetections, setSiteToDeleteDetections] = useState<SiteItem | null>(null);
+
   const scopedProjects = useMemo(() => {
     if (detectionsTabScope === 'Lantana') {
       return projectsList.filter(p => p.type === 'Lantana');
@@ -414,6 +422,76 @@ export default function PamAdminPage() {
       setSelectedDetectionIds(new Set());
       showNotification(`${idsToDelete.length} rows deleted successfully.`);
       setIsDetectionsLoading(false);
+    }
+  };
+
+  const handleOpenDeleteAllModal = (site?: SiteItem) => {
+    if (site) {
+      setSiteToDeleteDetections(site);
+      setDeleteAllScope(site.recorderId ? 'recorder' : 'site');
+    } else {
+      setSiteToDeleteDetections(null);
+      setDeleteAllScope(pamSelectedRecorder !== 'All' ? 'recorder' : 'site');
+    }
+    setDeleteAllTargetDb('all');
+    setDeleteAllConfirmed(false);
+    setIsDeleteAllModalOpen(true);
+  };
+
+  const handleExecuteDeleteAllDetections = async () => {
+    if (!deleteAllConfirmed) return;
+    setIsDeletingAll(true);
+
+    let siteName = '';
+    let siteId: string | undefined = undefined;
+    let recorderId: string | undefined = undefined;
+    let projectName: string | undefined = undefined;
+    let projectId: string | undefined = undefined;
+
+    if (siteToDeleteDetections) {
+      siteName = siteToDeleteDetections.name;
+      siteId = siteToDeleteDetections.id;
+      recorderId = deleteAllScope === 'recorder' ? siteToDeleteDetections.recorderId : undefined;
+      const proj = projectsList.find(p => p.id === siteToDeleteDetections.projectId);
+      projectName = proj ? proj.title : siteToDeleteDetections.projectId;
+      projectId = siteToDeleteDetections.projectId;
+    } else {
+      const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+      siteName = siteItem ? siteItem.name : pamSelectedSite;
+      siteId = siteItem ? siteItem.id : undefined;
+      recorderId = deleteAllScope === 'recorder' && pamSelectedRecorder !== 'All' ? pamSelectedRecorder : undefined;
+      const proj = scopedProjects.find(p => p.id === pamSelectedProject);
+      projectName = proj ? proj.title : (pamSelectedProject !== 'Select Project' ? pamSelectedProject : undefined);
+      projectId = pamSelectedProject !== 'Select Project' ? pamSelectedProject : undefined;
+    }
+
+    try {
+      const targetTable = deleteAllTargetDb === 'all' 
+        ? 'all' 
+        : (detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections');
+
+      const res = await apiFetch('/api/db/detections', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          deleteAllForSite: {
+            siteName,
+            siteId,
+            recorderId,
+            projectName,
+            projectId,
+            table: targetTable
+          }
+        })
+      }, currentUser);
+
+      setPamDetectionsList([]);
+      setSelectedDetectionIds(new Set());
+      setIsDeleteAllModalOpen(false);
+      showNotification(res.message || `All detections for "${siteName}" were permanently deleted.`);
+    } catch (err: any) {
+      alert('Failed to delete detections: ' + (err.message || 'Unknown network error'));
+    } finally {
+      setIsDeletingAll(false);
     }
   };
 
@@ -1834,6 +1912,7 @@ export default function PamAdminPage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
+                      type="button"
                       onClick={() => {
                         setEditingSite(s);
                         setEditSiteName(s.name);
@@ -1844,16 +1923,26 @@ export default function PamAdminPage() {
                         setEditRecorderId(s.recorderId || '');
                       }}
                       className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
-                      title="Edit Site"
+                      title="Edit Site Coordinates"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDeleteSite(s)}
-                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white transition"
-                      title="Delete Site"
+                      type="button"
+                      onClick={() => handleOpenDeleteAllModal(s)}
+                      className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white font-extrabold text-[10px] border border-rose-200 transition flex items-center gap-1 cursor-pointer"
+                      title="Delete all detections for this site from observatory datasets"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
+                      <span>Purge Detections</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSite(s)}
+                      className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-rose-600 hover:text-white transition"
+                      title="Delete site record (and cascade delete all detections)"
+                    >
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2473,6 +2562,19 @@ export default function PamAdminPage() {
                       <span>{isDetectionsLoading ? 'Loading...' : 'Load Data'}</span>
                     </button>
                   </div>
+
+                  <div className="flex flex-col gap-1.5 w-full sm:w-auto mt-auto pt-[2px]">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDeleteAllModal()}
+                      disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading || isDeletingAll}
+                      className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-black shadow-sm disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Delete all detections for this site or recorder across all database tables"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{pamSelectedRecorder !== 'All' ? 'Delete Recorder Detections' : 'Delete All Site Detections'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {selectedDetectionIds.size > 0 && (
@@ -2640,6 +2742,198 @@ export default function PamAdminPage() {
           </div>
         </div>
       )}
+
+      {/* Delete All Detections Modal */}
+      {isDeleteAllModalOpen && (() => {
+        const activeSiteName = siteToDeleteDetections 
+          ? siteToDeleteDetections.name 
+          : (scopedSites.find(s => s.id === pamSelectedSite)?.name || pamSelectedSite);
+        const activeProjName = siteToDeleteDetections
+          ? (projectsList.find(p => p.id === siteToDeleteDetections.projectId)?.title || siteToDeleteDetections.projectId)
+          : (scopedProjects.find(p => p.id === pamSelectedProject)?.title || pamSelectedProject);
+        const activeRecorder = siteToDeleteDetections
+          ? siteToDeleteDetections.recorderId
+          : (pamSelectedRecorder !== 'All' ? pamSelectedRecorder : null);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden text-xs">
+              
+              {/* Modal Header */}
+              <div className="p-6 bg-gradient-to-r from-rose-950 via-slate-900 to-rose-900 text-white relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => !isDeletingAll && setIsDeleteAllModalOpen(false)}
+                  disabled={isDeletingAll}
+                  className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-sm font-black tracking-tight text-white uppercase">Purge Detections Dataset</h2>
+                </div>
+                <p className="text-[11px] text-rose-200/80 font-medium">
+                  Permanently remove bioacoustic detection records from Supabase observatory datasets.
+                </p>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                
+                {/* Target Scope Card */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Target Coordinates & Registry</div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">PROJECT</span>
+                      <span className="font-extrabold text-slate-800">{activeProjName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">SITE</span>
+                      <span className="font-extrabold text-slate-800">{activeSiteName}</span>
+                    </div>
+                  </div>
+                  {activeRecorder && (
+                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-bold">RECORDER HARDWARE</span>
+                      <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">{activeRecorder}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Scope Selection (if recorder exists) */}
+                {activeRecorder && (
+                  <div className="space-y-2">
+                    <label className="font-extrabold text-slate-700 block">Deletion Scope</label>
+                    <div className="space-y-1.5">
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                        <input
+                          type="radio"
+                          name="deleteAllScope"
+                          value="recorder"
+                          checked={deleteAllScope === 'recorder'}
+                          onChange={() => setDeleteAllScope('recorder')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold text-slate-900 block">Delete recorder &ldquo;{activeRecorder}&rdquo; only</span>
+                          <span className="text-[10px] text-slate-500">Only detections generated by this hardware unit at {activeSiteName} will be purged.</span>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                        <input
+                          type="radio"
+                          name="deleteAllScope"
+                          value="site"
+                          checked={deleteAllScope === 'site'}
+                          onChange={() => setDeleteAllScope('site')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold text-slate-900 block">Delete ALL detections for site &ldquo;{activeSiteName}&rdquo;</span>
+                          <span className="text-[10px] text-slate-500">Purges detections for all recorders associated with this entire site location.</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Database Scope */}
+                <div className="space-y-2">
+                  <label className="font-extrabold text-slate-700 block">Observatory Database Scope</label>
+                  <div className="space-y-1.5">
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                      <input
+                        type="radio"
+                        name="deleteAllTargetDb"
+                        value="all"
+                        checked={deleteAllTargetDb === 'all'}
+                        onChange={() => setDeleteAllTargetDb('all')}
+                        className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold text-slate-900 block">All related databases (Recommended)</span>
+                        <span className="text-[10px] text-slate-500">Purges matching records across PAM detections, Lantana detections, and Live detections in Supabase.</span>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                      <input
+                        type="radio"
+                        name="deleteAllTargetDb"
+                        value="current"
+                        checked={deleteAllTargetDb === 'current'}
+                        onChange={() => setDeleteAllTargetDb('current')}
+                        className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold text-slate-900 block">Current dashboard dataset only</span>
+                        <span className="text-[10px] text-slate-500">
+                          Only cleans the {detectionsTabScope === 'Lantana' ? 'Lantana Offline' : 'Common PAM'} dataset table.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Warning Callout */}
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2.5 text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong className="font-bold">Permanent Deletion:</strong> This action cannot be reversed. All raw acoustic event detections, species identifications, and confidence scores for this site will be permanently removed.
+                  </div>
+                </div>
+
+                {/* Confirmation Checkbox */}
+                <label className="flex items-center gap-2.5 p-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={deleteAllConfirmed}
+                    onChange={(e) => setDeleteAllConfirmed(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-slate-800 text-xs">
+                    I confirm that I want to delete all matching detections from Supabase.
+                  </span>
+                </label>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteAllModalOpen(false)}
+                  disabled={isDeletingAll}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDeleteAllDetections}
+                  disabled={!deleteAllConfirmed || isDeletingAll}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 disabled:opacity-40 transition flex items-center gap-2"
+                >
+                  {isDeletingAll ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Purging Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Confirm & Delete All Detections</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -67,9 +67,9 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// DELETE: Delete a site and cascade delete all associated detections
+// DELETE: Delete a site and cascade delete all associated detections from ALL related databases
 export async function DELETE(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
+  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
 
   try {
@@ -90,21 +90,74 @@ export async function DELETE(req: NextRequest) {
     
     if (siteRecord) {
       const siteName = siteRecord.site_name || siteRecord.name;
+      const siteId = siteRecord.id;
       const recorderId = siteRecord.recorder_id;
 
-      // 2. Cascade delete all associated detections from the corresponding table
-      if (table === 'lantana_sites' && siteName) {
-        if (recorderId) {
-          await supabaseAdmin.from('lantana_detections').delete().eq('site_name', siteName).eq('recorder_id', recorderId);
-        } else {
-          await supabaseAdmin.from('lantana_detections').delete().eq('site_name', siteName);
+      // Check permissions for non-admins
+      if (user.role === 'Site Manager') {
+        const assignedSites: string[] = [
+          ...(user.assignedSites || []),
+          ...(user.assigned_sites || [])
+        ].map(s => String(s).toLowerCase().trim());
+
+        const isAllowed = [siteName, siteId].some(
+          s => s && assignedSites.includes(String(s).toLowerCase().trim())
+        );
+        if (!isAllowed) {
+          return NextResponse.json({ error: 'Unauthorized to delete this site' }, { status: 403 });
         }
-      } else if (table === 'sites' && siteName) {
-        await supabaseAdmin.from('pam_detections').delete().eq('site_name', siteName);
-      } else if (table === 'live_sites' && siteName) {
-        await supabaseAdmin.from('live_detections').delete().eq('site_name', siteName);
-        await supabaseAdmin.from('recorders_registry').delete().eq('site_name', siteName);
+      } else if (user.role === 'Project Manager') {
+        const assignedProjects: string[] = [
+          ...(user.assignedProjects || []),
+          ...(user.assigned_projects || [])
+        ].map(p => String(p).toLowerCase().trim());
+
+        const projId = siteRecord.project_id || siteRecord.projectId;
+        if (projId && !assignedProjects.includes(String(projId).toLowerCase().trim())) {
+          return NextResponse.json({ error: 'Unauthorized to delete site for this project' }, { status: 403 });
+        }
       }
+
+      // 2. Cascade delete all associated detections from ALL related databases
+      // A. Lantana detections
+      let lq = supabaseAdmin.from('lantana_detections').delete();
+      if (siteName && siteId && siteName !== siteId) {
+        lq = lq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+      } else if (siteName) {
+        lq = lq.eq('site_name', siteName);
+      }
+      if (recorderId) lq = lq.eq('recorder_id', recorderId);
+      await lq;
+
+      // B. PAM detections
+      let pq = supabaseAdmin.from('pam_detections').delete();
+      if (siteName && siteId && siteName !== siteId) {
+        pq = pq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+      } else if (siteName) {
+        pq = pq.eq('site_name', siteName);
+      }
+      if (recorderId) pq = pq.eq('recorder_name', recorderId);
+      await pq;
+
+      // C. Live detections
+      let livq = supabaseAdmin.from('live_detections').delete();
+      if (siteName && siteId && siteName !== siteId) {
+        livq = livq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}",station_name.eq."${siteName}"`);
+      } else if (siteName) {
+        livq = livq.or(`site_name.eq."${siteName}",station_name.eq."${siteName}"`);
+      }
+      if (recorderId) livq = livq.eq('recorder_id', recorderId);
+      await livq;
+
+      // D. Recorders registry
+      let rq = supabaseAdmin.from('recorders_registry').delete();
+      if (siteName && siteId && siteName !== siteId) {
+        rq = rq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+      } else if (siteName) {
+        rq = rq.eq('site_name', siteName);
+      }
+      if (recorderId) rq = rq.eq('recorder_id', recorderId);
+      await rq;
     }
 
     // 3. Delete the site entry from the sites table
