@@ -191,7 +191,9 @@ export default function LantanaDashboardPage() {
               lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
           } else {
               const siteIds = currentUser?.assignedSites || [];
-              const { data: sData } = await supabase.from('lantana_sites').select('project_id').in('id', siteIds);
+              const { data: sData } = siteIds.length > 0 
+                ? await supabase.from('lantana_sites').select('project_id').or(`id.in.(${siteIds.join(',')}),site_name.in.(${siteIds.join(',')})`)
+                : { data: [] };
               const allowedProjIds = new Set((sData || []).map((s: any) => s.project_id));
               lantanaProjects = lantanaProjects.filter((p: any) => allowedProjIds.has(p.id));
           }
@@ -268,7 +270,7 @@ export default function LantanaDashboardPage() {
         if (currentRole === 'Site Manager') {
             const allowedSites = currentUser?.assignedSites || [];
             if (allowedSites.length > 0) {
-                siteQuery = siteQuery.in('id', allowedSites);
+                siteQuery = siteQuery.or(`id.in.(${allowedSites.join(',')}),site_name.in.(${allowedSites.join(',')})`);
             }
         }
 
@@ -1405,6 +1407,8 @@ export default function LantanaDashboardPage() {
                 sites={mapSites} 
                 center={[10.47, 76.87]} 
                 zoom={13} 
+                projectId={selectedProjectId}
+                selectedSiteId={selectedSiteGroup !== 'All' ? selectedSiteGroup : undefined}
                 onSelectSite={(siteName) => {
                   setSelectedSiteGroup(siteName);
                   setActiveTab('summary');

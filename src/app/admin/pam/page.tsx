@@ -965,18 +965,18 @@ export default function PamAdminPage() {
 
     if (newProjShapefile) {
       try {
-        await fetch('/api/db/shapefiles', {
+        await apiFetch('/api/db/shapefiles', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             targetId: projectId,
+            projectId: projectId,
             targetType: 'project',
             name: newProjTitle,
             habitat: newProjCategory,
             geojson: newProjShapefile.geojson,
             centroid: newProjShapefile.centroid
           })
-        });
+        }, currentUser);
       } catch (err) {
         console.error('Failed to save project shapefile:', err);
       }
@@ -1025,18 +1025,18 @@ export default function PamAdminPage() {
 
     if (editProjShapefile) {
       try {
-        await fetch('/api/db/shapefiles', {
+        await apiFetch('/api/db/shapefiles', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             targetId: editingProj.id,
+            projectId: editingProj.id,
             targetType: 'project',
             name: editProjTitle,
             habitat: editProjType,
             geojson: editProjShapefile.geojson,
             centroid: editProjShapefile.centroid
           })
-        });
+        }, currentUser);
       } catch (err) {
         console.error('Failed to save project shapefile:', err);
       }
@@ -1138,18 +1138,19 @@ export default function PamAdminPage() {
       const habitatToken = (normalizedRecorderId || siteName).split(/[-_/]/)[0];
       const detectedHabitat = isLantana ? (habitatToken === 'LI' ? 'LI' : habitatToken === 'CS' ? 'CS' : 'LC') : 'common';
       try {
-        await fetch('/api/db/shapefiles', {
+        await apiFetch('/api/db/shapefiles', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             targetId: newSite.id,
+            siteId: newSite.id,
+            projectId: newSiteProjId,
             targetType: 'site',
             name: siteName,
             habitat: detectedHabitat,
             geojson: newSiteShapefile.geojson,
             centroid: newSiteShapefile.centroid
           })
-        });
+        }, currentUser);
       } catch (err) {
         console.error('Failed to save site shapefile:', err);
       }
@@ -1262,18 +1263,19 @@ export default function PamAdminPage() {
       const habitatToken = (editRecorderId || editSiteName).split(/[-_/]/)[0];
       const detectedHabitat = isLantana ? (habitatToken === 'LI' ? 'LI' : habitatToken === 'CS' ? 'CS' : 'LC') : 'common';
       try {
-        await fetch('/api/db/shapefiles', {
+        await apiFetch('/api/db/shapefiles', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             targetId: editingSite.id,
+            siteId: editingSite.id,
+            projectId: editingSite.projectId,
             targetType: 'site',
             name: editSiteName,
             habitat: detectedHabitat,
             geojson: editSiteShapefile.geojson,
             centroid: editSiteShapefile.centroid
           })
-        });
+        }, currentUser);
       } catch (err) {
         console.error('Failed to save site shapefile:', err);
       }

@@ -975,6 +975,8 @@ export default function CommonDashboardView({
                 showRichnessLegend={true}
                 minSpecies={minSpecies}
                 maxSpecies={maxSpecies}
+                projectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
+                selectedSiteId={selectedStationId !== 'ALL' ? selectedStationId : undefined}
                 onSelectSite={(siteName, siteId) => {
                   const matched = stationsList.find(s => s.station_name === siteName || s.id === siteId);
                   if (matched) {

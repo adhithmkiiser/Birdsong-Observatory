@@ -63,6 +63,11 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setErrorMsg('');
     setSuccessMsg('');
 
+    if (!email.trim()) {
+      setErrorMsg('Session expired or missing email. Please return to login.');
+      setMode('login');
+      return;
+    }
     if (newPassword.length < 6) {
       setErrorMsg('Password must be at least 6 characters.');
       return;
@@ -73,29 +78,39 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
 
     setLoading(true);
-    const user = usersList.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
-    if (!user) {
-      setLoading(false);
-      setErrorMsg('User not found.');
-      return;
-    }
     try {
-      await updateUserCredentials(user.id, {
-        password: newPassword,
-        isOneTimePassword: false,
-        mustChangePassword: false
+      const res = await fetch('/api/reset-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          currentPassword: password,
+          newPassword
+        })
       });
 
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update credentials.');
+      }
+
       setLoading(false);
-      setSuccessMsg('Password updated successfully! Logging you in...');
-      loginUser(email, newPassword);
-      setTimeout(() => {
-        onClose();
+      setSuccessMsg('Permanent password established successfully! Logging you in...');
+
+      const loginRes = await loginUser(email.trim(), newPassword);
+      if (loginRes.success) {
+        setTimeout(() => {
+          onClose();
+          setMode('login');
+        }, 1000);
+      } else {
         setMode('login');
-      }, 1000);
-    } catch (err) {
+        setPassword('');
+        setSuccessMsg('Password updated. Please log in with your new permanent password.');
+      }
+    } catch (err: any) {
       setLoading(false);
-      setErrorMsg('Failed to update password.');
+      setErrorMsg(err.message || 'Failed to update credentials.');
     }
   };
 

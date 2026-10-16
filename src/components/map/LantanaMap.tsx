@@ -6,6 +6,8 @@ import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Layers, Check, Map as MapIcon, Eye, EyeOff, Upload } from 'lucide-react';
 import { parseShapefileOrGeoJson } from '@/lib/shapefileParser';
+import { useRole } from '@/components/layout/RoleContext';
+import { apiFetch } from '@/lib/apiClient';
 
 export interface LantanaSiteMarkerData {
   id: string;
@@ -26,6 +28,9 @@ export interface MapShapefileItem {
   targetId: string;
   targetType?: 'site' | 'project';
   habitat?: string;
+  projectId?: string;
+  siteId?: string;
+  centroid?: [number, number];
   geojson: any;
 }
 
@@ -40,6 +45,8 @@ interface LantanaMapProps {
   minSpecies?: number;
   maxSpecies?: number;
   onSelectSite?: (siteName: string, siteId: string) => void;
+  projectId?: string;
+  selectedSiteId?: string;
 }
 
 import { getSpeciesGradientColor } from '@/lib/colorUtils';
@@ -194,8 +201,11 @@ export default function LantanaMap({
   showRichnessLegend = false,
   minSpecies = 0,
   maxSpecies = 0,
-  onSelectSite
+  onSelectSite,
+  projectId,
+  selectedSiteId
 }: LantanaMapProps) {
+  const { currentRole, currentUser } = useRole();
   // Pure Satellite Imagery (Recommended) as default
   const [selectedBasemap, setSelectedBasemap] = useState<BasemapId>('pure-satellite');
   const [showBasemapMenu, setShowBasemapMenu] = useState(false);
@@ -214,7 +224,8 @@ export default function LantanaMap({
     let isMounted = true;
     async function fetchShapefiles() {
       try {
-        const res = await fetch('/api/db/shapefiles?all=true');
+        const queryParam = projectId && projectId !== 'ALL' && projectId !== 'ALL_LANTANA' ? `&projectId=${encodeURIComponent(projectId)}` : '';
+        const res = await fetch(`/api/db/shapefiles?all=true${queryParam}`);
         if (!res.ok) return;
         const data = await res.json();
         if (isMounted && data.items && Array.isArray(data.items)) {
@@ -229,7 +240,7 @@ export default function LantanaMap({
     return () => {
       isMounted = false;
     };
-  }, [propShapefiles]);
+  }, [propShapefiles, projectId]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -295,12 +306,77 @@ export default function LantanaMap({
     });
   }, [sites]);
 
-  // Active shapefiles: custom uploaded ones, or synthesized survey boundaries
-  const activeShapefiles = useMemo(() => {
+  // Filter loaded shapefiles so only boundaries relevant to the current project, site, or map region are shown
+  const relevantShapefiles = useMemo(() => {
     if (propShapefiles && propShapefiles.length > 0) return propShapefiles;
-    if (loadedShapefiles.length > 0) return loadedShapefiles;
+    if (loadedShapefiles.length === 0) return [];
+
+    const normProj = (projectId || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') : '') || '').toLowerCase().trim();
+    const normSite = (selectedSiteId || '').toLowerCase().trim();
+
+    // Map site IDs & names for direct matching
+    const currentSiteKeys = new Set(
+      sites.flatMap((s) => [
+        String(s.id).toLowerCase().trim(),
+        String(s.name).toLowerCase().trim(),
+        String(s.site_group || '').toLowerCase().trim(),
+        String(s.recorder_id || '').toLowerCase().trim()
+      ]).filter(Boolean)
+    );
+
+    // Compute average map center from sites or default center
+    const mapCenterLat = sites.length > 0 ? sites.reduce((acc, s) => acc + s.lat, 0) / sites.length : center[0];
+    const mapCenterLng = sites.length > 0 ? sites.reduce((acc, s) => acc + s.lng, 0) / sites.length : center[1];
+
+    return loadedShapefiles.filter((shape) => {
+      const tId = String(shape.targetId || shape.id || '').toLowerCase().trim();
+      const tType = shape.targetType || 'site';
+      const shapeProj = String((shape as any).projectId || '').toLowerCase().trim();
+
+      // 1. Explicit Project match
+      if (normProj && normProj !== 'all' && normProj !== 'all_lantana') {
+        if (tId === normProj || tId.startsWith(normProj + '_') || shapeProj === normProj) {
+          return true;
+        }
+        // If the shapefile is explicitly for another project (e.g. nilgiri vs tst_lantana), reject
+        if (tType === 'project' && (tId.includes('nilgiri') || shapeProj.includes('nilgiri')) && !normProj.includes('nilgiri')) {
+          return false;
+        }
+      }
+
+      // 2. Explicit Site match
+      if (normSite && normSite !== 'all' && (tId === normSite || tId.startsWith(normSite + '_'))) {
+        return true;
+      }
+      if (currentSiteKeys.has(tId)) {
+        return true;
+      }
+
+      // 3. Geographic proximity check:
+      // If shapefile has a centroid, verify it is within geographic range of the map's sites (~60 km)
+      if (shape.centroid && Array.isArray(shape.centroid) && shape.centroid.length === 2) {
+        const [sLat, sLng] = shape.centroid;
+        const dLat = (sLat - mapCenterLat) * 111;
+        const dLng = (sLng - mapCenterLng) * 111 * Math.cos((mapCenterLat * Math.PI) / 180);
+        const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+
+        // If distance > 60 km, it belongs to another region (e.g. Nilgiris ~11.34° is 100km from Anamalai ~10.47°)
+        if (distKm > 60) {
+          return false;
+        }
+        return true;
+      }
+
+      // If shapefile has no centroid and doesn't match current project/site, do not show
+      return false;
+    });
+  }, [propShapefiles, loadedShapefiles, projectId, selectedSiteId, sites, center]);
+
+  // Active shapefiles: custom relevant shapefiles, or fallback survey boundaries around stations
+  const activeShapefiles = useMemo(() => {
+    if (relevantShapefiles.length > 0) return relevantShapefiles;
     return fallbackStationShapefiles;
-  }, [propShapefiles, loadedShapefiles, fallbackStationShapefiles]);
+  }, [relevantShapefiles, fallbackStationShapefiles]);
 
   const activeBasemap = BASEMAP_OPTIONS.find((b) => b.id === selectedBasemap) || BASEMAP_OPTIONS[0];
 
@@ -316,22 +392,97 @@ export default function LantanaMap({
 
   const renderLantanaLegend = showLantanaLegend !== undefined ? showLantanaLegend : hasLantanaHabitats;
 
-  // Direct quick upload from map available to ALL users (public & admins)
+  // RBAC Permission Check:
+  // Shapefile upload is restricted:
+  // - Public / Unauthenticated: NEVER allowed (button hidden)
+  // - Admin: Allowed globally across all projects & sites
+  // - Project Manager: ONLY for their assigned project(s)
+  // - Site Manager: ONLY for their assigned site(s)
+  const { canUploadShapefile, activeProj, activeSite } = useMemo(() => {
+    const isPublic = !currentRole || currentRole === 'Public' || currentUser?.role === 'Public' || currentUser?.id === 'usr-public';
+    if (isPublic) {
+      return { canUploadShapefile: false, activeProj: '', activeSite: '' };
+    }
+
+    const urlProj = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') || '' : '';
+    const resolvedProj = (projectId || urlProj || '').toLowerCase().trim();
+    const resolvedSite = (selectedSiteId || '').toLowerCase().trim();
+
+    // Admin has global rights
+    if (currentRole === 'Admin' || currentUser?.role === 'Admin') {
+      return { canUploadShapefile: true, activeProj: resolvedProj, activeSite: resolvedSite };
+    }
+
+    // Project Manager: only for assigned project
+    if (currentRole === 'Project Manager' || currentUser?.role === 'Project Manager') {
+      const userAssignedProjects = [
+        ...(currentUser?.assignedProjects || []),
+        ...(currentUser?.projectScopePermissions || []),
+        ...(currentUser?.assignedProject ? [currentUser.assignedProject] : [])
+      ].map(p => String(p).toLowerCase().trim()).filter(Boolean);
+
+      const isAssigned = (resolvedProj && resolvedProj !== 'all' && resolvedProj !== 'all_lantana')
+        ? userAssignedProjects.includes(resolvedProj)
+        : userAssignedProjects.length > 0;
+
+      return { canUploadShapefile: isAssigned, activeProj: resolvedProj, activeSite: resolvedSite };
+    }
+
+    // Site Manager: only for assigned site
+    if (currentRole === 'Site Manager' || currentUser?.role === 'Site Manager') {
+      const userAssignedSites = [
+        ...(currentUser?.assignedSites || []),
+        ...(currentUser?.assignedSite ? [currentUser.assignedSite] : [])
+      ].map(s => String(s).toLowerCase().trim()).filter(Boolean);
+
+      if (userAssignedSites.length === 0) {
+        return { canUploadShapefile: false, activeProj: resolvedProj, activeSite: resolvedSite };
+      }
+
+      const isAssigned = (resolvedSite && resolvedSite !== 'all')
+        ? userAssignedSites.includes(resolvedSite)
+        : (
+          userAssignedSites.length === 1 ||
+          sites.some(s =>
+            userAssignedSites.includes(String(s.id).toLowerCase().trim()) ||
+            userAssignedSites.includes(String(s.name).toLowerCase().trim()) ||
+            userAssignedSites.includes(String(s.site_group || '').toLowerCase().trim()) ||
+            userAssignedSites.includes(String(s.recorder_id || '').toLowerCase().trim())
+          )
+        );
+
+      return { canUploadShapefile: isAssigned, activeProj: resolvedProj, activeSite: resolvedSite };
+    }
+
+    return { canUploadShapefile: false, activeProj: resolvedProj, activeSite: resolvedSite };
+  }, [currentRole, currentUser, projectId, selectedSiteId, sites]);
+
   const [uploadStatus, setUploadStatus] = useState<string>('');
 
   const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!canUploadShapefile) {
+      alert('Access Denied: Shapefile upload is only permitted for Admins, Project Managers (for assigned projects), or Site Managers (for assigned sites).');
+      if (quickUploadRef.current) quickUploadRef.current.value = '';
+      return;
+    }
+
     try {
       setUploadStatus('Processing file...');
       const parsed = await parseShapefileOrGeoJson(file);
       const cleanName = file.name.replace(/\.[^/.]+$/, '');
+
+      const isSiteTarget = Boolean(activeSite && activeSite !== 'all');
+      const targetType: 'site' | 'project' = isSiteTarget ? 'site' : (activeProj && activeProj !== 'all' && activeProj !== 'all_lantana' ? 'project' : 'site');
+      const targetId = isSiteTarget ? activeSite : (activeProj && activeProj !== 'all' && activeProj !== 'all_lantana' ? activeProj : cleanName);
+
       const newShape: MapShapefileItem = {
         id: `uploaded-${Date.now()}`,
         name: cleanName,
-        targetId: cleanName,
-        targetType: 'site',
+        targetId,
+        targetType,
         geojson: parsed.geojson
       };
 
@@ -340,18 +491,23 @@ export default function LantanaMap({
       setUploadStatus(`Added "${file.name}" (${parsed.featureCount} polygons)`);
       setTimeout(() => setUploadStatus(''), 4500);
 
-      // Persist to server so boundary is saved for all public and observatory visitors
-      await fetch('/api/db/shapefiles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetId: newShape.targetId,
-          targetType: 'site',
-          name: newShape.name,
-          geojson: parsed.geojson,
-          centroid: parsed.centroid
-        })
-      });
+      // Persist to server with authentication headers
+      await apiFetch(
+        '/api/db/shapefiles',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetId: newShape.targetId,
+            targetType: newShape.targetType,
+            name: newShape.name,
+            projectId: activeProj,
+            siteId: activeSite,
+            geojson: parsed.geojson,
+            centroid: parsed.centroid
+          })
+        },
+        currentUser
+      );
     } catch (err: any) {
       alert('Shapefile upload error: ' + err.message);
       setUploadStatus('');
@@ -495,25 +651,29 @@ export default function LantanaMap({
           )}
         </button>
 
-        {/* Direct Upload Shapefile Button */}
-        <input
-          ref={quickUploadRef}
-          type="file"
-          accept=".zip,.kmz,.kml,.shp,.geojson,.json"
-          onChange={handleQuickUpload}
-          className="hidden"
-          id="map-quick-shapefile-upload"
-        />
-        <button
-          onClick={() => quickUploadRef.current?.click()}
-          className="bg-white/95 hover:bg-white text-[#1a1f1c] backdrop-blur-md border border-[#dde1dc] shadow-md px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer hover:border-emerald-600/40"
-          title="Upload KML, KMZ, Shapefile (.zip/.shp), or GeoJSON directly"
-        >
-          <Upload className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Upload Shapefile</span>
-        </button>
+        {/* Direct Upload Shapefile Button - Only visible for Admin, Assigned Project Manager, or Assigned Site Manager */}
+        {canUploadShapefile && (
+          <>
+            <input
+              ref={quickUploadRef}
+              type="file"
+              accept=".zip,.kmz,.kml,.shp,.geojson,.json"
+              onChange={handleQuickUpload}
+              className="hidden"
+              id="map-quick-shapefile-upload"
+            />
+            <button
+              onClick={() => quickUploadRef.current?.click()}
+              className="bg-white/95 hover:bg-white text-[#1a1f1c] backdrop-blur-md border border-[#dde1dc] shadow-md px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer hover:border-emerald-600/40"
+              title="Upload KML, KMZ, Shapefile (.zip/.shp), or GeoJSON directly"
+            >
+              <Upload className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Upload Shapefile</span>
+            </button>
+          </>
+        )}
 
-        {uploadStatus && (
+        {canUploadShapefile && uploadStatus && (
           <span className="bg-emerald-600 text-white font-bold px-2 py-1 rounded-xl text-[10px] shadow-sm flex items-center gap-1 animate-in fade-in">
             <Check className="w-3 h-3" /> {uploadStatus}
           </span>

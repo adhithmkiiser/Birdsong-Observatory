@@ -61,18 +61,50 @@ export default function UserManagementPage() {
 
         const common = (sitesRes.data || [])
           .filter((s: any) => validProjectIds.has(s.project_id))
-          .map((s: any) => ({ ...s, source: 'PAM' }));
+          .map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            project_id: s.project_id,
+            source: 'PAM',
+            stationCount: 1,
+            stationIds: [s.id]
+          }));
+
         const live = (liveSitesRes.data || [])
-          .filter((s: any) => validProjectIds.has(s.project_id))
-          .map((s: any) => ({ ...s, source: 'Live' }));
-        const lantana = (lantanaSitesRes.data || [])
           .filter((s: any) => validProjectIds.has(s.project_id))
           .map((s: any) => ({
             id: s.id,
-            name: s.site_name,
+            name: s.name,
             project_id: s.project_id,
-            source: 'Lantana'
+            source: 'Live',
+            stationCount: 1,
+            stationIds: [s.id]
           }));
+
+        // Group lantana sites by project_id and site_name to represent distinct survey sites (ATR_01, STR_01, STR_02)
+        // rather than repeating each recorder plot multiple times
+        const lantanaMap = new Map<string, { id: string; name: string; project_id: string; source: string; stationCount: number; stationIds: string[] }>();
+        (lantanaSitesRes.data || [])
+          .filter((s: any) => validProjectIds.has(s.project_id))
+          .forEach((s: any) => {
+            const key = `${s.project_id}___${s.site_name}`;
+            if (!lantanaMap.has(key)) {
+              lantanaMap.set(key, {
+                id: s.site_name,
+                name: s.site_name,
+                project_id: s.project_id,
+                source: 'Lantana',
+                stationCount: 1,
+                stationIds: [s.id]
+              });
+            } else {
+              const existing = lantanaMap.get(key)!;
+              existing.stationCount += 1;
+              existing.stationIds.push(s.id);
+            }
+          });
+
+        const lantana = Array.from(lantanaMap.values());
 
         setProjects(p);
         setSites([...common, ...live, ...lantana]);
@@ -108,6 +140,17 @@ export default function UserManagementPage() {
     }
     return [];
   }, [sites, formRole, formAssignedProjects]);
+
+  const toggleSite = (s: any) => {
+    const allIdsForSite = [s.id, ...(s.stationIds || [])];
+    const isChecked = formAssignedSites.includes(s.id) || (s.stationIds && s.stationIds.some((stId: string) => formAssignedSites.includes(stId)));
+    
+    if (isChecked) {
+      setFormAssignedSites(prev => prev.filter(x => !allIdsForSite.includes(x)));
+    } else {
+      setFormAssignedSites(prev => Array.from(new Set([...prev, s.id, ...(s.stationIds || [])])));
+    }
+  };
 
   const showNotification = (msg: string) => {
     setSuccessMsg(msg);
@@ -441,24 +484,53 @@ export default function UserManagementPage() {
 
               {(formRole === 'Site Manager' || formRole === 'Project Manager') && (
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
-                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
-                  {filteredSites.length === 0 && <div className="text-xs text-slate-400 p-1">No sites found.</div>}
-                  {filteredSites.map(s => (
-                    <label key={s.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
-                      <input
-                        type="checkbox"
-                        value={s.id}
-                        checked={formAssignedSites.includes(s.id)}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          setFormAssignedSites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-extrabold text-slate-700 block">Assigned Sites</label>
+                  {formAssignedProjects.length > 0 && (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Filtered by selected project(s)
+                    </span>
+                  )}
+                </div>
+                <div className="w-full max-h-48 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredSites.length === 0 && (
+                    <div className="text-xs text-slate-400 p-2 text-center">
+                      {formAssignedProjects.length === 0
+                        ? 'Select an Assigned Project above to view and assign sites.'
+                        : 'No sites found for the selected project.'}
+                    </div>
+                  )}
+                  {filteredSites.map(s => {
+                    const isChecked = formAssignedSites.includes(s.id) || (s.stationIds && s.stationIds.some((stId: string) => formAssignedSites.includes(stId)));
+                    return (
+                      <label
+                        key={`${s.project_id}_${s.id}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          toggleSite(s);
                         }}
-                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span className="truncate">{s.name}</span>
-                    </label>
-                  ))}
+                        className="flex items-center justify-between p-2 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700 border border-transparent hover:border-slate-200 transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 pointer-events-none"
+                          />
+                          <span className="truncate font-bold text-slate-800">{s.name}</span>
+                          {s.stationCount > 1 && (
+                            <span className="text-[11px] font-normal text-slate-500">
+                              ({s.stationCount} plots / recorders)
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600 shrink-0 ml-2">
+                          {s.source}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -604,24 +676,53 @@ export default function UserManagementPage() {
 
               {(formRole === 'Site Manager' || formRole === 'Project Manager') && (
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Assigned Sites</label>
-                <div className="w-full max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
-                  {filteredSites.length === 0 && <div className="text-xs text-slate-400 p-1">No sites found.</div>}
-                  {filteredSites.map(s => (
-                    <label key={s.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700">
-                      <input
-                        type="checkbox"
-                        value={s.id}
-                        checked={formAssignedSites.includes(s.id)}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          setFormAssignedSites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-extrabold text-slate-700 block">Assigned Sites</label>
+                  {formAssignedProjects.length > 0 && (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Filtered by selected project(s)
+                    </span>
+                  )}
+                </div>
+                <div className="w-full max-h-48 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5">
+                  {filteredSites.length === 0 && (
+                    <div className="text-xs text-slate-400 p-2 text-center">
+                      {formAssignedProjects.length === 0
+                        ? 'Select an Assigned Project above to view and assign sites.'
+                        : 'No sites found for the selected project.'}
+                    </div>
+                  )}
+                  {filteredSites.map(s => {
+                    const isChecked = formAssignedSites.includes(s.id) || (s.stationIds && s.stationIds.some((stId: string) => formAssignedSites.includes(stId)));
+                    return (
+                      <label
+                        key={`${s.project_id}_${s.id}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          toggleSite(s);
                         }}
-                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span className="truncate">{s.name}</span>
-                    </label>
-                  ))}
+                        className="flex items-center justify-between p-2 rounded-lg hover:bg-white cursor-pointer text-xs font-semibold text-slate-700 border border-transparent hover:border-slate-200 transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 pointer-events-none"
+                          />
+                          <span className="truncate font-bold text-slate-800">{s.name}</span>
+                          {s.stationCount > 1 && (
+                            <span className="text-[11px] font-normal text-slate-500">
+                              ({s.stationCount} plots / recorders)
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600 shrink-0 ml-2">
+                          {s.source}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}

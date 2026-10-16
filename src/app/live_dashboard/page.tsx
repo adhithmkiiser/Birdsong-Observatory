@@ -789,6 +789,8 @@ export default function LiveDashboardPage() {
                 }))}
                 center={[13.6288, 79.4192]}
                 zoom={11}
+                projectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
+                selectedSiteId={selectedSiteId !== 'ALL' ? selectedSiteId : (selectedStationId !== 'ALL' ? selectedStationId : undefined)}
                 onSelectSite={(_siteName: string, siteId: string) => {
                   setSelectedStationId(siteId);
                 }}

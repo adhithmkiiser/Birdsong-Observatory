@@ -93,3 +93,64 @@ BirdSong Observatory System`;
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// PUT: Set permanent password after initial login with temporary password / OTP
+export async function PUT(req: NextRequest) {
+  try {
+    const { email, currentPassword, newPassword } = await req.json();
+
+    if (!email || !newPassword) {
+      return NextResponse.json({ error: 'Email and new permanent password are required.' }, { status: 400 });
+    }
+
+    if (newPassword.length < 6) {
+      return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
+    }
+
+    // 1. Locate user via supabaseAdmin (bypassing public RLS)
+    const { data: users, error: findError } = await supabaseAdmin
+      .from('users')
+      .select('*')
+      .ilike('email', email.trim());
+
+    if (findError || !users || users.length === 0) {
+      return NextResponse.json({ error: 'User record not found in observatory registry.' }, { status: 404 });
+    }
+
+    const targetUser = users[0];
+
+    // If currentPassword is supplied, verify it matches
+    if (currentPassword && targetUser.password_hash) {
+      if (
+        targetUser.password_hash !== currentPassword &&
+        targetUser.password_hash.toLowerCase() !== currentPassword.toLowerCase()
+      ) {
+        return NextResponse.json({ error: 'Current credentials could not be verified.' }, { status: 401 });
+      }
+    }
+
+    // 2. Update permanent password and clear temporary/OTP flags
+    const { error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({
+        password_hash: newPassword,
+        is_one_time_password: false,
+        must_change_password: false,
+        last_login: new Date().toISOString()
+      })
+      .eq('id', targetUser.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Permanent password established successfully.'
+    });
+  } catch (error: any) {
+    console.error('Set permanent password error:', error);
+    return NextResponse.json({ error: error.message || 'Failed to update credentials' }, { status: 500 });
+  }
+}
+
