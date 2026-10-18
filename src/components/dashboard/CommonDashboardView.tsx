@@ -17,10 +17,14 @@ import {
   Calendar,
   Share2,
   Link2,
-  Check
+  Check,
+  Trash2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 import DashboardLoader from '@/components/ui/DashboardLoader';
 import { useDashboardStore } from '@/lib/store/useDashboardStore';
 import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
@@ -58,8 +62,14 @@ export default function CommonDashboardView({
 }: CommonDashboardViewProps = {}) {
   const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
   const canExportCSV = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
+  const canManageDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
   const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'trends' | 'diurnal' | 'diversity'>(initialTab || 'summary');
   const [copiedLinkToast, setCopiedLinkToast] = useState(false);
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgeScope, setPurgeScope] = useState<'station' | 'project'>('station');
+  const [purgeConfirmed, setPurgeConfirmed] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeToast, setPurgeToast] = useState<string | null>(null);
   
   const { 
     selectedProjectId, 
@@ -114,6 +124,59 @@ export default function CommonDashboardView({
     navigator.clipboard.writeText(window.location.href);
     setCopiedLinkToast(true);
     setTimeout(() => setCopiedLinkToast(false), 2500);
+  };
+
+  // Execute Detections Purge (for Admin / Project Manager)
+  const handleExecutePurge = async () => {
+    if (!purgeConfirmed) return;
+    setIsPurging(true);
+    try {
+      const activeStationObj = stationsList.find(s => s.id === selectedStationId);
+      const isProjectScope = purgeScope === 'project' || selectedStationId === 'ALL_SITES';
+      const siteName = isProjectScope ? 'ALL_SITES' : (activeStationObj ? activeStationObj.station_name : selectedStationId);
+      const siteId = isProjectScope ? 'ALL_SITES' : selectedStationId;
+      const proj = projectsList.find(p => p.id === selectedProjectId);
+
+      const res = await apiFetch('/api/db/detections', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          deleteAllForSite: {
+            siteName,
+            siteId,
+            projectId: selectedProjectId !== 'ALL_PROJECTS' ? selectedProjectId : 'nilgiri',
+            projectName: proj ? (proj.name || proj.title) : undefined,
+            table: 'all'
+          }
+        })
+      }, currentUser);
+
+      setIsPurgeModalOpen(false);
+      setPurgeConfirmed(false);
+      setPurgeToast(res.message || 'Detections purged successfully.');
+      setTimeout(() => setPurgeToast(null), 5000);
+
+      // Reset local stats & views
+      setStats({ total_detections: 0, unique_species: 0 });
+      setMapSitesData([]);
+      setRankedSpecies([]);
+      setSelectedSpecies([]);
+      setTrendData([]);
+      setDiversityData([]);
+      setDiurnalData([]);
+
+      // Re-query stats
+      const { data: refreshedStats } = await supabase.rpc('get_dashboard_stats', {
+        p_project_names,
+        p_site_name,
+        p_recorder_name,
+        p_confidence: confidenceThreshold
+      });
+      if (refreshedStats) setStats(refreshedStats);
+    } catch (err: any) {
+      alert('Error purging detections: ' + (err.message || 'Unknown network error'));
+    } finally {
+      setIsPurging(false);
+    }
   };
 
   // Click outside search dropdown
@@ -816,6 +879,21 @@ export default function CommonDashboardView({
                 )}
               </button>
 
+              {canManageDetections && (
+                <button
+                  onClick={() => {
+                    setPurgeScope(selectedStationId !== 'ALL_SITES' ? 'station' : 'project');
+                    setPurgeConfirmed(false);
+                    setIsPurgeModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-rose-200 hover:border-rose-400 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                  title="Purge / Delete detections for active station or entire project"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Purge Detections</span>
+                </button>
+              )}
+
               {canExportCSV && activeTab === 'summary' && (
                 <button onClick={downloadSummaryCSV} className="btn-primary text-xs cursor-pointer" title="Download Summary CSV">
                   <Download className="w-3.5 h-3.5" />
@@ -1226,6 +1304,173 @@ export default function CommonDashboardView({
         )}
 
       </main>
+
+      {/* Toast Notification */}
+      {purgeToast && (
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-2xl border border-slate-700 flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2">
+          <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <Check className="w-3.5 h-3.5" />
+          </div>
+          <span>{purgeToast}</span>
+        </div>
+      )}
+
+      {/* Purge Detections Modal */}
+      {isPurgeModalOpen && (() => {
+        const activeStationObj = stationsList.find(s => s.id === selectedStationId);
+        const activeStationName = activeStationObj ? activeStationObj.station_name : 'Selected Station';
+        const activeProjObj = projectsList.find(p => p.id === selectedProjectId);
+        const activeProjName = activeProjObj ? (activeProjObj.name || activeProjObj.title) : 'PAM Project';
+        const isProjectScope = purgeScope === 'project' || selectedStationId === 'ALL_SITES';
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden text-xs">
+              
+              {/* Modal Header */}
+              <div className="p-6 bg-gradient-to-r from-rose-950 via-slate-900 to-rose-900 text-white relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => !isPurging && setIsPurgeModalOpen(false)}
+                  disabled={isPurging}
+                  className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-sm font-black tracking-tight text-white uppercase">Purge Common PAM Detections</h2>
+                </div>
+                <p className="text-[11px] text-rose-200/80 font-medium">
+                  Permanently remove bioacoustic detection records and hourly rollups from Supabase.
+                </p>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Target Coordinates & Registry</div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">PROJECT</span>
+                      <span className="font-extrabold text-slate-800">{activeProjName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">STATION / SCOPE</span>
+                      <span className={`font-extrabold ${isProjectScope ? 'text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200' : 'text-slate-800'}`}>
+                        {isProjectScope ? 'Entire Project (All Stations)' : activeStationName}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scope Selection */}
+                {selectedStationId !== 'ALL_SITES' && (
+                  <div className="space-y-2">
+                    <label className="font-extrabold text-slate-700 block">Deletion Scope</label>
+                    <div className="space-y-1.5">
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                        <input
+                          type="radio"
+                          name="purgeScope"
+                          value="station"
+                          checked={purgeScope === 'station'}
+                          onChange={() => setPurgeScope('station')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold text-slate-900 block">Delete station &ldquo;{activeStationName}&rdquo; only</span>
+                          <span className="text-[10px] text-slate-500">Only detections and rollups for this specific station will be purged.</span>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                        <input
+                          type="radio"
+                          name="purgeScope"
+                          value="project"
+                          checked={purgeScope === 'project'}
+                          onChange={() => setPurgeScope('project')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold text-slate-900 block">Delete ALL stations in project &ldquo;{activeProjName}&rdquo;</span>
+                          <span className="text-[10px] text-slate-500">Purges detections across all stations in this project from Supabase.</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Database Scope Notice */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-extrabold text-slate-900 block">Database Synchronization</span>
+                    <span className="text-[10px] text-slate-500">Purges records across pam_detections, hourly rollups, and unified detections.</span>
+                  </div>
+                  <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap ml-2">
+                    All DBs
+                  </span>
+                </div>
+
+                {/* Warning Callout */}
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2.5 text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong className="font-bold">Permanent Deletion:</strong> This action cannot be undone. All acoustic detections and statistics {isProjectScope ? 'for ALL stations in this project' : `for station ${activeStationName}`} will be permanently deleted from the database.
+                  </div>
+                </div>
+
+                {/* Confirmation Checkbox */}
+                <label className="flex items-center gap-2.5 p-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={purgeConfirmed}
+                    onChange={(e) => setPurgeConfirmed(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-slate-800 text-xs">
+                    I confirm that I want to delete all matching detections from Supabase.
+                  </span>
+                </label>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPurgeModalOpen(false)}
+                  disabled={isPurging}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecutePurge}
+                  disabled={!purgeConfirmed || isPurging}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 disabled:opacity-40 transition flex items-center gap-2"
+                >
+                  {isPurging ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Purging Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isProjectScope ? 'Confirm & Delete All Project Detections' : 'Confirm & Delete Station Detections'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

@@ -284,12 +284,43 @@ export default function PamAdminPage() {
     const pageSize = customPageSize || detectionPageSize;
     const searchTerm = (customSearch !== undefined ? customSearch : pamSearchSpecies).trim();
     const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
+    const isAllSites = pamSelectedSite === 'ALL_SITES';
     const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
     const siteName = siteItem ? siteItem.name : pamSelectedSite;
 
     try {
       const baseStart = targetPage * pageSize;
       const baseEnd = baseStart + pageSize - 1;
+
+      const applyFilters = (q: any) => {
+        if (isAllSites) {
+          if (table === 'pam_detections') {
+            if (scopedSites.length > 0) {
+              q = q.in('site_name', scopedSites.map(s => s.name));
+            }
+          } else {
+            if (pamSelectedProject !== 'Select Project') {
+              q = q.eq('project_id', pamSelectedProject);
+            } else if (scopedSites.length > 0) {
+              q = q.in('site_name', scopedSites.map(s => s.name));
+            }
+          }
+        } else {
+          q = q.eq('site_name', siteName);
+        }
+
+        if (pamSelectedRecorder !== 'All') {
+          if (detectionsTabScope === 'Lantana') {
+            q = q.eq('recorder_id', pamSelectedRecorder);
+          } else {
+            q = q.eq('recorder_name', pamSelectedRecorder);
+          }
+        }
+        if (searchTerm) {
+          q = q.or(`common_name.ilike.%${searchTerm}%,scientific_name.ilike.%${searchTerm}%`);
+        }
+        return q;
+      };
 
       // When pageSize is > 1000 (e.g. 2,500, 5,000, 10,000), fetch in parallel 1000-row chunks
       if (pageSize > 1000) {
@@ -301,17 +332,7 @@ export default function PamAdminPage() {
           const chunkStart = baseStart + i * chunkSize;
           const chunkEnd = Math.min(baseStart + (i + 1) * chunkSize - 1, baseEnd);
           
-          let q = supabase.from(table).select('*').eq('site_name', siteName);
-          if (pamSelectedRecorder !== 'All') {
-            if (detectionsTabScope === 'Lantana') {
-              q = q.eq('recorder_id', pamSelectedRecorder);
-            } else {
-              q = q.eq('recorder_name', pamSelectedRecorder);
-            }
-          }
-          if (searchTerm) {
-            q = q.or(`common_name.ilike.%${searchTerm}%,scientific_name.ilike.%${searchTerm}%`);
-          }
+          let q = applyFilters(supabase.from(table).select('*'));
           chunkPromises.push(q.range(chunkStart, chunkEnd));
         }
 
@@ -330,20 +351,7 @@ export default function PamAdminPage() {
         setHasMoreDetections(aggregatedRows.length >= pageSize);
       } else {
         // Standard single query for <= 1000 rows
-        let query = supabase.from(table).select('*').eq('site_name', siteName);
-
-        if (pamSelectedRecorder !== 'All') {
-          if (detectionsTabScope === 'Lantana') {
-            query = query.eq('recorder_id', pamSelectedRecorder);
-          } else {
-            query = query.eq('recorder_name', pamSelectedRecorder);
-          }
-        }
-
-        if (searchTerm) {
-          query = query.or(`common_name.ilike.%${searchTerm}%,scientific_name.ilike.%${searchTerm}%`);
-        }
-
+        let query = applyFilters(supabase.from(table).select('*'));
         query = query.range(baseStart, baseEnd);
 
         const { data, error } = await query;
@@ -454,9 +462,14 @@ export default function PamAdminPage() {
       projectName = proj ? proj.title : siteToDeleteDetections.projectId;
       projectId = siteToDeleteDetections.projectId;
     } else {
-      const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
-      siteName = siteItem ? siteItem.name : pamSelectedSite;
-      siteId = siteItem ? siteItem.id : undefined;
+      if (pamSelectedSite === 'ALL_SITES') {
+        siteName = 'ALL_SITES';
+        siteId = 'ALL_SITES';
+      } else {
+        const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+        siteName = siteItem ? siteItem.name : pamSelectedSite;
+        siteId = siteItem ? siteItem.id : undefined;
+      }
       recorderId = deleteAllScope === 'recorder' && pamSelectedRecorder !== 'All' ? pamSelectedRecorder : undefined;
       const proj = scopedProjects.find(p => p.id === pamSelectedProject);
       projectName = proj ? proj.title : (pamSelectedProject !== 'Select Project' ? pamSelectedProject : undefined);
@@ -481,7 +494,7 @@ export default function PamAdminPage() {
       setPamDetectionsList([]);
       setSelectedDetectionIds(new Set());
       setIsDeleteAllModalOpen(false);
-      showNotification(res.message || `All detections for "${siteName}" were permanently deleted.`);
+      showNotification(res.message || (siteName === 'ALL_SITES' ? 'All project detections were permanently deleted.' : `All detections for "${siteName}" were permanently deleted.`));
     } catch (err: any) {
       alert('Failed to delete detections: ' + (err.message || 'Unknown network error'));
     } finally {
@@ -2454,6 +2467,7 @@ export default function PamAdminPage() {
                       disabled={pamSelectedProject === 'Select Project'}
                     >
                       <option value="Select Site" disabled>Select a Site</option>
+                      <option value="ALL_SITES">All Sites in Project (Entire Project)</option>
                       {scopedSites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
@@ -2469,16 +2483,18 @@ export default function PamAdminPage() {
                         setSelectedDetectionIds(new Set());
                       }}
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm disabled:opacity-50"
-                      disabled={pamSelectedSite === 'Select Site' || isRecordersLoading}
+                      disabled={pamSelectedSite === 'Select Site' || pamSelectedSite === 'ALL_SITES' || isRecordersLoading}
                     >
                       {pamSelectedSite === 'Select Site' ? (
                         <option value="All" disabled>Select Site first</option>
+                      ) : pamSelectedSite === 'ALL_SITES' ? (
+                        <option value="All">All Recorders (Project-wide)</option>
                       ) : isRecordersLoading ? (
                         <option value="All" disabled>Loading...</option>
                       ) : (
                         <option value="All">All Recorders</option>
                       )}
-                      {availableRecorders.map(r => <option key={r} value={r as string}>{r as string}</option>)}
+                      {pamSelectedSite !== 'ALL_SITES' && availableRecorders.map(r => <option key={r} value={r as string}>{r as string}</option>)}
                     </select>
                   </div>
 
@@ -2563,10 +2579,10 @@ export default function PamAdminPage() {
                       onClick={() => handleOpenDeleteAllModal()}
                       disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading || isDeletingAll}
                       className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-black shadow-sm disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Delete all detections for this site or recorder across all database tables"
+                      title={pamSelectedSite === 'ALL_SITES' ? 'Delete all detections for this entire project across all database tables' : 'Delete all detections for this site or recorder across all database tables'}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>{pamSelectedRecorder !== 'All' ? 'Delete Recorder Detections' : 'Delete All Site Detections'}</span>
+                      <span>{pamSelectedSite === 'ALL_SITES' ? 'Delete All Project Detections' : pamSelectedRecorder !== 'All' ? 'Delete Recorder Detections' : 'Delete All Site Detections'}</span>
                     </button>
                   </div>
                 </div>
@@ -2739,15 +2755,18 @@ export default function PamAdminPage() {
 
       {/* Delete All Detections Modal */}
       {isDeleteAllModalOpen && (() => {
-        const activeSiteName = siteToDeleteDetections 
-          ? siteToDeleteDetections.name 
-          : (scopedSites.find(s => s.id === pamSelectedSite)?.name || pamSelectedSite);
+        const isProjectWide = !siteToDeleteDetections && pamSelectedSite === 'ALL_SITES';
+        const activeSiteName = isProjectWide 
+          ? 'Entire Project (All Sites)' 
+          : (siteToDeleteDetections 
+              ? siteToDeleteDetections.name 
+              : (scopedSites.find(s => s.id === pamSelectedSite)?.name || pamSelectedSite));
         const activeProjName = siteToDeleteDetections
           ? (projectsList.find(p => p.id === siteToDeleteDetections.projectId)?.title || siteToDeleteDetections.projectId)
           : (scopedProjects.find(p => p.id === pamSelectedProject)?.title || pamSelectedProject);
-        const activeRecorder = siteToDeleteDetections
+        const activeRecorder = isProjectWide ? null : (siteToDeleteDetections
           ? siteToDeleteDetections.recorderId
-          : (pamSelectedRecorder !== 'All' ? pamSelectedRecorder : null);
+          : (pamSelectedRecorder !== 'All' ? pamSelectedRecorder : null));
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -2786,8 +2805,10 @@ export default function PamAdminPage() {
                       <span className="font-extrabold text-slate-800">{activeProjName}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-bold">SITE</span>
-                      <span className="font-extrabold text-slate-800">{activeSiteName}</span>
+                      <span className="text-[10px] text-slate-400 block font-bold">SITE / SCOPE</span>
+                      <span className={`font-extrabold ${isProjectWide ? 'text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200' : 'text-slate-800'}`}>
+                        {activeSiteName}
+                      </span>
                     </div>
                   </div>
                   {activeRecorder && (
@@ -2839,7 +2860,7 @@ export default function PamAdminPage() {
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                   <div>
                     <span className="font-extrabold text-slate-900 block">Database Synchronization</span>
-                    <span className="text-[10px] text-slate-500">Automatically purges records across all related observatory tables in Supabase.</span>
+                    <span className="text-[10px] text-slate-500">Automatically purges records across all related observatory tables in Supabase (raw PAM detections, hourly rollups, unified detections).</span>
                   </div>
                   <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap ml-2">
                     All Related DBs
@@ -2850,7 +2871,7 @@ export default function PamAdminPage() {
                 <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2.5 text-rose-800">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div className="text-[11px] leading-relaxed">
-                    <strong className="font-bold">Permanent Deletion:</strong> This action cannot be reversed. All raw acoustic event detections, species identifications, and confidence scores for this site will be permanently removed.
+                    <strong className="font-bold">Permanent Deletion:</strong> This action cannot be reversed. All raw acoustic event detections, species identifications, and confidence scores {isProjectWide ? 'for ALL sites in this project' : 'for this site'} will be permanently removed.
                   </div>
                 </div>
 
@@ -2892,7 +2913,7 @@ export default function PamAdminPage() {
                   ) : (
                     <>
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Confirm & Delete All Detections</span>
+                      <span>{isProjectWide ? 'Confirm & Delete All Project Detections' : 'Confirm & Delete All Detections'}</span>
                     </>
                   )}
                 </button>
