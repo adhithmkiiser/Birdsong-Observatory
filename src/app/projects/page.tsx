@@ -168,6 +168,10 @@ export default function ProjectsPage() {
   };
 
   const handleDeleteProject = async (id: string) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete projects.');
+      return;
+    }
     if (!confirm('Delete this project? This cannot be undone.')) return;
     await supabase.from('projects').delete().eq('id', id);
     setProjectsList(prev => prev.filter(p => p.id !== id));

@@ -59,6 +59,7 @@ const defaultMenuVisibility: DashboardMenuVisibility = {
     accumulation: true,
     diurnal: true,
     live: true,
+    triage: true,
     stations: true,
     species: true,
     review: false,

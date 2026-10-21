@@ -1,0 +1,21 @@
+[Unit]
+Description=BirdSong Observatory - Live Detector Edge Agent
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Live_detector
+ExecStart=/usr/bin/python3 /home/pi/Live_detector/main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environmental variables
+Environment="PYTHONUNBUFFERED=1"
+Environment="STATION_NAME=WesternGhats_Node_01"
+
+[Install]
+WantedBy=multi-user.target

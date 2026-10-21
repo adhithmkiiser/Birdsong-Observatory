@@ -459,10 +459,10 @@ export default function HomePage() {
                         <tr key={p.id} className="hover:bg-[#f8faf8] transition-colors">
                           <td>
                             <div className="font-medium text-[#1a1f1c]">{p.name}</div>
-                            <div className="text-xs text-[#5a635d]">{p.description || 'Solar canopy edge node array'}</div>
+                            <div className="text-xs text-[#5a635d]">{p.description || 'Live acoustic monitoring array'}</div>
                           </td>
                           <td className="font-mono text-xs text-[#5a635d]">
-                            <span className="px-2 py-0.5 rounded bg-[#f5f6f4] border border-[#dde1dc]">BirdNET-Pi v2.4</span>
+                            <span className="px-2 py-0.5 rounded bg-[#f5f6f4] border border-[#dde1dc]">Live Detector Agent</span>
                           </td>
                           <td className="num-cell font-mono font-semibold text-[#0369a1]">
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#e0f2fe] text-[#0369a1] text-xs font-semibold">

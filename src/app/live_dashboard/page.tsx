@@ -27,7 +27,12 @@ import {
   Battery, 
   Volume2, 
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Sun,
+  Thermometer,
+  HardDrive,
+  ExternalLink,
+  Pause
 } from 'lucide-react';
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
@@ -39,6 +44,25 @@ import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import DashboardLoader from '@/components/ui/DashboardLoader';
+
+export interface WindowSummaryItem {
+  id: string;
+  window_id: string;
+  node_id: string;
+  timestamp: string;
+  event_count: number;
+  occupied_area_ratio: number;
+  low_band_energy: number;
+  mid_band_energy: number;
+  snr_db: number;
+  is_ambient_noise: boolean;
+  species_detected: string[];
+  model_count: number;
+  explained_ratio: number;
+  review_flags: string[];
+  review_status: 'unreviewed' | 'confirmed' | 'corrected' | 'discarded';
+  clip_path?: string;
+}
 
 const SatelliteMap = dynamic(() => import('@/components/map/SatelliteMap'), { ssr: false });
 const LantanaMap = dynamic(() => import('@/components/map/LantanaMap'), { ssr: false });
@@ -76,6 +100,7 @@ export type LiveDashboardTab =
   | 'accumulation' 
   | 'diurnal' 
   | 'live' 
+  | 'triage'
   | 'stations' 
   | 'species' 
   | 'review' 
@@ -108,6 +133,13 @@ export default function LiveDashboardPage() {
   const [reviewSearch, setReviewSearch] = useState('');
   const [reviewSort, setReviewSort] = useState<'newest' | 'confidence'>('newest');
 
+  // Acoustic Watchdog Triage States
+  const [windowSummaries, setWindowSummaries] = useState<WindowSummaryItem[]>([]);
+  const [triageFilterFlag, setTriageFilterFlag] = useState<string>('ALL');
+  const [triageFilterStatus, setTriageFilterStatus] = useState<string>('all');
+  const [playingClipPath, setPlayingClipPath] = useState<string | null>(null);
+  const triageAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Species Catalog State & Ecology Map
   const [speciesEcologyMap, setSpeciesEcologyMap] = useState<Record<string, any>>({});
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -117,6 +149,7 @@ export default function LiveDashboardPage() {
   const [liveProjects, setLiveProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
+  const [telemetryMap, setTelemetryMap] = useState<Record<string, any>>({});
   const [detections, setDetections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
@@ -155,12 +188,16 @@ export default function LiveDashboardPage() {
           { data: recordersData },
           { data: sitesData },
           { data: ecologyData },
+          { data: telemetryData },
+          { data: windowSummariesData },
           { count: liveCount }
         ] = await Promise.all([
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('sites').select('*').order('name'),
           supabase.from('lantana_species_ecology').select('*'),
+          supabase.from('station_telemetry').select('*').order('timestamp', { ascending: false }).limit(50),
+          supabase.from('window_summaries').select('*').order('timestamp', { ascending: false }).limit(100),
           supabase.from('live_detections').select('*', { count: 'exact', head: true })
         ]);
 
@@ -234,6 +271,15 @@ export default function LiveDashboardPage() {
         });
         setSpeciesEcologyMap(ecoMap);
 
+        const tMap: Record<string, any> = {};
+        if (telemetryData && telemetryData.length > 0) {
+          for (const t of telemetryData) {
+            if (!tMap[t.node_id]) tMap[t.node_id] = t;
+          }
+        }
+        setTelemetryMap(tMap);
+
+        setWindowSummaries(windowSummariesData || []);
         setStationsList(scopedRecorders);
         setSitesList(liveSites);
         setDetections(dedupeDetections(detData || []));
@@ -257,6 +303,20 @@ export default function LiveDashboardPage() {
         { event: 'INSERT', schema: 'public', table: 'live_detections' },
         (payload) => {
           setDetections((prev) => dedupeDetections([payload.new, ...prev]));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'window_summaries' },
+        (payload) => {
+          setWindowSummaries((prev) => [payload.new as any, ...prev]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'window_summaries' },
+        (payload) => {
+          setWindowSummaries((prev) => prev.map(w => w.id === payload.new.id ? payload.new as any : w));
         }
       )
       .subscribe();
@@ -472,15 +532,76 @@ export default function LiveDashboardPage() {
   const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings.allowPublicReports;
   const canAccessReview = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
 
+  // Acoustic Watchdog Triage Handlers & Filters
+  const unreviewedTriageCount = useMemo(() => {
+    return windowSummaries.filter(w => w.review_status === 'unreviewed').length;
+  }, [windowSummaries]);
+
+  const handlePlayTriageClip = (clipPath?: string) => {
+    if (!clipPath) {
+      alert('No audio clip available for this window summary.');
+      return;
+    }
+    if (playingClipPath === clipPath) {
+      triageAudioRef.current?.pause();
+      setPlayingClipPath(null);
+      return;
+    }
+
+    const publicUrl = supabase.storage.from('clips').getPublicUrl(clipPath.replace(/^clips\//, '')).data.publicUrl;
+    setPlayingClipPath(clipPath);
+
+    if (triageAudioRef.current) {
+      triageAudioRef.current.src = publicUrl;
+      triageAudioRef.current.play().catch(err => {
+        console.warn('Playback error:', err);
+        alert('Unable to play audio. The field station may still be syncing the Opus clip.');
+        setPlayingClipPath(null);
+      });
+    }
+  };
+
+  const handleUpdateTriageStatus = async (windowId: string, newStatus: 'confirmed' | 'corrected' | 'discarded') => {
+    try {
+      await supabase.from('window_summaries').update({ review_status: newStatus }).eq('window_id', windowId);
+    } catch (e) {
+      console.warn('Database update for window summary failed:', e);
+    }
+    setWindowSummaries(prev => prev.map(w => w.window_id === windowId ? { ...w, review_status: newStatus } : w));
+  };
+
+  // Filtered Triage Windows
+  const filteredTriageWindows = useMemo(() => {
+    let allowedNodeIds: Set<string> | null = null;
+    if (selectedStationId !== 'ALL') {
+      allowedNodeIds = new Set([selectedStationId]);
+    } else if (selectedProjectId !== 'ALL') {
+      allowedNodeIds = new Set(availableStations.map(s => s.recorder_id || s.id));
+    }
+
+    return windowSummaries.filter(w => {
+      if (allowedNodeIds && !allowedNodeIds.has(w.node_id)) return false;
+      if (triageFilterStatus !== 'all' && w.review_status !== triageFilterStatus) return false;
+      if (triageFilterFlag !== 'ALL' && !w.review_flags.includes(triageFilterFlag)) return false;
+      return true;
+    });
+  }, [windowSummaries, triageFilterStatus, triageFilterFlag, selectedStationId, selectedProjectId, availableStations]);
+
   const scopeKey = selectedSiteId !== 'ALL' ? `${selectedProjectId}:${selectedSiteId}` : selectedProjectId;
 
-  // The 9 Ordered Tabs Requested by User (with RBAC & Public Visibility filtering)
+  // The 10 Ordered Tabs (with RBAC & Public Visibility filtering)
   const allNavMenuItems = [
     { id: 'summary', label: 'Summary', icon: LayoutDashboard },
     { id: 'map', label: 'Survey Site Map', icon: MapPin },
     { id: 'accumulation', label: 'Species Accumulation Curve', icon: LineChart },
     { id: 'diurnal', label: 'Diurnal Activity Pattern', icon: Clock },
     { id: 'live', label: 'Live Stream', icon: Radio, badge: 'LIVE' },
+    { 
+      id: 'triage', 
+      label: 'Acoustic Watchdog & Triage', 
+      icon: Activity, 
+      badge: unreviewedTriageCount > 0 ? `${unreviewedTriageCount} REVIEW` : undefined 
+    },
     { id: 'stations', label: 'Stations & Nodes', icon: Cpu, count: activeNodesCount },
     { id: 'species', label: 'Species Catalog', icon: Bird },
     ...(canAccessReview ? [{ id: 'review', label: 'Review Queue', icon: CheckSquare }] : []),
@@ -514,8 +635,9 @@ export default function LiveDashboardPage() {
 
   return (
     <div className="w-full h-[calc(100vh-80px)] overflow-hidden text-[#1a1f1c] font-sans flex flex-col md:flex-row bg-[#f8faf8]">
+      <audio ref={triageAudioRef} onEnded={() => setPlayingClipPath(null)} />
 
-      {/* ─── 1. LEFT SIDEBAR NAVIGATION (9 ORDERED TABS) ────────────────────── */}
+      {/* ─── 1. LEFT SIDEBAR NAVIGATION (10 ORDERED TABS) ────────────────────── */}
       <aside className="w-full md:w-72 lg:w-80 bg-white border-r border-[#dde1dc] flex flex-col justify-between shrink-0 h-full overflow-y-auto shadow-sm">
         <div className="p-4 space-y-4">
           
@@ -780,7 +902,7 @@ export default function LiveDashboardPage() {
                   id: s.id || s.recorder_id,
                   name: s.site_name || s.recorder_id,
                   site_group: s.site_name || s.recorder_id,
-                  recorder_id: s.recorder_id || 'Node_01',
+                  recorder_id: s.recorder_id || s.id || 'Node',
                   lat: Number(s.latitude || s.lat || 13.6288),
                   lng: Number(s.longitude || s.long || 79.4192),
                   detectionsCount: filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).length,
@@ -964,15 +1086,18 @@ export default function LiveDashboardPage() {
                     className="p-3.5 bg-[#fafbfa] hover:bg-[#f0f7f3] border border-[#dde1dc] rounded-xl flex items-center justify-between transition-colors shadow-2xs"
                   >
                     <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-[#1a1f1c] truncate">{det.common_name}</span>
                         <span className="text-[10px] font-mono font-bold text-[#1f4d3a] bg-[#eaf2ed] px-1.5 py-0.5 rounded">
                           {formatPercent(det.confidence || 0)}
                         </span>
+                        <span className="text-[9px] font-mono text-[#5a635d] bg-[#f5f6f4] px-1.5 py-0.5 rounded border border-[#dde1dc]">
+                          {det.model_id ? 'Multi-Model ONNX' : 'BirdNET TFLite'}
+                        </span>
                       </div>
                       <div className="text-xs italic text-[#5a635d] truncate">{det.scientific_name}</div>
                       <div className="text-[10px] font-mono text-[#5a635d] flex items-center gap-2">
-                        <span>Node: {det.recorder_id || det.station_name || 'Node_01'}</span>
+                        <span>Node: {det.recorder_id || det.station_name || 'Node'}</span>
                         <span>•</span>
                         <span>{det.timestamp ? new Date(det.timestamp).toLocaleTimeString() : 'Just now'}</span>
                       </div>
@@ -992,7 +1117,260 @@ export default function LiveDashboardPage() {
           </div>
         )}
 
-        {/* ─── TAB 6: STATIONS & NODES ────────────────────────────────────────── */}
+        {/* ─── TAB: ACOUSTIC WATCHDOG & ACTIVE LEARNING TRIAGE ────────────────── */}
+        {activeTab === 'triage' && (
+          <div className="dashboard-section space-y-5">
+            <div className="section-header">
+              <div>
+                <h2 className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-600" />
+                  Acoustic Watchdog Triage &amp; Discrepancy Stream
+                </h2>
+                <p>
+                  The classical DSP engine analyzes each 3-second audio window for physical energy, vocalization blobs, and frequency band distribution. Windows with discrepancies (e.g. vocal sounds present but missed by AI models) are curated here for human review.
+                </p>
+              </div>
+
+              {/* Triage Count Badge */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-[#1f4d3a] bg-[#f0f7f3] px-3 py-1.5 rounded-lg border border-[#dde1dc]">
+                  {filteredTriageWindows.length} Windows
+                </span>
+                {unreviewedTriageCount > 0 && (
+                  <span className="text-xs font-mono font-bold text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200">
+                    {unreviewedTriageCount} Unreviewed
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Quick KPI Metric Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 bg-[#fafbfa] border border-[#dde1dc] rounded-xl space-y-1">
+                <span className="text-[10px] font-mono text-[#5a635d] uppercase">Flagged Discrepancies</span>
+                <div className="text-xl font-bold font-serif text-[#1a1f1c]">{filteredTriageWindows.length}</div>
+                <div className="text-[10px] text-[#5a635d]">Windows captured by edge DSP</div>
+              </div>
+
+              <div className="p-3.5 bg-[#fafbfa] border border-[#dde1dc] rounded-xl space-y-1">
+                <span className="text-[10px] font-mono text-amber-700 uppercase">Awaiting Triage</span>
+                <div className="text-xl font-bold font-serif text-amber-800">
+                  {filteredTriageWindows.filter(w => w.review_status === 'unreviewed').length}
+                </div>
+                <div className="text-[10px] text-[#5a635d]">Pending human verification</div>
+              </div>
+
+              <div className="p-3.5 bg-[#fafbfa] border border-[#dde1dc] rounded-xl space-y-1">
+                <span className="text-[10px] font-mono text-rose-700 uppercase">Missed Calls (Under-detected)</span>
+                <div className="text-xl font-bold font-serif text-rose-800">
+                  {filteredTriageWindows.filter(w => w.review_flags.includes('UNDER_DETECTED')).length}
+                </div>
+                <div className="text-[10px] text-[#5a635d]">Acoustic blob with 0 AI species</div>
+              </div>
+
+              <div className="p-3.5 bg-[#fafbfa] border border-[#dde1dc] rounded-xl space-y-1">
+                <span className="text-[10px] font-mono text-emerald-700 uppercase">Confirmed / Corrected</span>
+                <div className="text-xl font-bold font-serif text-emerald-800">
+                  {filteredTriageWindows.filter(w => w.review_status === 'confirmed' || w.review_status === 'corrected').length}
+                </div>
+                <div className="text-[10px] text-[#5a635d]">Validated active learning data</div>
+              </div>
+            </div>
+
+            {/* Filters Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[#f5f6f4] rounded-xl border border-[#dde1dc]">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs font-semibold text-[#5a635d] flex items-center gap-1.5 mr-1">
+                  <Filter className="w-3.5 h-3.5" /> Filters:
+                </label>
+
+                <select
+                  value={triageFilterFlag}
+                  onChange={(e) => setTriageFilterFlag(e.target.value)}
+                  className="bg-white border border-[#dde1dc] rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#1a1f1c]"
+                >
+                  <option value="ALL">All Discrepancy Flags</option>
+                  <option value="UNDER_DETECTED">UNDER_DETECTED (Sound Missed)</option>
+                  <option value="MODEL_DISAGREEMENT">MODEL_DISAGREEMENT</option>
+                  <option value="BAND_MISMATCH">BAND_MISMATCH (Low Frequency / Herps)</option>
+                  <option value="POSSIBLE_OVERLAP">POSSIBLE_OVERLAP (Dense Chorus)</option>
+                </select>
+
+                <select
+                  value={triageFilterStatus}
+                  onChange={(e) => setTriageFilterStatus(e.target.value)}
+                  className="bg-white border border-[#dde1dc] rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#1a1f1c]"
+                >
+                  <option value="all">All Review Statuses</option>
+                  <option value="unreviewed">Unreviewed Only</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="corrected">Corrected</option>
+                  <option value="discarded">Discarded Noise</option>
+                </select>
+              </div>
+
+              <div className="text-xs text-[#5a635d]">
+                Showing {filteredTriageWindows.length} of {windowSummaries.length} total windows
+              </div>
+            </div>
+
+            {/* Triage Cards Stream */}
+            <div className="space-y-3 max-h-[700px] overflow-y-auto pr-1">
+              {filteredTriageWindows.length === 0 ? (
+                <div className="p-12 text-center rounded-xl bg-white border border-[#dde1dc] space-y-2">
+                  <Activity className="w-8 h-8 text-[#5a635d] mx-auto opacity-40 mb-1" />
+                  <p className="font-serif font-bold text-sm text-[#1a1f1c]">No Discrepancy Windows Found</p>
+                  <p className="text-xs text-[#5a635d] max-w-md mx-auto">
+                    No audio windows matching current filters. When the edge watchdog detects physical vocalization energy that deviates from neural predictions, clips will stream here for review.
+                  </p>
+                </div>
+              ) : (
+                filteredTriageWindows.map((win) => {
+                  const isPlaying = playingClipPath === win.clip_path;
+
+                  return (
+                    <div
+                      key={win.window_id}
+                      className="p-4 rounded-xl bg-white border border-[#dde1dc] space-y-3 text-xs shadow-2xs hover:border-[#1f4d3a]/50 transition-colors"
+                    >
+                      {/* Top Header Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#f0f2ef] pb-3">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <button
+                            onClick={() => handlePlayTriageClip(win.clip_path)}
+                            className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition text-xs ${
+                              isPlaying
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-[#1f4d3a] hover:bg-[#16382a] text-white'
+                            }`}
+                            title="Play 3s deduplicated Opus clip"
+                          >
+                            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+                            <span>{isPlaying ? 'Playing...' : '3s Audio Clip'}</span>
+                          </button>
+
+                          <strong className="font-mono text-xs text-[#1a1f1c]">{win.window_id}</strong>
+                          <span className="font-mono text-[11px] bg-[#f5f6f4] px-2 py-0.5 rounded text-[#1f4d3a] border border-[#dde1dc]">
+                            Node: {win.node_id}
+                          </span>
+                          <span className="font-mono text-[11px] text-[#5a635d]">
+                            {win.timestamp ? new Date(win.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Recent'}
+                          </span>
+                        </div>
+
+                        {/* Discrepancy Badges & Status */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {win.review_flags.map((flag) => (
+                            <span
+                              key={flag}
+                              className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                flag === 'UNDER_DETECTED'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : flag === 'MODEL_DISAGREEMENT'
+                                  ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                  : flag === 'BAND_MISMATCH'
+                                  ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
+                                  : 'bg-rose-100 text-rose-900 border-rose-300'
+                              }`}
+                            >
+                              {flag}
+                            </span>
+                          ))}
+                          <span
+                            className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase border ${
+                              win.review_status === 'confirmed'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : win.review_status === 'corrected'
+                                ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                                : win.review_status === 'discarded'
+                                ? 'bg-gray-100 text-gray-700 border-gray-300'
+                                : 'bg-yellow-50 text-yellow-800 border-yellow-300'
+                            }`}
+                          >
+                            {win.review_status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Physical DSP Metrics vs Multi-Model Detection */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-lg bg-[#fafbfa] border border-[#dde1dc]/80 font-mono text-[11px]">
+                        <div>
+                          <span className="text-[#5a635d] text-[10px] block">Acoustic Event Blobs</span>
+                          <strong className="text-[#1a1f1c] font-bold">{win.event_count} Blobs</strong>
+                        </div>
+                        <div>
+                          <span className="text-[#5a635d] text-[10px] block">Occupied Area Ratio</span>
+                          <strong className="text-[#1a1f1c] font-bold">{(win.occupied_area_ratio * 100).toFixed(1)}%</strong>
+                        </div>
+                        <div>
+                          <span className="text-[#5a635d] text-[10px] block">Frequency Bands</span>
+                          <span className="text-[#1a1f1c] font-bold">
+                            Low {(win.low_band_energy * 100).toFixed(0)}% / Mid {(win.mid_band_energy * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[#5a635d] text-[10px] block">AI Species Detected</span>
+                          <strong className="text-emerald-800 font-bold truncate block">
+                            {win.species_detected && win.species_detected.length > 0 
+                              ? win.species_detected.join(', ') 
+                              : '0 Species (Missed Call!)'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Explanation Hint & Review Actions */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                        <div className="text-[11px] text-[#5a635d]">
+                          {win.review_flags.includes('UNDER_DETECTED') && (
+                            <span className="flex items-center gap-1.5 text-amber-800">
+                              <span>💡</span>
+                              <span>Acoustic energy present but AI reported 0 species. Check for amphibians, mammals, or novel vocalizations.</span>
+                            </span>
+                          )}
+                          {win.review_flags.includes('BAND_MISMATCH') && (
+                            <span className="flex items-center gap-1.5 text-cyan-800">
+                              <span>🐸</span>
+                              <span>Energy concentrated in low frequencies (&lt;1.5 kHz). Likely anuran, insect, or mammal vocalization.</span>
+                            </span>
+                          )}
+                          {win.review_flags.includes('MODEL_DISAGREEMENT') && (
+                            <span className="flex items-center gap-1.5 text-indigo-800">
+                              <span>⚖️</span>
+                              <span>Models disagree on species identity. Listen to audio clip to resolve classification.</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                          <button
+                            onClick={() => handleUpdateTriageStatus(win.window_id, 'confirmed')}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-[11px] transition cursor-pointer"
+                          >
+                            Confirm Detection
+                          </button>
+                          <button
+                            onClick={() => handleUpdateTriageStatus(win.window_id, 'corrected')}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold text-[11px] transition cursor-pointer"
+                          >
+                            Correct Species
+                          </button>
+                          <button
+                            onClick={() => handleUpdateTriageStatus(win.window_id, 'discarded')}
+                            className="px-2.5 py-1 rounded-lg bg-[#f5f6f4] hover:bg-[#e8eae6] text-[#5a635d] border border-[#dde1dc] font-semibold text-[11px] transition cursor-pointer"
+                          >
+                            Discard Noise
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── TAB 7: STATIONS & NODES ────────────────────────────────────────── */}
         {activeTab === 'stations' && (
           <div className="dashboard-section">
             <div className="section-header">
@@ -1001,11 +1379,11 @@ export default function LiveDashboardPage() {
                   <Cpu className="w-4 h-4 text-[#1f4d3a]" />
                   Field Recorder Nodes &amp; Hardware Telemetry
                 </h2>
-                <p>Active BirdNET-Pi hardware stations, heartbeat status, and telemetry diagnostics.</p>
+                <p>Autonomous Raspberry Pi edge sensor nodes, real-time solar powerbank &amp; thermal diagnostics, and live audio streams.</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {availableStations.length === 0 ? (
                 <div className="col-span-3 py-12 text-center text-xs text-[#5a635d]">
                   No recorder nodes found in the selected project scope.
@@ -1013,43 +1391,109 @@ export default function LiveDashboardPage() {
               ) : (
                 availableStations.map((stn: any) => {
                   const isOnline = stn.status === 'online';
+                  const tel = telemetryMap[stn.recorder_id];
+                  const hasTel = !!tel;
+                  const cpuTemp = tel?.cpu_temp_c ?? (stn.cpu_temperature != null ? Number(stn.cpu_temperature) : null);
+                  const diskFree = tel?.disk_free_gb ?? null;
+                  const diskPercent = tel?.disk_percent_free ?? (stn.storage_used_percent != null ? 100 - Number(stn.storage_used_percent) : null);
+                  const batteryVolt = tel?.battery_voltage_v ?? null;
+                  const powerStatus = tel?.power_status || (stn.battery_level != null ? `Battery ${stn.battery_level}%` : 'Awaiting Telemetry');
+                  const hasUnderVoltage = tel?.under_voltage_flag;
+
                   return (
                     <div
                       key={stn.recorder_id || stn.id}
-                      className="p-4 bg-white border border-[#dde1dc] rounded-xl shadow-xs space-y-3"
+                      className="p-5 bg-white border border-[#dde1dc] rounded-2xl shadow-xs space-y-4 hover:border-[#1f4d3a] transition-all"
                     >
-                      <div className="flex items-start justify-between border-b border-[#dde1dc] pb-2.5">
+                      <div className="flex items-start justify-between border-b border-[#dde1dc] pb-3">
                         <div>
                           <h3 className="font-bold text-sm text-[#1a1f1c] flex items-center gap-2">
                             <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                             {stn.site_name || stn.recorder_id}
                           </h3>
-                          <div className="text-[11px] font-mono text-[#5a635d] mt-0.5">{stn.recorder_id}</div>
+                          <div className="text-[11px] font-mono text-[#5a635d] mt-0.5">
+                            {stn.recorder_id} {stn.ip_address && <>&bull; <span className="text-[#1f4d3a]">{stn.ip_address}</span></>}
+                          </div>
                         </div>
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
-                          isOnline ? 'bg-[#eaf2ed] text-emerald-800' : 'bg-rose-50 text-rose-700'
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase border ${
+                          isOnline ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>
-                          {isOnline ? 'Online' : 'Offline'}
+                          {isOnline ? '● Online' : 'Offline'}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                        <div>
-                          <span className="text-[#5a635d] block">FIRMWARE</span>
-                          <strong className="text-[#1a1f1c]">{stn.firmware_version || 'v2.4 (Live)'}</strong>
+                      {/* Solar Warning if dipped */}
+                      {hasUnderVoltage && (
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                          <span>Solar dip detected (&lt;4.63V). Continuous edge inference maintained.</span>
                         </div>
-                        <div>
-                          <span className="text-[#5a635d] block">STORAGE</span>
-                          <strong className="text-[#1a1f1c]">{stn.storage_used_percent ? `${Math.round(stn.storage_used_percent)}%` : '28%'}</strong>
+                      )}
+
+                      {/* Hardware Diagnostics Grid */}
+                      <div className="grid grid-cols-2 gap-2.5 text-[11px] font-mono">
+                        <div className="p-2.5 rounded-xl bg-[#f9faf8] border border-[#dde1dc]/80">
+                          <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
+                            <Sun className="w-3 h-3 text-amber-500" /> SOLAR / VOLTS
+                          </span>
+                          <strong className="text-[#1a1f1c]">{batteryVolt != null ? `${batteryVolt.toFixed(2)} V` : (stn.battery_level != null ? `${stn.battery_level}%` : '--')}</strong>
+                          <div className="text-[10px] text-emerald-700 font-semibold truncate" title={powerStatus}>
+                            {powerStatus}
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[#5a635d] block">BATTERY / PWR</span>
-                          <strong className="text-emerald-700">{stn.battery_level ?? 100}%</strong>
+
+                        <div className="p-2.5 rounded-xl bg-[#f9faf8] border border-[#dde1dc]/80">
+                          <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
+                            <Thermometer className="w-3 h-3 text-[#1f4d3a]" /> CPU TEMP
+                          </span>
+                          <strong className="text-[#1a1f1c]">{cpuTemp != null ? `${cpuTemp.toFixed(1)} °C` : '--'}</strong>
+                          <div className={`text-[10px] font-semibold ${cpuTemp != null && cpuTemp < 60 ? 'text-emerald-700' : 'text-[#5a635d]'}`}>
+                            {cpuTemp != null ? (cpuTemp < 60 ? 'Cool & Stable' : 'Warm') : 'Nominal'}
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[#5a635d] block">LAST PING</span>
+
+                        <div className="p-2.5 rounded-xl bg-[#f9faf8] border border-[#dde1dc]/80">
+                          <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
+                            <HardDrive className="w-3 h-3 text-[#1f4d3a]" /> SD STORAGE
+                          </span>
+                          <strong className="text-[#1a1f1c]">{diskFree != null ? `${diskFree.toFixed(1)} GB` : (diskPercent != null ? `${diskPercent.toFixed(0)}% Free` : '--')}</strong>
+                          <div className="text-[10px] text-[#1f4d3a] font-semibold">
+                            {diskPercent != null ? `${diskPercent.toFixed(0)}% Free` : 'Mounted'}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-[#f9faf8] border border-[#dde1dc]/80">
+                          <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-[#1f4d3a]" /> LAST PING
+                          </span>
                           <strong className="text-[#1a1f1c]">{stn.last_ping ? new Date(stn.last_ping).toLocaleTimeString() : 'Recent'}</strong>
+                          <div className="text-[10px] text-emerald-700 font-semibold">
+                            {isOnline ? 'Active Stream' : 'Standby'}
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Live Audio Stream Link */}
+                      <div className="pt-2 border-t border-[#dde1dc] flex items-center justify-between">
+                        <span className="font-mono text-[10px] text-[#5a635d] bg-[#f5f6f4] px-2 py-0.5 rounded">
+                          Multi-Model: BirdNET + ONNX
+                        </span>
+
+                        {stn.ip_address ? (
+                          <a
+                            href={`http://${stn.ip_address}:8888/stream`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-[#f0f7f3] hover:bg-[#1f4d3a] text-[#1f4d3a] hover:text-white border border-[#dde1dc] text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-2xs"
+                            title="Tune in to live audio stream on port 8888"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>Listen Live (8888)</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-[#5a635d] italic">IP not configured</span>
+                        )}
                       </div>
                     </div>
                   );
@@ -1272,7 +1716,7 @@ export default function LiveDashboardPage() {
                       )}
                     </div>
                     <div className="text-xs text-[#5a635d]">
-                      {det.scientific_name} • Node: {det.recorder_id || det.station_name || 'Node_01'} • {det.timestamp ? new Date(det.timestamp).toLocaleString() : 'Recent'}
+                      {det.scientific_name} • Node: {det.recorder_id || det.station_name || 'Node'} • {det.timestamp ? new Date(det.timestamp).toLocaleString() : 'Recent'}
                     </div>
                   </div>
 

@@ -1,0 +1,24 @@
+# BirdSong Observatory - Live Detector Dependencies
+# ---------------------------------------------------
+
+# Core Cloud & Database
+supabase>=2.3.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Scientific & DSP Audio Processing
+numpy>=1.23.0
+scipy>=1.9.0
+sounddevice>=0.4.6
+
+# Hardware Diagnostics & Telemetry
+psutil>=5.9.0
+
+# Inference Engines (Install appropriate wheel for Raspberry Pi OS)
+onnxruntime>=1.15.0
+
+# Note on TFLite:
+# On Raspberry Pi OS (Debian Bullseye/Bookworm), install via:
+# pip install tflite-runtime
+# or if on x86/64:
+# pip install tensorflow

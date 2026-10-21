@@ -71,11 +71,11 @@ export default function AdminHubPage() {
                 Live Detectors Console
               </h2>
               <div className="font-mono text-xs text-[#5a635d] pt-0.5">
-                BirdNET-Pi &bull; Edge Nodes &bull; Sync
+                Multi-Model Edge &bull; Solar Telemetry &bull; Hot-Reload
               </div>
             </div>
             <p className="text-xs text-[#5a635d] leading-relaxed">
-              Monitor solar Raspberry Pi edge nodes, inspect delta sync queues, generate <code className="font-mono">birdnet_sync.py</code> systemd configurations, and manage live audio streams.
+              Monitor solar Raspberry Pi edge nodes, inspect solar powerbank &amp; thermal health, deploy custom ONNX/TFLite models with zero-restart hot-reloads, and audit acoustic watchdog triage.
             </p>
           </div>
 

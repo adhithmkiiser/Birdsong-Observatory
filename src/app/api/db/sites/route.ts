@@ -69,7 +69,7 @@ export async function PUT(req: NextRequest) {
 
 // DELETE: Delete a site and cascade delete all associated detections from ALL related databases
 export async function DELETE(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  const { user, error: authError } = await authGuard(req, ['Admin']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
 
   try {

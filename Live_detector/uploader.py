@@ -1,0 +1,225 @@
+"""
+BirdSong Observatory - Cloud Uploader & Storage Synchronizer
+============================================================
+Runs in a background worker thread.
+1. Encodes 3.0s audio clips to high-efficiency Opus format (reducing 300 KB to ~24 KB).
+2. Deduplicates audio uploads: uploads one clip per window_id shared across all models.
+3. Batch inserts records into Supabase PostgreSQL:
+   - window_summaries (activity metrics, review flags)
+   - detections (individual model species predictions)
+   - station_telemetry (solar voltage, battery, temperature, SD card free space)
+4. Dequeues SQLite records on success and handles offline retries with backoff.
+"""
+
+import os
+import json
+import time
+import logging
+import threading
+import subprocess
+import numpy as np
+from typing import Optional, List, Dict, Any
+from pathlib import Path
+from supabase import create_client, Client
+from outbox import OutboxDatabase
+from config import (
+    SUPABASE_URL, SUPABASE_KEY, CLIPS_DIR,
+    STATION_NAME, PROJECT_NAME, SAMPLE_RATE, SYNC_INTERVAL_SECONDS
+)
+
+logger = logging.getLogger("CloudUploader")
+
+class CloudUploaderWorker(threading.Thread):
+    def __init__(self, outbox: OutboxDatabase):
+        super().__init__(daemon=True, name="CloudUploaderWorker")
+        self.outbox = outbox
+        self.running = False
+        self.supabase: Optional[Client] = None
+        self._init_supabase()
+
+    def _init_supabase(self):
+        try:
+            self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+            logger.info("Connected to Supabase successfully.")
+        except Exception as e:
+            logger.warning(f"Could not connect to Supabase yet: {e}")
+            self.supabase = None
+
+    def encode_to_opus(self, audio_data: np.ndarray, output_path: str) -> bool:
+        """Encodes float32 48kHz audio array to compact Opus file using FFmpeg."""
+        try:
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-loglevel", "error",
+                "-f", "f32le",
+                "-ar", str(SAMPLE_RATE),
+                "-ac", "1",
+                "-i", "pipe:0",
+                "-c:a", "libopus",
+                "-b:a", "64k",
+                "-vbr", "on",
+                output_path
+            ]
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            proc.communicate(input=audio_data.astype(np.float32).tobytes())
+            return proc.returncode == 0
+        except Exception as e:
+            logger.debug(f"Opus encoding via FFmpeg failed ({e}). Saving as raw uncompressed float.")
+            return False
+
+    def upload_clip_to_storage(self, local_clip_path: str, remote_filename: str) -> Optional[str]:
+        """Uploads an audio clip to Supabase storage bucket 'clips'."""
+        if not self.supabase or not os.path.exists(local_clip_path):
+            return None
+
+        storage_path = f"{PROJECT_NAME}/{STATION_NAME}/{remote_filename}"
+        try:
+            with open(local_clip_path, "rb") as f:
+                self.supabase.storage.from_("clips").upload(
+                    path=storage_path,
+                    file=f,
+                    file_options={"content-type": "audio/ogg; codecs=opus", "upsert": "true"}
+                )
+            
+            # Retrieve public URL
+            res = self.supabase.storage.from_("clips").get_public_url(storage_path)
+            return res
+        except Exception as e:
+            logger.debug(f"Storage clip upload note ({storage_path}): {e}")
+            return None
+
+    def sync_cycle(self):
+        if not self.supabase:
+            self._init_supabase()
+            if not self.supabase:
+                return
+
+        # 1. Sync Windows Summaries & Clips
+        pending_windows = self.outbox.get_pending_windows(limit=10)
+        uploaded_window_ids = []
+
+        for win in pending_windows:
+            window_id = win["window_id"]
+            clip_local = win["clip_local_path"]
+            remote_clip_url = None
+
+            # Upload audio clip if file exists and window had detections or flags
+            if clip_local and os.path.exists(clip_local):
+                remote_name = f"{window_id}.opus"
+                remote_clip_url = self.upload_clip_to_storage(clip_local, remote_name)
+
+            flags_list = json.loads(win["review_flags"]) if win["review_flags"] else []
+            species_list = json.loads(win["species_detected"]) if win["species_detected"] else []
+
+            record = {
+                "window_id": window_id,
+                "node_id": win["node_id"],
+                "timestamp": win["timestamp"],
+                "event_count": win["event_count"],
+                "occupied_area_ratio": win["occupied_area_ratio"],
+                "low_band_energy": win["low_band_energy"],
+                "mid_band_energy": win["mid_band_energy"],
+                "snr_db": win["snr_db"],
+                "is_ambient_noise": bool(win["is_ambient_noise"]),
+                "species_detected": species_list,
+                "model_count": win["model_count"],
+                "explained_ratio": win["explained_ratio"],
+                "review_flags": flags_list,
+                "clip_path": remote_clip_url or "",
+                "review_status": "unreviewed"
+            }
+
+            try:
+                self.supabase.table("window_summaries").upsert(record, on_conflict="window_id").execute()
+                uploaded_window_ids.append(window_id)
+
+                # Clean up local temporary clip file once uploaded to conserve SD space
+                if clip_local and os.path.exists(clip_local):
+                    try:
+                        os.remove(clip_local)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"Error inserting window_summary {window_id}: {e}")
+                break
+
+        if uploaded_window_ids:
+            self.outbox.mark_windows_uploaded(uploaded_window_ids)
+            logger.info(f"Synced {len(uploaded_window_ids)} window summaries to cloud.")
+
+        # 2. Sync Individual Model Detections
+        pending_detections = self.outbox.get_pending_detections(limit=50)
+        if pending_detections:
+            det_records = []
+            det_ids = []
+            for d in pending_detections:
+                det_ids.append(d["id"])
+                det_records.append({
+                    "station_name": d["node_id"],
+                    "timestamp": d["timestamp"],
+                    "common_name": d["common_name"],
+                    "scientific_name": d["scientific_name"],
+                    "confidence": d["confidence"],
+                    "model_id": d["model_id"] if d["model_id"] != "default" else None,
+                    "window_id": d["window_id"]
+                })
+
+            try:
+                self.supabase.table("detections").insert(det_records).execute()
+                self.outbox.mark_detections_uploaded(det_ids)
+                logger.info(f"Synced {len(det_records)} model detections to cloud.")
+            except Exception as e:
+                logger.error(f"Error inserting detections: {e}")
+
+        # 3. Sync Solar & Battery Hardware Telemetry
+        pending_telemetry = self.outbox.get_pending_telemetry(limit=20)
+        if pending_telemetry:
+            telem_records = []
+            telem_ids = []
+            for t in pending_telemetry:
+                telem_ids.append(t["id"])
+                telem_records.append({
+                    "node_id": t["node_id"],
+                    "timestamp": t["timestamp"],
+                    "cpu_temp_c": t["cpu_temp_c"],
+                    "disk_free_gb": t["disk_free_gb"],
+                    "disk_percent_free": t["disk_percent_free"],
+                    "is_low_space": bool(t["is_low_space"]),
+                    "battery_capacity_percent": t["battery_capacity_percent"],
+                    "battery_voltage_v": t["battery_voltage_v"],
+                    "power_status": t["power_status"],
+                    "under_voltage_flag": bool(t["under_voltage_flag"]),
+                    "throttling_flag": bool(t["throttling_flag"]),
+                    "cpu_percent": t["cpu_percent"],
+                    "ram_percent": t["ram_percent"],
+                    "uptime_hours": t["uptime_hours"]
+                })
+
+            try:
+                # Upsert into station_telemetry table
+                self.supabase.table("station_telemetry").insert(telem_records).execute()
+                self.outbox.mark_telemetry_uploaded(telem_ids)
+                logger.info(f"Synced {len(telem_records)} solar/battery telemetry records to cloud.")
+            except Exception as e:
+                logger.error(f"Error inserting telemetry: {e}")
+
+    def run(self):
+        self.running = True
+        logger.info("Starting Cloud Uploader Worker loop...")
+        prune_counter = 0
+
+        while self.running:
+            try:
+                self.sync_cycle()
+                prune_counter += 1
+                if prune_counter >= 360: # Prune roughly once an hour
+                    self.outbox.prune_uploaded(retention_days=7)
+                    prune_counter = 0
+            except Exception as e:
+                logger.error(f"Error in upload cycle: {e}")
+
+            time.sleep(SYNC_INTERVAL_SECONDS)
+
+    def stop(self):
+        self.running = False

@@ -214,12 +214,12 @@ export async function POST(req: NextRequest) {
 }
 
 // DELETE: Delete shapefile for site or project
-// Only Admin, Project Manager (for assigned project), and Site Manager (for assigned site) can delete
+// Only Admin can delete shapefiles
 export async function DELETE(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  const { user, error: authError } = await authGuard(req, ['Admin']);
   if (authError || !user) {
     return NextResponse.json(
-      { error: authError || 'Unauthorized: Only Admins, Project Managers (for assigned projects), and Site Managers (for assigned sites) can delete shapefiles.' },
+      { error: authError || 'Unauthorized: Only Admins can delete shapefiles.' },
       { status: 403 }
     );
   }
@@ -233,42 +233,12 @@ export async function DELETE(req: NextRequest) {
     }
 
     const sanitizedId = id.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-    const normalizedId = sanitizedId.toLowerCase();
-
-    // Role-specific scope checks for DELETE
-    const userRole = user.role;
-    if (userRole === 'Project Manager') {
-      const userProjects: string[] = [
-        ...(user.assignedProjects || []),
-        ...(user.assigned_projects || []),
-        ...(user.projectScopePermissions || []),
-        ...(user.project_scope_permissions || []),
-        ...(user.assignedProject ? [user.assignedProject] : []),
-        ...(user.assigned_project ? [user.assigned_project] : [])
-      ].map((p: any) => String(p).toLowerCase().trim()).filter(Boolean);
-
-      if (!userProjects.includes(normalizedId)) {
-        return NextResponse.json({ error: 'Unauthorized: Project Managers can only delete shapefiles for their assigned project.' }, { status: 403 });
-      }
-    } else if (userRole === 'Site Manager') {
-      const userSites: string[] = [
-        ...(user.assignedSites || []),
-        ...(user.assigned_sites || []),
-        ...(user.assignedSite ? [user.assignedSite] : []),
-        ...(user.assigned_site ? [user.assigned_site] : [])
-      ].map((s: any) => String(s).toLowerCase().trim()).filter(Boolean);
-
-      if (!userSites.includes(normalizedId)) {
-        return NextResponse.json({ error: 'Unauthorized: Site Managers can only delete shapefiles for their assigned site.' }, { status: 403 });
-      }
-    }
-
     const filePath = `shapefiles/${sanitizedId}.geojson`;
 
     await supabaseAdmin.storage.from(BUCKET).remove([filePath]);
 
     const manifest = await getManifest();
-    const updated = manifest.filter(m => m.targetId !== sanitizedId);
+    const updated = manifest.filter(m => m.targetId !== sanitizedId && m.id !== sanitizedId);
     await saveManifest(updated);
 
     return NextResponse.json({ success: true, id: sanitizedId });

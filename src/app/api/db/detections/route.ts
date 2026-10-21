@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
 // DELETE: Delete detections
 export async function DELETE(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  const { user, error: authError } = await authGuard(req, ['Admin']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
 
   try {

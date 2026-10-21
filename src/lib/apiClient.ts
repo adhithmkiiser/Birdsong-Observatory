@@ -7,9 +7,21 @@ import { User } from '@/types/database';
 export async function apiFetch(url: string, options: RequestInit = {}, user?: User | null) {
   const headers = new Headers(options.headers || {});
   
-  if (user && user.email && user.password) {
+  if (user && user.email) {
     headers.set('X-User-Email', user.email);
-    headers.set('X-User-Password', user.password);
+    if (user.password) {
+      headers.set('X-User-Password', user.password);
+    }
+  } else if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('birdlab-session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email) {
+          headers.set('X-User-Email', parsed.email);
+        }
+      }
+    } catch {}
   }
   
   headers.set('Content-Type', 'application/json');

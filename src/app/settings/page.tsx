@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { Settings, Key, Shield, Database, Sun, Moon, Cpu, Save } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [supabaseUrl, setSupabaseUrl] = useState('https://demo-birdnet-cloud.supabase.co');
-  const [supabaseKey, setSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
+  const [supabaseUrl, setSupabaseUrl] = useState(process.env.NEXT_PUBLIC_SUPABASE_URL || '');
+  const [supabaseKey, setSupabaseKey] = useState(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
 
   return (
     <div className="space-y-6 max-w-4xl">

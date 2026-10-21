@@ -17,7 +17,10 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  Download,
+  Globe
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -76,8 +79,8 @@ const mapDbSiteToItem = (s: any): SiteItem => ({
 export default function PamAdminPage() {
   const { currentRole, currentUser } = useRole();
 
-  // Active Tab: 'upload' | 'projects' | 'species' | 'detections'
-  const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'species' | 'detections'>('upload');
+  // Active Tab: 'upload' | 'projects' | 'shapefiles' | 'species' | 'detections'
+  const [activeTab, setActiveTab] = useState<'upload' | 'projects' | 'shapefiles' | 'species' | 'detections'>('upload');
   const [successMsg, setSuccessMsg] = useState('');
   
   // Loading states for data ingestion
@@ -151,6 +154,29 @@ export default function PamAdminPage() {
   const [deleteAllConfirmed, setDeleteAllConfirmed] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [siteToDeleteDetections, setSiteToDeleteDetections] = useState<SiteItem | null>(null);
+
+  // 5. Shapefiles Manager States
+  const [shapefilesList, setShapefilesList] = useState<any[]>([]);
+  const [isShapefilesLoading, setIsShapefilesLoading] = useState(false);
+  const [shapefileFilterProject, setShapefileFilterProject] = useState<string>('ALL');
+  const [shapefileFilterScope, setShapefileFilterScope] = useState<'ALL' | 'project' | 'site'>('ALL');
+  const [shapefileSearchQuery, setShapefileSearchQuery] = useState('');
+  const [deletingShapefileId, setDeletingShapefileId] = useState<string | null>(null);
+  const [inspectingShapefile, setInspectingShapefile] = useState<any | null>(null);
+  const [inspectGeoJson, setInspectGeoJson] = useState<any | null>(null);
+  const [isInspectLoading, setIsInspectLoading] = useState(false);
+  const [shapefileToDelete, setShapefileToDelete] = useState<any | null>(null);
+  const [isDeletingShapefile, setIsDeletingShapefile] = useState(false);
+
+  // New Shapefile Upload in Shapefiles Manager
+  const [isUploadShapefileOpen, setIsUploadShapefileOpen] = useState(false);
+  const [uploadShapefileProjId, setUploadShapefileProjId] = useState('');
+  const [uploadShapefileType, setUploadShapefileType] = useState<'project' | 'site'>('project');
+  const [uploadShapefileSiteId, setUploadShapefileSiteId] = useState('');
+  const [uploadShapefileName, setUploadShapefileName] = useState('');
+  const [uploadShapefileHabitat, setUploadShapefileHabitat] = useState<'common' | 'LC' | 'LI' | 'CS' | 'live'>('common');
+  const [uploadShapefileResult, setUploadShapefileResult] = useState<ParsedShapefileResult | null>(null);
+  const [isSavingShapefile, setIsSavingShapefile] = useState(false);
 
   const scopedProjects = useMemo(() => {
     if (detectionsTabScope === 'Lantana') {
@@ -375,6 +401,10 @@ export default function PamAdminPage() {
   };
 
   const handleDeletePamDetection = async (id: number) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
     if (confirm('Are you sure you want to delete this detection row?')) {
       const table = detectionsTabScope === 'Lantana' ? 'lantana_detections' : 'pam_detections';
       try {
@@ -394,6 +424,10 @@ export default function PamAdminPage() {
   };
 
   const handleBulkDelete = async () => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
     if (selectedDetectionIds.size === 0) return;
     if (confirm(`Are you sure you want to delete ${selectedDetectionIds.size} selected rows?`)) {
       setIsDetectionsLoading(true);
@@ -433,6 +467,10 @@ export default function PamAdminPage() {
   };
 
   const handleOpenDeleteAllModal = (site?: SiteItem) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
     if (site) {
       setSiteToDeleteDetections(site);
       setDeleteAllScope(site.recorderId ? 'recorder' : 'site');
@@ -445,6 +483,10 @@ export default function PamAdminPage() {
   };
 
   const handleExecuteDeleteAllDetections = async () => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
     if (!deleteAllConfirmed) return;
     setIsDeletingAll(true);
 
@@ -624,12 +666,210 @@ export default function PamAdminPage() {
           ));
           setUnmappedSpecies(unmapped);
         }
+
+        // Load Shapefiles Manifest
+        try {
+          const sfRes = await fetch('/api/db/shapefiles');
+          const sfData = await sfRes.json();
+          if (sfData && Array.isArray(sfData.items)) {
+            setShapefilesList(sfData.items);
+          }
+        } catch (sfErr) {
+          console.error('Failed to load initial shapefiles:', sfErr);
+        }
       } catch (e) {
         console.error('Failed to fetch PAM admin data from Supabase:', e);
       }
     }
     loadData();
   }, [currentRole, currentUser]);
+
+  const loadShapefiles = async () => {
+    setIsShapefilesLoading(true);
+    try {
+      const res = await fetch('/api/db/shapefiles');
+      const data = await res.json();
+      setShapefilesList(data.items || []);
+    } catch (err) {
+      console.error('Failed to load shapefiles:', err);
+    } finally {
+      setIsShapefilesLoading(false);
+    }
+  };
+
+  const getShapefileProject = (item: any): ProjectItem | undefined => {
+    if (item.projectId) {
+      const p = projectsList.find(proj => proj.id.toLowerCase() === item.projectId.toLowerCase());
+      if (p) return p;
+    }
+    const tId = (item.targetId || item.id || '').toLowerCase();
+    const directMatch = projectsList.find(proj => proj.id.toLowerCase() === tId);
+    if (directMatch) return directMatch;
+    
+    const prefix = tId.split(/[-_]/)[0];
+    const prefixMatch = projectsList.find(proj => proj.id.toLowerCase() === prefix);
+    if (prefixMatch) return prefixMatch;
+
+    const siteId = (item.siteId || item.targetId || '').toLowerCase();
+    const site = sitesList.find(s => s.id.toLowerCase() === siteId) || lantanaSitesList.find(s => String(s.id).toLowerCase() === siteId);
+    if (site) {
+      const projId = site.projectId || site.project_id;
+      const p = projectsList.find(proj => proj.id.toLowerCase() === (projId || '').toLowerCase());
+      if (p) return p;
+    }
+
+    return projectsList.find(proj => tId.includes(proj.id.toLowerCase()));
+  };
+
+  const filteredShapefiles = useMemo(() => {
+    return shapefilesList.filter(item => {
+      // 1. Filter by Scope
+      if (shapefileFilterScope !== 'ALL' && item.targetType !== shapefileFilterScope) {
+        return false;
+      }
+      // 2. Filter by Project
+      if (shapefileFilterProject !== 'ALL') {
+        const proj = getShapefileProject(item);
+        if (!proj || proj.id.toLowerCase() !== shapefileFilterProject.toLowerCase()) {
+          return false;
+        }
+      }
+      // 3. Filter by search query
+      if (shapefileSearchQuery.trim()) {
+        const query = shapefileSearchQuery.toLowerCase().trim();
+        const name = (item.name || '').toLowerCase();
+        const id = (item.targetId || item.id || '').toLowerCase();
+        const proj = getShapefileProject(item);
+        const projTitle = (proj?.title || '').toLowerCase();
+        const projId = (proj?.id || '').toLowerCase();
+        if (!name.includes(query) && !id.includes(query) && !projTitle.includes(query) && !projId.includes(query)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [shapefilesList, shapefileFilterProject, shapefileFilterScope, shapefileSearchQuery, projectsList, sitesList, lantanaSitesList]);
+
+  const projectShapefileCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    shapefilesList.forEach(item => {
+      const proj = getShapefileProject(item);
+      const projId = proj ? proj.id : 'unassigned';
+      counts[projId] = (counts[projId] || 0) + 1;
+    });
+    return counts;
+  }, [shapefilesList, projectsList, sitesList, lantanaSitesList]);
+
+  const handleDeleteShapefile = (item: any) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete shapefiles.');
+      return;
+    }
+    setShapefileToDelete(item);
+  };
+
+  const executeDeleteShapefile = async () => {
+    if (!shapefileToDelete) return;
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete shapefiles.');
+      return;
+    }
+    const item = shapefileToDelete;
+    const label = item.name || item.targetId || item.id;
+    setIsDeletingShapefile(true);
+    setDeletingShapefileId(item.targetId || item.id);
+    try {
+      await apiFetch(`/api/db/shapefiles?id=${encodeURIComponent(item.targetId || item.id)}`, {
+        method: 'DELETE'
+      }, currentUser);
+
+      setShapefilesList(prev => prev.filter(s => (s.targetId || s.id) !== (item.targetId || item.id)));
+      showNotification(`Shapefile "${label}" deleted successfully.`);
+      if (inspectingShapefile && (inspectingShapefile.targetId || inspectingShapefile.id) === (item.targetId || item.id)) {
+        setInspectingShapefile(null);
+        setInspectGeoJson(null);
+      }
+      setShapefileToDelete(null);
+    } catch (err: any) {
+      alert('Error deleting shapefile: ' + (err.message || 'Unknown network error'));
+    } finally {
+      setIsDeletingShapefile(false);
+      setDeletingShapefileId(null);
+    }
+  };
+
+  const handleInspectShapefile = async (item: any) => {
+    setInspectingShapefile(item);
+    setIsInspectLoading(true);
+    setInspectGeoJson(null);
+    try {
+      const res = await fetch(`/api/db/shapefiles?id=${encodeURIComponent(item.targetId || item.id)}`);
+      const data = await res.json();
+      if (data.geojson) {
+        setInspectGeoJson(data.geojson);
+      }
+    } catch (err) {
+      console.error('Error fetching shapefile geojson:', err);
+    } finally {
+      setIsInspectLoading(false);
+    }
+  };
+
+  const handleDownloadGeoJson = (item: any, geojsonObj?: any) => {
+    const geo = geojsonObj || inspectGeoJson;
+    if (!geo) return;
+    const blob = new Blob([JSON.stringify(geo, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${item.targetId || item.id || 'shapefile'}.geojson`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveNewShapefile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadShapefileResult) {
+      alert('Please select and upload a valid shapefile or GeoJSON file (.zip, .geojson, .kmz, .kml).');
+      return;
+    }
+    if (!uploadShapefileProjId) {
+      alert('Please select a target project.');
+      return;
+    }
+    const targetId = uploadShapefileType === 'project' 
+      ? uploadShapefileProjId 
+      : (uploadShapefileSiteId || `${uploadShapefileProjId}_site`);
+    
+    setIsSavingShapefile(true);
+    try {
+      await apiFetch('/api/db/shapefiles', {
+        method: 'POST',
+        body: JSON.stringify({
+          targetId,
+          targetType: uploadShapefileType,
+          name: uploadShapefileName || targetId,
+          habitat: uploadShapefileHabitat,
+          projectId: uploadShapefileProjId,
+          siteId: uploadShapefileType === 'site' ? uploadShapefileSiteId : undefined,
+          geojson: uploadShapefileResult.geojson,
+          centroid: uploadShapefileResult.centroid
+        })
+      }, currentUser);
+
+      showNotification(`Shapefile for "${uploadShapefileName || targetId}" saved successfully!`);
+      setUploadShapefileResult(null);
+      setUploadShapefileName('');
+      setIsUploadShapefileOpen(false);
+      await loadShapefiles();
+    } catch (err: any) {
+      alert('Error saving shapefile: ' + (err.message || 'Unknown network error'));
+    } finally {
+      setIsSavingShapefile(false);
+    }
+  };
 
   // Form: Create New Project
   const [newProjId, setNewProjId] = useState('');
@@ -1287,6 +1527,10 @@ export default function PamAdminPage() {
   };
 
   const handleDeleteSite = async (site: SiteItem) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete sites.');
+      return;
+    }
     if (!confirm(`Are you sure you want to delete site "${site.name}"? This will permanently delete this site and ALL of its associated detections from the database.`)) {
       return;
     }
@@ -1397,6 +1641,472 @@ export default function PamAdminPage() {
     }
   };
 
+  const renderShapefilesCard = (isStandaloneTab: boolean) => {
+    return (
+      <div className="p-6 md:p-8 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-6 text-xs">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                <Layers className="w-5 h-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  Project Shapefiles &amp; Boundary Overlays
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                    {shapefilesList.length} total
+                  </span>
+                </h3>
+                <p className="text-slate-500 text-[11px]">
+                  View, filter, inspect, and manage spatial boundary shapefiles / GeoJSON layers registered for each research project.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsUploadShapefileOpen(!isUploadShapefileOpen)}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center gap-2 shadow-xs transition"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isUploadShapefileOpen ? 'Close Uploader' : 'Upload Shapefile'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={loadShapefiles}
+              disabled={isShapefilesLoading}
+              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition"
+              title="Refresh shapefiles manifest"
+            >
+              <RefreshCw className={`w-4 h-4 ${isShapefilesLoading ? 'animate-spin text-emerald-600' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Upload Form */}
+        {isUploadShapefileOpen && (
+          <div className="p-5 rounded-2xl bg-emerald-50/40 border border-emerald-200/80 space-y-4 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
+              <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-700" />
+                Register New Shapefile / GeoJSON Layer
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsUploadShapefileOpen(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewShapefile} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Target Project */}
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Target Project</label>
+                  <select
+                    value={uploadShapefileProjId}
+                    onChange={(e) => {
+                      setUploadShapefileProjId(e.target.value);
+                      const proj = projectsList.find(p => p.id === e.target.value);
+                      if (proj?.type === 'Lantana') {
+                        setUploadShapefileHabitat('LC');
+                      } else {
+                        setUploadShapefileHabitat('common');
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="">-- Select Project --</option>
+                    {projectsList.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.title} ({p.id}) [{p.type || 'PAM'}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Boundary Scope */}
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Boundary Scope</label>
+                  <select
+                    value={uploadShapefileType}
+                    onChange={(e) => setUploadShapefileType(e.target.value as 'project' | 'site')}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="project">Project Landscape (Whole Project Boundary)</option>
+                    <option value="site">Site Boundary / Buffer Polygon (Single Site)</option>
+                  </select>
+                </div>
+
+                {/* If Site Scope, site selector */}
+                {uploadShapefileType === 'site' ? (
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Site Identifier</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ATR_01 or site ID"
+                      value={uploadShapefileSiteId}
+                      onChange={(e) => setUploadShapefileSiteId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Layer Label / Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Nilgiri Biosphere Boundary"
+                      value={uploadShapefileName}
+                      onChange={(e) => setUploadShapefileName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {uploadShapefileType === 'site' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Layer Display Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Site Survey Polygon"
+                      value={uploadShapefileName}
+                      onChange={(e) => setUploadShapefileName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-extrabold text-slate-700 block mb-1">Habitat / Category Tag</label>
+                    <select
+                      value={uploadShapefileHabitat}
+                      onChange={(e) => setUploadShapefileHabitat(e.target.value as any)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="common">Common PAM</option>
+                      <option value="LC">Lantana Cleared (LC)</option>
+                      <option value="LI">Lantana Invaded (LI)</option>
+                      <option value="CS">Canopy Site (CS)</option>
+                      <option value="live">Live Stream / Acoustic Array</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <ShapefileUploadField
+                shapefile={uploadShapefileResult}
+                onShapefileChange={setUploadShapefileResult}
+                label="Upload Shapefile / GeoJSON Archive (.zip, .geojson, .kmz, .kml)"
+                targetHabitat={uploadShapefileHabitat}
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-100">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadShapefileOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!uploadShapefileResult || isSavingShapefile}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-xs disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSavingShapefile ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Overlay...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Save Shapefile Overlay</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Filter and Search Bar */}
+        <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Project Filter */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-extrabold text-slate-600 text-[11px] uppercase tracking-wider">Project:</span>
+              <button
+                type="button"
+                onClick={() => setShapefileFilterProject('ALL')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 ${
+                  shapefileFilterProject === 'ALL'
+                    ? 'bg-[#1f4d3a] text-white shadow-xs'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <span>All Projects</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  shapefileFilterProject === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {shapefilesList.length}
+                </span>
+              </button>
+
+              {projectsList.map(proj => {
+                const count = projectShapefileCounts[proj.id] || 0;
+                const isSelected = shapefileFilterProject.toLowerCase() === proj.id.toLowerCase();
+                return (
+                  <button
+                    key={proj.id}
+                    type="button"
+                    onClick={() => setShapefileFilterProject(proj.id)}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-[#1f4d3a] text-white shadow-xs'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <span className="max-w-[130px] truncate">{proj.title}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scope Filter & Search */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={shapefileFilterScope}
+                onChange={(e) => setShapefileFilterScope(e.target.value as any)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 font-bold focus:outline-none"
+              >
+                <option value="ALL">All Scopes</option>
+                <option value="project">Project Landscapes</option>
+                <option value="site">Site Boundaries</option>
+              </select>
+
+              <div className="relative min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search shapefiles..."
+                  value={shapefileSearchQuery}
+                  onChange={(e) => setShapefileSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
+                />
+                {shapefileSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setShapefileSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Shapefiles Table / Cards */}
+        {isShapefilesLoading ? (
+          <div className="py-12 flex flex-col items-center justify-center space-y-3 text-slate-500">
+            <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+            <p className="font-medium text-xs">Loading shapefiles repository...</p>
+          </div>
+        ) : filteredShapefiles.length === 0 ? (
+          <div className="py-12 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+            <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+            <div className="space-y-1">
+              <h4 className="font-extrabold text-slate-700 text-sm">No Shapefiles Found</h4>
+              <p className="text-slate-400 text-xs max-w-sm mx-auto">
+                {shapefileFilterProject !== 'ALL' || shapefileFilterScope !== 'ALL' || shapefileSearchQuery
+                  ? 'No boundary layers match your active filters. Try resetting the project or search criteria.'
+                  : 'No shapefiles have been registered yet. Upload a GeoJSON or shapefile archive to get started.'}
+              </p>
+            </div>
+            {(shapefileFilterProject !== 'ALL' || shapefileFilterScope !== 'ALL' || shapefileSearchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShapefileFilterProject('ALL');
+                  setShapefileFilterScope('ALL');
+                  setShapefileSearchQuery('');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 text-xs shadow-xs"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider">
+                  <th className="py-3 px-4">Layer / Shapefile</th>
+                  <th className="py-3 px-4">Project</th>
+                  <th className="py-3 px-4">Scope</th>
+                  <th className="py-3 px-4">Centroid Coordinates</th>
+                  <th className="py-3 px-4">Updated</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {filteredShapefiles.map((item) => {
+                  const proj = getShapefileProject(item);
+                  const isProjectScope = item.targetType === 'project';
+                  const isDeleting = deletingShapefileId === (item.targetId || item.id);
+                  const targetIdentifier = item.targetId || item.id;
+                  const displayName = item.name || targetIdentifier;
+
+                  return (
+                    <tr key={targetIdentifier} className="hover:bg-slate-50/70 transition">
+                      <td className="py-3 px-4">
+                        <div className="space-y-0.5">
+                          <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                            <span>{displayName}</span>
+                            {item.habitat && (
+                              <span className="font-mono text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                {item.habitat}
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[10px] text-slate-400">
+                            ID: <span className="text-slate-600 font-bold">{targetIdentifier}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {proj ? (
+                          <div className="space-y-0.5">
+                            <span className="font-bold text-slate-800 block truncate max-w-[180px]">
+                              {proj.title}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                {proj.id}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                ({proj.type || 'PAM'})
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="font-mono text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            {item.projectId || 'Unassigned'}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                          isProjectScope
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                        }`}>
+                          <Layers className="w-3 h-3" />
+                          <span>{isProjectScope ? 'Project Landscape' : 'Site Boundary'}</span>
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {Array.isArray(item.centroid) && item.centroid.length === 2 ? (
+                          <div className="flex items-center gap-1 font-mono text-[11px] text-slate-600">
+                            <Globe className="w-3 h-3 text-slate-400" />
+                            <span>
+                              {Number(item.centroid[0]).toFixed(4)}°, {Number(item.centroid[1]).toFixed(4)}°
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] font-mono">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-slate-500 text-[11px]">
+                        {item.updated_at ? (
+                          <span title={new Date(item.updated_at).toLocaleString()}>
+                            {new Date(item.updated_at).toLocaleDateString()}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {/* Inspect GeoJSON */}
+                          <button
+                            type="button"
+                            onClick={() => handleInspectShapefile(item)}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition"
+                            title="Inspect GeoJSON properties & structure"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Direct Download */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/db/shapefiles?id=${encodeURIComponent(targetIdentifier)}`);
+                                const data = await res.json();
+                                if (data.geojson) {
+                                  handleDownloadGeoJson(item, data.geojson);
+                                } else {
+                                  alert('GeoJSON content could not be retrieved.');
+                                }
+                              } catch (e: any) {
+                                alert('Download error: ' + e.message);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition"
+                            title="Download GeoJSON file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete Shapefile - ADMIN ONLY */}
+                          {currentRole === 'Admin' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteShapefile(item)}
+                              disabled={isDeleting}
+                              className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition disabled:opacity-50"
+                              title="Delete shapefile permanently (Admin only)"
+                            >
+                              {isDeleting ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 pb-12 font-sans">
       {/* Centralized Admin Console Switcher */}
@@ -1440,6 +2150,24 @@ export default function PamAdminPage() {
           }`}
         >
           <FolderPlus className="w-4 h-4" /> Projects &amp; Sites
+        </button>
+
+        <button
+          onClick={() => setActiveTab('shapefiles')}
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+            activeTab === 'shapefiles' 
+              ? 'border-[#1f4d3a] text-[#1f4d3a] font-semibold' 
+              : 'border-transparent text-[#5a635d] hover:text-[#1a1f1c]'
+          }`}
+        >
+          <Layers className="w-4 h-4" /> Project Shapefiles
+          {shapefilesList.length > 0 && (
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+              activeTab === 'shapefiles' ? 'bg-[#1f4d3a] text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {shapefilesList.length}
+            </span>
+          )}
         </button>
 
         <button
@@ -1739,43 +2467,175 @@ export default function PamAdminPage() {
             </h3>
 
             <div className="space-y-3">
-              {projectsList.map(p => (
-                <div key={p.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">{p.id}</span>
-                      <h4 className="font-extrabold text-slate-900 text-sm">{p.title}</h4>
+              {projectsList.map(p => {
+                const projShapefiles = shapefilesList.filter(s => {
+                  const proj = getShapefileProject(s);
+                  return proj?.id.toLowerCase() === p.id.toLowerCase();
+                });
+
+                return (
+                  <div key={p.id} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">{p.id}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono">{p.type || 'PAM'}</span>
+                          <h4 className="font-extrabold text-slate-900 text-sm">{p.title}</h4>
+                        </div>
+                        <p className="text-slate-500 text-[11px] font-medium">{p.description}</p>
+                        <div className="text-[10px] text-slate-400 font-mono">Lead: {p.collaboration || 'IISER Tirupati Bird Lab'}</div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingProj(p);
+                            setEditProjTitle(p.title);
+                            setEditProjType(p.type || 'PAM');
+                            setEditProjDesc(p.description || '');
+                            setEditProjCollab(p.collaboration || '');
+                            setEditProjImage(p.image || '');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold flex items-center gap-1.5 transition"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Edit Project</span>
+                        </button>
+                        {currentRole === 'Admin' && (
+                          <button
+                            onClick={() => handleDeleteProject(p.id)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200 hover:border-rose-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete Project</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-slate-500 text-[11px] font-medium">{p.description}</p>
-                    <div className="text-[10px] text-slate-400 font-mono">Lead: {p.collaboration || 'IISER Tirupati Bird Lab'}</div>
+
+                    {/* Shapefiles Registered for this Project */}
+                    <div className="pt-3 border-t border-slate-200/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Registered Project Shapefiles &amp; Overlays ({projShapefiles.length})</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadShapefileProjId(p.id);
+                            setUploadShapefileType('project');
+                            setUploadShapefileName(`${p.title} Landscape Boundary`);
+                            setIsUploadShapefileOpen(true);
+                            setActiveTab('shapefiles');
+                          }}
+                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 hover:underline"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload Shapefile for {p.id}</span>
+                        </button>
+                      </div>
+
+                      {projShapefiles.length === 0 ? (
+                        <div className="text-[11px] text-slate-400 italic bg-white/70 p-3 rounded-xl border border-dashed border-slate-200 flex items-center justify-between">
+                          <span>No boundary shapefiles registered for this project yet.</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadShapefileProjId(p.id);
+                              setUploadShapefileType('project');
+                              setUploadShapefileName(`${p.title} Boundary`);
+                              setIsUploadShapefileOpen(true);
+                              setActiveTab('shapefiles');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold text-[10px] hover:bg-emerald-100 transition"
+                          >
+                            + Add Shapefile
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {projShapefiles.map(sf => {
+                            const sfTargetId = sf.targetId || sf.id;
+                            const sfName = sf.name || sfTargetId;
+                            return (
+                              <div
+                                key={sfTargetId}
+                                className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3 hover:border-emerald-300 transition"
+                              >
+                                <div className="min-w-0 space-y-0.5">
+                                  <div className="font-extrabold text-slate-800 text-[11px] truncate flex items-center gap-1.5">
+                                    <span className="truncate">{sfName}</span>
+                                    {sf.habitat && (
+                                      <span className="font-mono text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                                        {sf.habitat}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
+                                    <span className="text-emerald-700 font-semibold">{sf.targetType === 'project' ? 'Landscape Boundary' : 'Site Boundary'}</span>
+                                    <span>•</span>
+                                    <span className="text-slate-500 font-semibold">{sfTargetId}</span>
+                                    {Array.isArray(sf.centroid) && sf.centroid.length === 2 && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{Number(sf.centroid[0]).toFixed(3)}°, {Number(sf.centroid[1]).toFixed(3)}°</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInspectShapefile(sf)}
+                                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition"
+                                    title="Inspect GeoJSON properties"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch(`/api/db/shapefiles?id=${encodeURIComponent(sfTargetId)}`);
+                                        const data = await res.json();
+                                        if (data.geojson) {
+                                          handleDownloadGeoJson(sf, data.geojson);
+                                        }
+                                      } catch (e: any) {
+                                        alert('Download error: ' + e.message);
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition"
+                                    title="Download GeoJSON"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                  {currentRole === 'Admin' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteShapefile(sf)}
+                                      className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition"
+                                      title="Delete shapefile permanently"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 self-end md:self-center">
-                    <button
-                      onClick={() => {
-                        setEditingProj(p);
-                        setEditProjTitle(p.title);
-                        setEditProjType(p.type || 'PAM');
-                        setEditProjDesc(p.description || '');
-                        setEditProjCollab(p.collaboration || '');
-                        setEditProjImage(p.image || '');
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold flex items-center gap-1.5 transition"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span>Edit Project</span>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProject(p.id)}
-                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200 hover:border-rose-600"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Project</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
+
+          {/* Project Shapefiles & Boundary Overlays Console */}
+          {renderShapefilesCard(false)}
 
           {/* Register Site & Recorder Coordinates Card */}
           <div className="p-6 rounded-[24px] bg-white border border-slate-200 shadow-sm space-y-4 text-xs">
@@ -1934,29 +2794,29 @@ export default function PamAdminPage() {
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenDeleteAllModal(s)}
-                      className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white font-extrabold text-[10px] border border-rose-200 transition flex items-center gap-1 cursor-pointer"
-                      title="Delete all detections for this site from observatory datasets"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>Purge Detections</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSite(s)}
-                      className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-rose-600 hover:text-white transition"
-                      title="Delete site record (and cascade delete all detections)"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {currentRole === 'Admin' && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSite(s)}
+                        className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-rose-600 hover:text-white transition"
+                        title="Delete site from directory"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 );
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB: Dedicated Project Shapefiles Repository */}
+      {activeTab === 'shapefiles' && (
+        <div className="space-y-6">
+          {renderShapefilesCard(true)}
         </div>
       )}
 
@@ -2247,6 +3107,45 @@ export default function PamAdminPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
                 />
               </div>
+
+              {/* Existing Shapefiles for this project */}
+              {(() => {
+                const existingSf = shapefilesList.filter(s => {
+                  const proj = getShapefileProject(s);
+                  return proj?.id.toLowerCase() === editingProj.id.toLowerCase();
+                });
+                if (existingSf.length === 0) return null;
+                return (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <label className="font-extrabold text-slate-700 flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-emerald-600" />
+                        <span>Current Registered Shapefiles ({existingSf.length})</span>
+                      </span>
+                    </label>
+                    <div className="space-y-1.5">
+                      {existingSf.map(sf => (
+                        <div key={sf.targetId || sf.id} className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 text-[11px] truncate">{sf.name || sf.targetId}</div>
+                            <div className="text-[10px] text-slate-400 font-mono truncate">{sf.targetType === 'project' ? 'Project Landscape' : 'Site Boundary'} • {sf.targetId || sf.id}</div>
+                          </div>
+                          {currentRole === 'Admin' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteShapefile(sf)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-[10px] font-bold flex items-center gap-1 transition shrink-0"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete Shapefile</span>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <ShapefileUploadField
                 shapefile={editProjShapefile}
@@ -2573,21 +3472,23 @@ export default function PamAdminPage() {
                     </button>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 w-full sm:w-auto mt-auto pt-[2px]">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenDeleteAllModal()}
-                      disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading || isDeletingAll}
-                      className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-black shadow-sm disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title={pamSelectedSite === 'ALL_SITES' ? 'Delete all detections for this entire project across all database tables' : 'Delete all detections for this site or recorder across all database tables'}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{pamSelectedSite === 'ALL_SITES' ? 'Delete All Project Detections' : pamSelectedRecorder !== 'All' ? 'Delete Recorder Detections' : 'Delete All Site Detections'}</span>
-                    </button>
-                  </div>
+                  {currentRole === 'Admin' && (
+                    <div className="flex flex-col gap-1.5 w-full sm:w-auto mt-auto pt-[2px]">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDeleteAllModal()}
+                        disabled={pamSelectedSite === 'Select Site' || isDetectionsLoading || isDeletingAll}
+                        className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-black shadow-sm disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer"
+                        title={pamSelectedSite === 'ALL_SITES' ? 'Delete all detections for this entire project across all database tables' : 'Delete all detections for this site or recorder across all database tables'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{pamSelectedSite === 'ALL_SITES' ? 'Delete All Project Detections' : pamSelectedRecorder !== 'All' ? 'Delete Recorder Detections' : 'Delete All Site Detections'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {selectedDetectionIds.size > 0 && (
+                {currentRole === 'Admin' && selectedDetectionIds.size > 0 && (
                   <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-100 rounded-xl animate-fade-in">
                     <span className="text-xs font-bold text-red-700">{selectedDetectionIds.size} rows selected</span>
                     <button
@@ -2605,20 +3506,22 @@ export default function PamAdminPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-[9px] font-black tracking-widest text-slate-400 uppercase border-b border-slate-100">
-                    <th className="py-3 px-4 w-10">
-                      <input 
-                        type="checkbox"
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        checked={filteredPamDetections.length > 0 && selectedDetectionIds.size === filteredPamDetections.length}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedDetectionIds(new Set(filteredPamDetections.map(d => d.id)));
-                          } else {
-                            setSelectedDetectionIds(new Set());
-                          }
-                        }}
-                      />
-                    </th>
+                    {currentRole === 'Admin' && (
+                      <th className="py-3 px-4 w-10">
+                        <input 
+                          type="checkbox"
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          checked={filteredPamDetections.length > 0 && selectedDetectionIds.size === filteredPamDetections.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDetectionIds(new Set(filteredPamDetections.map(d => d.id)));
+                            } else {
+                              setSelectedDetectionIds(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
                     <th className="py-3 px-4">ID</th>
                     <th 
                       className="py-3 px-4 cursor-pointer hover:text-indigo-600 select-none transition" 
@@ -2648,13 +3551,15 @@ export default function PamAdminPage() {
                     >
                       Confidence {pamSortColumn === 'confidence' ? (pamSortDesc ? '↓' : '↑') : ''}
                     </th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    {currentRole === 'Admin' && (
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                   {filteredPamDetections.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={currentRole === 'Admin' ? 7 : 5} className="py-12 text-center text-slate-400">
                         {isDetectionsLoading 
                           ? 'Fetching detections from database...' 
                           : pamSelectedSite === 'Select Site' 
@@ -2665,19 +3570,21 @@ export default function PamAdminPage() {
                   ) : (
                     filteredPamDetections.map(det => (
                       <tr key={det.id} className={`hover:bg-slate-50 transition ${selectedDetectionIds.has(det.id) ? 'bg-indigo-50/50' : ''}`}>
-                        <td className="py-2.5 px-4">
-                          <input 
-                            type="checkbox"
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            checked={selectedDetectionIds.has(det.id)}
-                            onChange={(e) => {
-                              const newSet = new Set(selectedDetectionIds);
-                              if (e.target.checked) newSet.add(det.id);
-                              else newSet.delete(det.id);
-                              setSelectedDetectionIds(newSet);
-                            }}
-                          />
-                        </td>
+                        {currentRole === 'Admin' && (
+                          <td className="py-2.5 px-4">
+                            <input 
+                              type="checkbox"
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              checked={selectedDetectionIds.has(det.id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedDetectionIds);
+                                if (e.target.checked) newSet.add(det.id);
+                                else newSet.delete(det.id);
+                                setSelectedDetectionIds(newSet);
+                              }}
+                            />
+                          </td>
+                        )}
                         <td className="py-2.5 px-4 font-mono text-[10px]">{det.id}</td>
                         <td className="py-2.5 px-4 font-mono text-[10px]">
                           <div>{det.date}</div>
@@ -2700,15 +3607,17 @@ export default function PamAdminPage() {
                             {((det.confidence ?? det.threshold ?? 0) * 100).toFixed(1)}%
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 text-right">
-                          <button
-                            onClick={() => handleDeletePamDetection(det.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
-                            title="Delete Row"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+                        {currentRole === 'Admin' && (
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              onClick={() => handleDeletePamDetection(det.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                              title="Delete Row"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}
@@ -2754,7 +3663,7 @@ export default function PamAdminPage() {
       )}
 
       {/* Delete All Detections Modal */}
-      {isDeleteAllModalOpen && (() => {
+      {currentRole === 'Admin' && isDeleteAllModalOpen && (() => {
         const isProjectWide = !siteToDeleteDetections && pamSelectedSite === 'ALL_SITES';
         const activeSiteName = isProjectWide 
           ? 'Entire Project (All Sites)' 
@@ -2923,6 +3832,212 @@ export default function PamAdminPage() {
           </div>
         );
       })()}
+
+      {/* Inspect Shapefile Modal */}
+      {inspectingShapefile && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-800">
+                    <Layers className="w-4 h-4" />
+                  </span>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    {inspectingShapefile.name || inspectingShapefile.targetId || inspectingShapefile.id}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-500 font-mono">
+                  targetId: {inspectingShapefile.targetId || inspectingShapefile.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setInspectingShapefile(null);
+                  setInspectGeoJson(null);
+                }}
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Metadata Info Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-sans">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Associated Project</span>
+                  <span className="font-extrabold text-slate-800 truncate block mt-0.5">
+                    {getShapefileProject(inspectingShapefile)?.title || inspectingShapefile.projectId || 'Unassigned'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Scope</span>
+                  <span className="font-extrabold text-slate-800 block mt-0.5">
+                    {inspectingShapefile.targetType === 'project' ? 'Project Landscape' : 'Site Boundary'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Habitat / Tag</span>
+                  <span className="font-mono font-extrabold text-slate-800 block mt-0.5">
+                    {inspectingShapefile.habitat || 'common'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Centroid Coordinates</span>
+                  <span className="font-mono text-[11px] font-bold text-slate-800 block mt-0.5">
+                    {Array.isArray(inspectingShapefile.centroid) && inspectingShapefile.centroid.length === 2
+                      ? `${Number(inspectingShapefile.centroid[0]).toFixed(4)}°, ${Number(inspectingShapefile.centroid[1]).toFixed(4)}°`
+                      : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              {/* GeoJSON Preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-700 block">GeoJSON Structure Preview</span>
+                  {inspectGeoJson && (
+                    <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      Type: {inspectGeoJson.type} • {inspectGeoJson.features ? `${inspectGeoJson.features.length} Features` : 'Geometry'}
+                    </span>
+                  )}
+                </div>
+
+                {isInspectLoading ? (
+                  <div className="p-8 rounded-xl bg-slate-900 text-slate-400 flex flex-col items-center justify-center space-y-2">
+                    <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
+                    <span className="text-xs font-mono">Fetching GeoJSON payload from observatory storage...</span>
+                  </div>
+                ) : inspectGeoJson ? (
+                  <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 font-mono text-[10px] leading-relaxed max-h-64 overflow-auto border border-slate-800 select-all">
+                    {JSON.stringify(inspectGeoJson, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-slate-400">
+                    No GeoJSON data loaded.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <div>
+                {currentRole === 'Admin' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteShapefile(inspectingShapefile)}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white font-extrabold flex items-center gap-1.5 transition border border-rose-200"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Shapefile</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadGeoJson(inspectingShapefile, inspectGeoJson)}
+                  disabled={!inspectGeoJson}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold flex items-center gap-1.5 shadow-xs transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download GeoJSON</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectingShapefile(null);
+                    setInspectGeoJson(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Delete Shapefile Confirmation Modal */}
+      {shapefileToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-rose-50/60">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-xl bg-rose-100 text-rose-700">
+                  <Trash2 className="w-4 h-4" />
+                </span>
+                <h3 className="font-black text-slate-900 text-sm">Delete Shapefile Overlay</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShapefileToDelete(null)}
+                disabled={isDeletingShapefile}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs font-sans">
+              <p className="text-slate-600 leading-relaxed">
+                Are you sure you want to permanently delete the shapefile overlay for{' '}
+                <strong className="text-slate-900 font-extrabold">{shapefileToDelete.name || shapefileToDelete.targetId || shapefileToDelete.id}</strong>?
+              </p>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 font-mono text-[11px]">
+                <div><span className="text-slate-400">Target ID:</span> <strong className="text-slate-800">{shapefileToDelete.targetId || shapefileToDelete.id}</strong></div>
+                <div><span className="text-slate-400">Scope:</span> <span className="text-slate-800">{shapefileToDelete.targetType === 'project' ? 'Project Landscape' : 'Site Boundary'}</span></div>
+                <div><span className="text-slate-400">Project:</span> <span className="text-slate-800">{getShapefileProject(shapefileToDelete)?.title || 'Unassigned'}</span></div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2 text-rose-800 text-[11px] leading-relaxed">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>This action cannot be undone. The GeoJSON boundary will be permanently purged from observatory storage and deregistered from map layers.</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShapefileToDelete(null)}
+                disabled={isDeletingShapefile}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteShapefile}
+                disabled={isDeletingShapefile}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 flex items-center gap-2 disabled:opacity-50"
+              >
+                {isDeletingShapefile ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting Shapefile...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Permanently Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

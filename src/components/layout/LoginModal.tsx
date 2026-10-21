@@ -303,31 +303,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               </button>
             </form>
           )}
-
-          {/* Quick Demo Credentials */}
-          <div className="pt-4 border-t border-slate-100 space-y-2">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Quick Demo Roles Auto-Login:
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {usersList.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setEmail(u.email);
-                    setPassword(u.password || 'pass123');
-                    loginUser(u.email, u.password || 'pass123');
-                    onClose();
-                  }}
-                  className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 text-left transition"
-                >
-                  <div className="font-extrabold text-slate-900 text-[11px] truncate">{u.name}</div>
-                  <div className="text-[10px] text-slate-500 font-semibold">{u.role}</div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

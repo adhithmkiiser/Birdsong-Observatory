@@ -23,7 +23,8 @@ import {
   Check, 
   AlertCircle,
   Sparkles,
-  Sliders
+  Sliders,
+  Activity
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -64,10 +65,11 @@ const LIVE_RECORDER_TABS: MenuTabDefinition[] = [
   { id: 'accumulation', name: '3. Species Accumulation Curve', description: 'Cumulative taxa discovery curve with daily/weekly/monthly filters.', icon: LineChart, defaultPublic: true },
   { id: 'diurnal', name: '4. Diurnal Activity Pattern', description: '24-hour bar chart and 24-hour radial Nightingale polar clock.', icon: Clock, defaultPublic: true },
   { id: 'live', name: '5. Live Stream Feed', description: 'Realtime incoming classification feed with audio spectrogram player.', icon: Radio, defaultPublic: true },
-  { id: 'stations', name: '6. Stations & Nodes', description: 'Field recorder hardware telemetry, battery, and heartbeat pings.', icon: Cpu, defaultPublic: true },
-  { id: 'species', name: '7. Species Catalog', description: 'Avian photo library, IUCN status, and ecological trait metrics.', icon: Bird, defaultPublic: true },
-  { id: 'review', name: '8. Review Queue', description: 'Auditory verification and expert validation workflow.', icon: CheckSquare, defaultPublic: false },
-  { id: 'reports', name: '9. Reports & Export', description: 'Formatted CSV detection exports and research summaries.', icon: FileText, defaultPublic: false },
+  { id: 'triage', name: '6. Acoustic Watchdog & Triage', description: 'Curated audio windows with physical DSP discrepancies and missed-call triage.', icon: Activity, defaultPublic: true },
+  { id: 'stations', name: '7. Stations & Nodes', description: 'Field recorder hardware telemetry, battery, and heartbeat pings.', icon: Cpu, defaultPublic: true },
+  { id: 'species', name: '8. Species Catalog', description: 'Avian photo library, IUCN status, and ecological trait metrics.', icon: Bird, defaultPublic: true },
+  { id: 'review', name: '9. Review Queue', description: 'Auditory verification and expert validation workflow.', icon: CheckSquare, defaultPublic: false },
+  { id: 'reports', name: '10. Reports & Export', description: 'Formatted CSV detection exports and research summaries.', icon: FileText, defaultPublic: false },
 ];
 
 export default function PublicVisibilityAdminPage() {

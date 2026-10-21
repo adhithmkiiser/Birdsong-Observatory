@@ -44,7 +44,7 @@ export default function StationsPage() {
         id: r.recorder_id,
         station_name: r.site_name,
         description: `Live Recorder Node ${r.recorder_id}`,
-        project_name: r.project_name || 'Bird_Lab_demo',
+        project_name: r.project_name || 'Unassigned Project',
         status: isOnline ? 'online' : 'offline',
         last_seen: isOnline ? 'Online now' : (lastPingAt ? `${Math.round(minutesAgo)} min ago (${lastPingAt.toLocaleTimeString()})` : 'Never'),
         battery_level: r.battery_level ?? 100,

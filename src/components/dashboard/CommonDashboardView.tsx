@@ -62,7 +62,7 @@ export default function CommonDashboardView({
 }: CommonDashboardViewProps = {}) {
   const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
   const canExportCSV = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
-  const canManageDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  const canManageDetections = currentRole === 'Admin';
   const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'trends' | 'diurnal' | 'diversity'>(initialTab || 'summary');
   const [copiedLinkToast, setCopiedLinkToast] = useState(false);
   const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
@@ -126,8 +126,12 @@ export default function CommonDashboardView({
     setTimeout(() => setCopiedLinkToast(false), 2500);
   };
 
-  // Execute Detections Purge (for Admin / Project Manager)
+  // Execute Detections Purge (Admin only)
   const handleExecutePurge = async () => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
     if (!purgeConfirmed) return;
     setIsPurging(true);
     try {
@@ -1316,7 +1320,7 @@ export default function CommonDashboardView({
       )}
 
       {/* Purge Detections Modal */}
-      {isPurgeModalOpen && (() => {
+      {canManageDetections && isPurgeModalOpen && (() => {
         const activeStationObj = stationsList.find(s => s.id === selectedStationId);
         const activeStationName = activeStationObj ? activeStationObj.station_name : 'Selected Station';
         const activeProjObj = projectsList.find(p => p.id === selectedProjectId);

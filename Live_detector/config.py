@@ -1,0 +1,61 @@
+"""
+BirdSong Observatory - Live Detector Configuration
+===================================================
+Manages edge device configuration, audio parameters, paths, 
+frequency bands for DSP activity analysis, and Supabase credentials.
+Values can be overridden using environment variables or a local .env file.
+"""
+
+import os
+from pathlib import Path
+
+# Base Paths
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
+MODELS_DIR = DATA_DIR / "models"
+CLIPS_DIR = DATA_DIR / "clips"
+QUEUE_DB_PATH = DATA_DIR / "live_detector_outbox.db"
+
+# Ensure runtime directories exist
+for p in [DATA_DIR, MODELS_DIR, CLIPS_DIR]:
+    p.mkdir(parents=True, exist_ok=True)
+
+# Station & Node Identity
+STATION_NAME = os.getenv("STATION_NAME", "WesternGhats_Node_01")
+PROJECT_NAME = os.getenv("PROJECT_NAME", "Western Ghats Biodiversity Monitoring")
+NODE_LATITUDE = float(os.getenv("NODE_LATITUDE", "11.3419"))
+NODE_LONGITUDE = float(os.getenv("NODE_LONGITUDE", "76.6437"))
+
+# Supabase Credentials
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ktihcjfxxxazohimtiav.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTI2MDU4NiwiZXhwIjoyMTAwODM2NTg2fQ.idvkAZGKVtilS0NJ4PD9Lw9T__xz_10oAHLnoyIdZnA")
+
+# Audio Capture Settings
+SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "48000"))  # 48 kHz standard
+CHANNELS = 1                                           # Mono audio
+WINDOW_SECONDS = float(os.getenv("WINDOW_SECONDS", "3.0"))   # 3-second slices
+WINDOW_SAMPLES = int(SAMPLE_RATE * WINDOW_SECONDS)           # 144,000 samples
+HOP_SECONDS = float(os.getenv("HOP_SECONDS", "1.5"))         # 50% overlap by default
+HOP_SAMPLES = int(SAMPLE_RATE * HOP_SECONDS)
+
+# Mic Device Specification (ALSA hardware string or device index, e.g. "default", "hw:1,0")
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "default")
+
+# DSP Activity Analysis Frequency Bands (in Hz)
+BAND_LOW_FREQ = (150, 1200)      # Low band: mammals (deer, elephants, primates), anurans
+BAND_MID_FREQ = (1200, 8000)     # Mid band: dominant avian vocalization range
+BAND_HIGH_FREQ = (8000, 20000)   # High band: bats, cicadas, insects
+
+# DSP Thresholds
+ACTIVITY_SNR_THRESHOLD_DB = float(os.getenv("ACTIVITY_SNR_THRESHOLD_DB", "4.5"))
+OCCUPIED_AREA_THRESHOLD = float(os.getenv("OCCUPIED_AREA_THRESHOLD", "0.08"))
+SPECTRAL_FLATNESS_RAIN_THRESHOLD = float(os.getenv("SPECTRAL_FLATNESS_RAIN_THRESHOLD", "0.35"))
+INSECT_VARIANCE_THRESHOLD = float(os.getenv("INSECT_VARIANCE_THRESHOLD", "0.015"))
+
+# Telemetry Intervals
+TELEMETRY_INTERVAL_SECONDS = int(os.getenv("TELEMETRY_INTERVAL_SECONDS", "60"))
+SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "10"))
+HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"))
+
+# Live Audio Stream Server Port (for on-demand streaming to web dashboard)
+STREAM_PORT = int(os.getenv("STREAM_PORT", "8888"))
