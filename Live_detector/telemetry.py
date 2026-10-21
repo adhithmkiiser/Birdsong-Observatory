@@ -17,7 +17,7 @@ import sys
 import time
 import shutil
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 try:
@@ -217,7 +217,7 @@ class SystemTelemetryMonitor:
         load = self.get_system_load()
 
         return {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "cpu_temp_c": temp,
             "disk_free_gb": disk.get("free_gb", 0.0),
             "disk_percent_free": disk.get("percent_free", 0.0),
