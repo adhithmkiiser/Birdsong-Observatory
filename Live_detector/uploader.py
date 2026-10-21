@@ -238,6 +238,17 @@ class CloudUploaderWorker(threading.Thread):
                 self.supabase.table("station_telemetry").insert(telem_records).execute()
                 self.outbox.mark_telemetry_uploaded(telem_ids)
                 logger.info(f"Synced {len(telem_records)} solar/battery telemetry records to cloud.")
+
+                # Also touch recorders_registry so heartbeat pulse stays green
+                try:
+                    self.supabase.table("recorders_registry").update({
+                        "last_ping": telem_records[-1]["ping_time"],
+                        "status": "online",
+                        "battery_level": telem_records[-1]["battery_level"],
+                        "cpu_temperature": telem_records[-1]["cpu_temperature"]
+                    }).eq("recorder_id", STATION_NAME).execute()
+                except Exception:
+                    pass
             except Exception as e:
                 err_str = str(e)
                 # If modern columns like battery_capacity_percent are missing, fallback to legacy schema

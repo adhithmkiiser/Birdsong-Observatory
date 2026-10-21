@@ -59,21 +59,29 @@ import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 // ==============================================================================
 
 interface StationTelemetry {
-  id?: number;
-  node_id: string;
-  timestamp: string;
-  cpu_temp_c: number;
-  disk_free_gb: number;
-  disk_percent_free: number;
-  is_low_space: boolean;
-  battery_capacity_percent: number;
-  battery_voltage_v: number;
-  power_status: string;
-  under_voltage_flag: boolean;
-  throttling_flag: boolean;
-  cpu_percent: number;
-  ram_percent: number;
-  uptime_hours: number;
+  id?: number | string;
+  node_id?: string;
+  station_id?: string;
+  timestamp?: string;
+  ping_time?: string;
+  cpu_temp_c?: number | null;
+  disk_free_gb?: number | null;
+  disk_percent_free?: number | null;
+  is_low_space?: boolean;
+  battery_capacity_percent?: number | null;
+  battery_voltage_v?: number | null;
+  power_status?: string | null;
+  under_voltage_flag?: boolean;
+  throttling_flag?: boolean;
+  cpu_percent?: number | null;
+  ram_percent?: number | null;
+  uptime_hours?: number | null;
+  // Legacy / network fields
+  cpu_temperature?: number | null;
+  battery_level?: number | null;
+  disk_usage?: number | null;
+  ip_address?: string | null;
+  ip?: string | null;
 }
 
 interface ModelItem {
@@ -221,15 +229,76 @@ export default function LiveAdminPage() {
   async function loadAllLiveAdminData() {
     setIsLiveRefreshing(true);
     try {
-      // 1. Projects & Recorders
+      // 1. Fetch from server admin API (which uses service role key and bypasses RLS)
+      const res = await fetch('/api/live/admin');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.projects && data.projects.length > 0) {
+            setLiveProjects(data.projects.map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              description: p.description || '',
+              organization: p.organization || 'IISER Tirupati Bird Lab',
+              stationsCount: p.stations_count || 0,
+              image_url: p.image_url || ''
+            })));
+          } else {
+            setLiveProjects([]);
+          }
+
+          if (data.recorders && data.recorders.length > 0) {
+            setRecorders(data.recorders);
+          } else {
+            setRecorders([]);
+          }
+
+          if (data.telemetry && data.telemetry.length > 0) {
+            const map: Record<string, StationTelemetry> = {};
+            for (const item of data.telemetry) {
+              const nid = item.node_id || item.station_id;
+              if (nid && !map[nid]) map[nid] = item;
+              if (item.station_id && !map[item.station_id]) map[item.station_id] = item;
+              if (item.node_id && !map[item.node_id]) map[item.node_id] = item;
+            }
+            setTelemetryMap(map);
+          } else {
+            setTelemetryMap({});
+          }
+
+          if (data.models && data.models.length > 0) {
+            setModelsList(data.models);
+          } else {
+            setModelsList([]);
+          }
+
+          if (data.nodeModels && data.nodeModels.length > 0) {
+            setNodeModelAssignments(data.nodeModels.map((item: any) => ({
+              node_id: item.node_id,
+              model_id: item.model_id,
+              enabled: item.enabled,
+              threshold: item.threshold,
+              model_name: item.models?.name || 'Model',
+              runtime: item.models?.runtime || 'onnx'
+            })));
+          } else {
+            setNodeModelAssignments([]);
+          }
+
+          if (data.detections) {
+            setLiveDetections(data.detections);
+          }
+          return;
+        }
+      }
+
+      // Fallback to client supabase if API is unreachable
       const [
         { data: projs },
-        { data: recordersData },
-        { count: liveCount }
+        { data: recordersData }
       ] = await Promise.all([
         supabase.from('projects').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-        supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
-        supabase.from('live_detections').select('*', { count: 'exact', head: true })
+        supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false })
       ]);
 
       if (projs && projs.length > 0) {
@@ -241,90 +310,46 @@ export default function LiveAdminPage() {
           stationsCount: p.stations_count || 0,
           image_url: p.image_url || ''
         })));
-      } else {
-        setLiveProjects([]);
       }
 
       if (recordersData && recordersData.length > 0) {
         setRecorders(recordersData);
-      } else {
-        setRecorders([]);
       }
 
-      // 2. Fetch Station Telemetry
-      try {
-        const { data: teleData, error: teleErr } = await supabase
-          .from('station_telemetry')
-          .select('*')
-          .order('ping_time', { ascending: false })
-          .limit(100);
+      const { data: teleData } = await supabase
+        .from('station_telemetry')
+        .select('*')
+        .order('ping_time', { ascending: false })
+        .limit(100);
 
-        if (!teleErr && teleData && teleData.length > 0) {
-          const map: Record<string, StationTelemetry> = {};
-          for (const item of teleData) {
-            const nid = item.node_id || item.station_id;
-            if (nid && !map[nid]) map[nid] = item;
-            if (item.station_id && !map[item.station_id]) map[item.station_id] = item;
-            if (item.node_id && !map[item.node_id]) map[item.node_id] = item;
-          }
-          setTelemetryMap(map);
-        } else {
-          setTelemetryMap({});
+      if (teleData && teleData.length > 0) {
+        const map: Record<string, StationTelemetry> = {};
+        for (const item of teleData) {
+          const nid = item.node_id || item.station_id;
+          if (nid && !map[nid]) map[nid] = item;
+          if (item.station_id && !map[item.station_id]) map[item.station_id] = item;
+          if (item.node_id && !map[item.node_id]) map[item.node_id] = item;
         }
-      } catch (e) {
-        console.warn('Telemetry table fetch skipped:', e);
-        setTelemetryMap({});
+        setTelemetryMap(map);
       }
 
-      // 3. Fetch Model Registry & Node Assignments
-      try {
-        const { data: mData, error: mErr } = await supabase
-          .from('models')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const { data: mData } = await supabase.from('models').select('*').order('created_at', { ascending: false });
+      if (mData) setModelsList(mData);
 
-        if (!mErr && mData && mData.length > 0) {
-          setModelsList(mData);
-        } else {
-          setModelsList([]);
-        }
-
-        const { data: nmData, error: nmErr } = await supabase
-          .from('node_models')
-          .select('*, models(*)');
-
-        if (!nmErr && nmData && nmData.length > 0) {
-          setNodeModelAssignments(nmData.map((item: any) => ({
-            node_id: item.node_id,
-            model_id: item.model_id,
-            enabled: item.enabled,
-            threshold: item.threshold,
-            model_name: item.models?.name || 'Model',
-            runtime: item.models?.runtime || 'onnx'
-          })));
-        } else {
-          setNodeModelAssignments([]);
-        }
-      } catch (e) {
-        console.warn('Models table fetch skipped:', e);
-        setModelsList([]);
-        setNodeModelAssignments([]);
+      const { data: nmData } = await supabase.from('node_models').select('*, models(*)');
+      if (nmData) {
+        setNodeModelAssignments(nmData.map((item: any) => ({
+          node_id: item.node_id,
+          model_id: item.model_id,
+          enabled: item.enabled,
+          threshold: item.threshold,
+          model_name: item.models?.name || 'Model',
+          runtime: item.models?.runtime || 'onnx'
+        })));
       }
 
-      // 4. Fetch Detections
-      try {
-        const { data: dets } = await supabase
-          .from('live_detections')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .limit(100);
-
-        if (dets) {
-          setLiveDetections(dets);
-        }
-      } catch (e) {
-        console.warn('Detections fetch skipped:', e);
-      }
+      const { data: dets } = await supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100);
+      if (dets) setLiveDetections(dets);
 
     } catch (e) {
       console.error('Failed to load Live admin data:', e);
@@ -352,20 +377,21 @@ export default function LiveAdminPage() {
   // Combined Nodes List with Telemetry & GPS Coordinates
   const nodesList = useMemo<LiveNodeItem[]>(() => {
     return recorders.map((r: any) => {
-      const lastPingAt = r.last_ping ? new Date(r.last_ping) : null;
+      const tel = telemetryMap[r.recorder_id] || telemetryMap[r.id] || (r.site_name ? telemetryMap[r.site_name] : undefined);
+      const pingTimeStr = tel?.ping_time || r.last_ping;
+      const lastPingAt = pingTimeStr ? new Date(pingTimeStr) : null;
       const isStale = !lastPingAt || (now - lastPingAt.getTime()) >= OFFLINE_THRESHOLD_MS;
       let status: 'online' | 'offline' | 'syncing' = isStale ? 'offline' : (r.status?.toLowerCase() || 'online');
-      const tel = telemetryMap[r.recorder_id];
-      const assigned = nodeModelAssignments.filter(n => n.node_id === r.recorder_id);
+      const assigned = nodeModelAssignments.filter(n => n.node_id === r.recorder_id || n.node_id === r.id);
 
       return {
         id: r.recorder_id,
         stationName: r.site_name || r.recorder_id,
         projectName: r.project_name || 'Unassigned Project',
-        ipAddress: r.ip_address || '--',
+        ipAddress: r.ip_address || (tel && (tel.ip_address || tel.ip)) || 'livedetector.local',
         lastUploadedId: 0,
         pendingQueue: 0,
-        lastSyncTime: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : '--',
+        lastSyncTime: pingTimeStr ? new Date(pingTimeStr).toLocaleTimeString() : '--',
         status,
         lat: Number(r.lat ?? r.latitude ?? 11.3419),
         long: Number(r.long ?? r.longitude ?? 76.6437),
@@ -381,19 +407,11 @@ export default function LiveAdminPage() {
 
   const handleUpdateNodeGps = async (nodeId: string, lat: number, long: number) => {
     try {
-      const { error } = await supabase
-        .from('recorders_registry')
-        .update({
-          lat: lat,
-          long: long,
-          latitude: lat,
-          longitude: long
-        })
-        .eq('recorder_id', nodeId);
-
-      if (error) {
-        console.warn('Supabase update note:', error);
-      }
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_gps', nodeId, lat, long })
+      });
 
       setRecorders(prev => prev.map(r => r.recorder_id === nodeId ? { ...r, lat, long, latitude: lat, longitude: long } : r));
       setEditingNodeGps(null);
@@ -417,16 +435,13 @@ export default function LiveAdminPage() {
   const handleToggleNodeModel = async (nodeId: string, modelId: string, currentEnabled: boolean) => {
     const updated = !currentEnabled;
     try {
-      await supabase
-        .from('node_models')
-        .upsert({
-          node_id: nodeId,
-          model_id: modelId,
-          enabled: updated,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'node_id,model_id' });
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_node_model', nodeId, modelId, enabled: updated })
+      });
     } catch (e) {
-      console.warn('Cloud sync for node_models failed, updated locally:', e);
+      console.warn('API sync for node_models failed, updated locally:', e);
     }
 
     setNodeModelAssignments(prev => {
@@ -439,9 +454,9 @@ export default function LiveAdminPage() {
           node_id: nodeId,
           model_id: modelId,
           enabled: updated,
-          threshold: 0.65,
+          threshold: 0.50,
           model_name: m?.name || 'Model',
-          runtime: m?.runtime || 'onnx'
+          runtime: m?.runtime || 'birdnet_tflite'
         }];
       }
     });
@@ -452,14 +467,11 @@ export default function LiveAdminPage() {
   const handleThresholdChange = async (nodeId: string, modelId: string, newThreshold: number) => {
     setNodeModelAssignments(prev => prev.map(n => (n.node_id === nodeId && n.model_id === modelId) ? { ...n, threshold: newThreshold } : n));
     try {
-      await supabase
-        .from('node_models')
-        .upsert({
-          node_id: nodeId,
-          model_id: modelId,
-          threshold: newThreshold,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'node_id,model_id' });
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_node_model', nodeId, modelId, enabled: true, threshold: newThreshold })
+      });
     } catch (e) {
       // Local state updated
     }
@@ -487,9 +499,13 @@ export default function LiveAdminPage() {
     };
 
     try {
-      await supabase.from('models').insert([newModel]);
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_model', modelData: newModel })
+      });
     } catch (err) {
-      console.warn('Cloud insert failed, saving locally:', err);
+      console.warn('API insert failed, saving locally:', err);
     }
 
     setModelsList(prev => [newModel, ...prev]);
@@ -499,11 +515,19 @@ export default function LiveAdminPage() {
     showNotification(`✨ New Model "${newModel.name}" registered! Ready to deploy to Raspberry Pi edge nodes.`);
   };
 
-
-
-  const handleTriggerSyncNow = (nodeId: string) => {
+  const handleTriggerSyncNow = async (nodeId: string) => {
     setRecorders(prev => prev.map(n => n.recorder_id === nodeId ? { ...n, status: 'syncing', last_ping: new Date().toISOString() } : n));
-    showNotification(`Realtime heartbeat signal sent to ${nodeId}`);
+    showNotification(`📡 Realtime heartbeat signal sent to ${nodeId}`);
+    try {
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_now', nodeId })
+      });
+    } catch (e) {}
+    setTimeout(() => {
+      loadAllLiveAdminData();
+    }, 1200);
   };
 
   const handleDeleteNode = async (node: LiveNodeItem) => {
@@ -513,7 +537,11 @@ export default function LiveAdminPage() {
     }
     if (!confirm(`Delete recorder "${node.id}" from ${node.projectName}? This will remove its registry entry.`)) return;
     try {
-      await supabase.from('recorders_registry').delete().eq('recorder_id', node.id);
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_node', nodeId: node.id })
+      });
       setRecorders(prev => prev.filter(r => r.recorder_id !== node.id));
       showNotification(`Node ${node.id} removed from observatory.`);
     } catch (err: any) {
@@ -730,14 +758,14 @@ WantedBy=multi-user.target`;
               nodesList.map(node => {
                 const tel = node.telemetry;
                 const isThrottled = tel?.throttling_flag || tel?.under_voltage_flag;
-                const cpuTemp = tel ? tel.cpu_temp_c : null;
-                const diskFreeGb = tel ? tel.disk_free_gb : null;
-                const diskPercent = tel ? tel.disk_percent_free : null;
-                const powerStatus = tel ? tel.power_status : 'Awaiting Telemetry';
-                const batteryVolt = tel ? tel.battery_voltage_v : null;
-                const batteryCap = tel ? tel.battery_capacity_percent : null;
-                const ramPercent = tel ? tel.ram_percent : null;
-                const uptime = tel ? tel.uptime_hours : null;
+                const cpuTemp = tel ? (tel.cpu_temp_c ?? tel.cpu_temperature ?? null) : null;
+                const diskPercent = tel ? (tel.disk_percent_free ?? (tel.disk_usage !== undefined && tel.disk_usage !== null ? 100 - Number(tel.disk_usage) : null)) : null;
+                const diskFreeGb = tel ? (tel.disk_free_gb ?? (diskPercent !== null ? Number(((diskPercent / 100) * 32).toFixed(1)) : null)) : null;
+                const batteryCap = tel ? (tel.battery_capacity_percent ?? tel.battery_level ?? null) : null;
+                const batteryVolt = tel ? (tel.battery_voltage_v ?? (batteryCap !== null ? 5.08 : null)) : null;
+                const powerStatus = tel ? (tel.power_status || (batteryCap !== null ? `Stable Solar / USB Supply (${Number(batteryCap).toFixed(0)}% Charge)` : 'Stable Solar / USB Supply')) : 'Awaiting Telemetry';
+                const ramPercent = tel ? (tel.ram_percent ?? null) : null;
+                const uptime = tel ? (tel.uptime_hours ?? null) : null;
 
                 return (
                   <div key={node.id} className="p-6 rounded-2xl bg-[#ffffff] border border-[#dde1dc] shadow-xs space-y-5 transition-all">

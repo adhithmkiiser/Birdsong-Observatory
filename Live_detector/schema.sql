@@ -114,3 +114,36 @@ create index if not exists idx_station_telemetry_node_ts on station_telemetry (n
 insert into storage.buckets (id, name, public) 
 values ('models', 'models', true), ('clips', 'clips', true)
 on conflict (id) do nothing;
+
+-- 8. ROW LEVEL SECURITY & PUBLIC READ ACCESS POLICIES
+alter table if exists public.station_telemetry enable row level security;
+drop policy if exists "Allow public read on station_telemetry" on public.station_telemetry;
+create policy "Allow public read on station_telemetry" on public.station_telemetry for select using (true);
+
+alter table if exists public.models enable row level security;
+drop policy if exists "Allow public read on models" on public.models;
+create policy "Allow public read on models" on public.models for select using (true);
+
+alter table if exists public.node_models enable row level security;
+drop policy if exists "Allow public read on node_models" on public.node_models;
+create policy "Allow public read on node_models" on public.node_models for select using (true);
+
+alter table if exists public.window_summaries enable row level security;
+drop policy if exists "Allow public read on window_summaries" on public.window_summaries;
+create policy "Allow public read on window_summaries" on public.window_summaries for select using (true);
+
+-- 9. DEFAULT MODEL SEED (BirdNET v2.4)
+insert into public.models (id, name, version, description, runtime, storage_path, labels_path, manifest, is_active)
+values (
+  'ece0a4c8-5c85-475d-8001-79248995663b',
+  'BirdNET-Pi v2.4 (Official)',
+  'v2.4',
+  'Default Cornell BirdNET acoustic classifier with geographic species filtering for Tirupati',
+  'birdnet_tflite',
+  'models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite',
+  'models/birdnet_default/labels.txt',
+  '{"target_sample_rate": 48000, "window_sec": 3.0, "use_geo_filter": true, "input_type": "raw_waveform", "output_activation": "sigmoid"}'::jsonb,
+  true
+)
+on conflict (id) do nothing;
+

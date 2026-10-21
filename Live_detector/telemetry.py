@@ -208,6 +208,19 @@ class SystemTelemetryMonitor:
 
         return metrics
 
+    def get_local_ip(self) -> str:
+        """Determines the local LAN IP address of the Pi."""
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.5)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "livedetector.local"
+
     def collect_full_report(self) -> Dict[str, Any]:
         """Collects the consolidated solar, battery, disk, and hardware health payload."""
         disk = self.get_disk_space()
@@ -218,6 +231,7 @@ class SystemTelemetryMonitor:
 
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ip_address": self.get_local_ip(),
             "cpu_temp_c": temp,
             "disk_free_gb": disk.get("free_gb", 0.0),
             "disk_percent_free": disk.get("percent_free", 0.0),

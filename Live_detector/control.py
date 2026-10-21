@@ -112,8 +112,39 @@ class ControlManager:
                     logger.info(f"Downloading new model: {name} ({model_id}) [{runtime}]...")
                     self.download_file_from_storage(storage_path, local_weights)
                     self.download_file_from_storage(labels_path, local_labels)
+
+                    # If download from cloud wasn't available, check local Raspberry Pi system locations
+                    if not os.path.exists(local_weights) or not os.path.exists(local_labels):
+                        candidate_dirs = [
+                            Path("/home/pi/BirdNET-Pi/model"),
+                            Path("/home/pi/birdnet-analyzer/checkpoints/V2.4"),
+                            Path("/home/pi/Live_detector/models/birdnet_default"),
+                            Path("/home/pi/Live_detector/data/models/birdnet_default"),
+                            Path.home() / "BirdNET-Pi/model",
+                            Path.home() / "Live_detector/models/birdnet_default"
+                        ]
+                        for cdir in candidate_dirs:
+                            candidate_tflite = cdir / "BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"
+                            candidate_lbl = cdir / "labels.txt"
+                            if candidate_tflite.exists() and candidate_lbl.exists():
+                                import shutil
+                                os.makedirs(os.path.dirname(local_weights), exist_ok=True)
+                                shutil.copy(candidate_tflite, local_weights)
+                                shutil.copy(candidate_lbl, local_labels)
+                                logger.info(f"Found local model weights at {cdir}, copied to {local_weights}")
+                                break
+
                     with open(local_manifest, "w", encoding="utf-8") as f:
                         json.dump(manifest, f, indent=2)
+
+                # Check if files exist locally before attempting to load
+                if not os.path.exists(local_weights) or not os.path.exists(local_labels):
+                    logger.warning(
+                        f"⚠️ Model files for '{name}' not found locally. "
+                        f"Upload {os.path.basename(storage_path)} and labels.txt to Supabase Storage 'models' bucket, "
+                        f"or place them in {model_dir}/."
+                    )
+                    continue
 
                 # Verify SHA256 if specified
                 if expected_sha256 and os.path.exists(local_weights):
