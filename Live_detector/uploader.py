@@ -207,9 +207,19 @@ class CloudUploaderWorker(threading.Thread):
             telem_ids = []
             for t in pending_telemetry:
                 telem_ids.append(t["id"])
+                disk_pct = t.get("disk_percent_free")
+                disk_used = int(round(100.0 - float(disk_pct))) if disk_pct is not None else 10
+                bat_pct = t.get("battery_capacity_percent")
+                bat_int = int(round(float(bat_pct))) if bat_pct is not None else 100
+                temp_val = float(t.get("cpu_temp_c")) if t.get("cpu_temp_c") is not None else 40.0
+
                 telem_records.append({
+                    "station_id": t["node_id"],
                     "node_id": t["node_id"],
-                    "timestamp": t["timestamp"],
+                    "ping_time": t["timestamp"],
+                    "cpu_temperature": temp_val,
+                    "battery_level": bat_int,
+                    "disk_usage": disk_used,
                     "cpu_temp_c": t["cpu_temp_c"],
                     "disk_free_gb": t["disk_free_gb"],
                     "disk_percent_free": t["disk_percent_free"],
@@ -225,7 +235,6 @@ class CloudUploaderWorker(threading.Thread):
                 })
 
             try:
-                # Try inserting full modern telemetry schema
                 self.supabase.table("station_telemetry").insert(telem_records).execute()
                 self.outbox.mark_telemetry_uploaded(telem_ids)
                 logger.info(f"Synced {len(telem_records)} solar/battery telemetry records to cloud.")
