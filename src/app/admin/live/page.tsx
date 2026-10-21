@@ -1495,21 +1495,154 @@ WantedBy=multi-user.target`;
                 </div>
               </div>
 
-              {/* Step 9: Troubleshooting Playbook */}
-              <div className="p-5 rounded-xl bg-[#121614] border border-[#2d3630] space-y-3">
-                <h4 className="font-bold text-sm text-amber-400 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-400" /> Edge Field Troubleshooting Playbook
-                </h4>
-                <div className="space-y-2 text-xs text-[#a0aba3] leading-relaxed">
-                  <p>
-                    &bull; <strong className="text-white">Solar Powerbank Under-Voltage Warning:</strong> If the 5V rail dips under 4.63V during passing clouds or dusk, use a short, high-grade 20 AWG USB-C power cable to minimize voltage drop. You can also reduce CPU load by increasing <code className="text-amber-300">HOP_SECONDS=2.5</code> in <code className="text-white">.env</code>.
-                  </p>
-                  <p>
-                    &bull; <strong className="text-white">Microphone Reconnect:</strong> If the USB mic is bumped or loses power, <code className="text-white">capture.py</code> automatically attempts reconnection every 3 seconds without crashing the supervisor.
-                  </p>
-                  <p>
-                    &bull; <strong className="text-white">Cellular Outage &amp; Backlog:</strong> All windows, detections, and telemetry are staged locally in <code className="text-white">data/live_detector_outbox.db</code>. When internet connectivity returns, the agent batch uploads the backlog and prunes old synced rows automatically.
-                  </p>
+              {/* Step 10: Interactive Troubleshooting & Error Recovery Playbook */}
+              <div className="p-5 rounded-2xl bg-[#121614] border border-[#2d3630] space-y-4">
+                <div className="flex items-center justify-between border-b border-[#2d3630] pb-3">
+                  <h4 className="font-bold text-sm text-amber-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    Field Troubleshooting &amp; Error Recovery Center
+                  </h4>
+                  <span className="text-[11px] text-[#a0aba3]">Click any command to copy</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  {/* Issue 1 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Host Identification Changed (Windows)</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('ssh-keygen -R livedetector.local');
+                          showNotification('Host key reset command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      Occurs if you re-flashed your SD card and Windows remembers the old SSH key in known_hosts. Run on Windows:
+                    </p>
+                    <code className="text-amber-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      ssh-keygen -R livedetector.local
+                    </code>
+                  </div>
+
+                  {/* Issue 2 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Permission Denied on SSH Login</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`ssh ${genPiUser}@livedetector.local`);
+                          showNotification('SSH login command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      Make sure you explicitly include the Pi username <code className="text-emerald-400">{genPiUser}@</code>, otherwise Windows logs in as your Windows account:
+                    </p>
+                    <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      ssh {genPiUser}@livedetector.local
+                    </code>
+                  </div>
+
+                  {/* Issue 3 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Broken APT Dependencies / Libatlas Error</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('sudo apt --fix-broken install -y && sudo apt install -y git python3-pip python3-venv ffmpeg alsa-utils libopenblas-dev');
+                          showNotification('APT fix command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      In Debian Bookworm/Trixie, ATLAS is replaced by OpenBLAS. Repair half-installed packages with:
+                    </p>
+                    <code className="text-cyan-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      sudo apt --fix-broken install -y
+                    </code>
+                  </div>
+
+                  {/* Issue 4 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Microphone Not Detected (arecord empty)</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('lsusb && sudo dmesg | tail -n 20');
+                          showNotification('Hardware scan command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      Raspberry Pi 3.5mm jack is <em>audio out only</em>. Plug USB mic into a blue USB 3.0 port and inspect bus:
+                    </p>
+                    <code className="text-amber-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      lsusb &amp;&amp; sudo dmesg | tail -n 20
+                    </code>
+                  </div>
+
+                  {/* Issue 5 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Configure Microphone Hardware Card</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> ~/Live_detector/.env');
+                          showNotification('Mic config command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      If <code className="text-emerald-400">arecord -l</code> reports card 3, bind it directly in your Pi's environment:
+                    </p>
+                    <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      echo "AUDIO_INPUT_DEVICE=plughw:3,0" &gt;&gt; ~/Live_detector/.env
+                    </code>
+                  </div>
+
+                  {/* Issue 6 */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Solar Powerbank Under-Voltage Warning</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('vcgencmd get_throttled');
+                          showNotification('Throttled query copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px]">
+                      If solar drops &lt;4.63V during cloud cover, use thick 20 AWG USB-C cables and increase <code className="text-amber-300">HOP_SECONDS=2.5</code>. Check throttle state:
+                    </p>
+                    <code className="text-amber-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      vcgencmd get_throttled
+                    </code>
+                  </div>
                 </div>
               </div>
 

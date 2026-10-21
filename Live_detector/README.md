@@ -249,52 +249,117 @@ All under-voltage events and battery levels are logged to `station_telemetry` in
 
 ---
 
-## 🛠️ 6. Troubleshooting & Error Recovery
+## 🛠️ 6. Troubleshooting & Error Recovery Guide
 
-### Issue 1: "FFmpeg not found"
-**Cause**: FFmpeg is not installed on the system.  
-**Fix**:
-```bash
-sudo apt update && sudo apt install -y ffmpeg
+### Issue 1: "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! Host key verification failed."
+**Cause**: You re-flashed your SD card. The Pi generated a fresh security fingerprint, but your computer remembers the old key in `known_hosts`.  
+**Fix**: On your **Windows PC** Command Prompt / PowerShell, clear the old key:
+```cmd
+ssh-keygen -R livedetector.local
+# Or if using IP:
+ssh-keygen -R <pi_ip_address>
+```
+Then run `ssh pi@livedetector.local` again and type `yes` when prompted.
+
+---
+
+### Issue 2: "user@livedetector.local: Permission denied (publickey,password)"
+**Cause**: You ran `ssh livedetector.local` without specifying the username, so Windows defaulted to your Windows username (`user` or `USER`).  
+**Fix**: Always explicitly include **`pi@`**:
+```cmd
+ssh pi@livedetector.local
 ```
 
 ---
 
-### Issue 2: "Capture stream returned empty bytes / Device disconnected"
-**Cause**: USB microphone lost power due to a solar dip or was bumped.  
-**Fix**:
-1. Check `arecord -l` to verify the microphone card index.
-2. If the mic is on card 1, update `AUDIO_INPUT_DEVICE` in `config.py` or `.env`:
-   ```bash
-   export AUDIO_INPUT_DEVICE="hw:1,0"
-   ```
-3. The script automatically retries reconnecting every 3 seconds.
+### Issue 3: "Package 'libatlas-base-dev' has no installation candidate" or "Unmet dependencies"
+**Cause**: In modern 64-bit Debian Bookworm and Debian Trixie (Debian 12/13), ATLAS has been replaced by OpenBLAS.  
+**Fix**: Run:
+```bash
+sudo apt --fix-broken install -y
+sudo apt install -y git python3-pip python3-venv ffmpeg alsa-utils libopenblas-dev
+```
 
 ---
 
-### Issue 3: "Under-voltage alert detected / Yellow lightning bolt icon"
-**Cause**: Powerbank output voltage dropped below 4.63V. Common causes:
-- Thin or long USB power cable (high resistance).
-- Powerbank cannot supply 3A continuous.
-- Solar panel wattage is insufficient for battery charging during cloudy hours.  
+### Issue 4: "-bash: git: command not found"
+**Cause**: Git was not installed or an earlier package install command was interrupted.  
+**Fix**: Run:
+```bash
+sudo apt update && sudo apt install -y git
+git --version
+```
+
+---
+
+### Issue 5: `arecord -l` shows no capture devices / Empty list
+**Cause**:
+1. ⚠️ **The 3.5mm round jack on Raspberry Pi is Audio OUT only** (headphones). It has no microphone input. If using a 3.5mm microphone, you must plug it into a small USB soundcard adapter.
+2. The USB microphone is loose, plugged into an unpowered hub, or hasn't enumerated.  
+**Fix**:
+1. Check if the Linux USB bus sees the device:
+   ```bash
+   lsusb
+   ```
+2. Unplug and firmly plug the mic into one of the **blue USB 3.0 ports**.
+3. Check the kernel log to see physical connection messages:
+   ```bash
+   sudo dmesg | tail -n 20
+   ```
+4. Once detected, run `arecord -l` to find the card number.
+
+---
+
+### Issue 6: Setting the ALSA audio device for your microphone
+**Cause**: The USB microphone might be enumerated on `card 1`, `card 2`, or `card 3`.  
+**Fix**:
+1. Run `arecord -l` and note the card number (e.g. `card 3: Audio [AB13X USB Audio]`).
+2. Add the hardware string (`plughw:X,0`) to your `.env` file:
+   ```bash
+   echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> ~/Live_detector/.env
+   ```
+3. Test recording 5 seconds with that specific device:
+   ```bash
+   arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav
+   ls -lh test.wav
+   rm test.wav
+   ```
+
+---
+
+### Issue 7: Empty folder collision when cloning from GitHub
+**Cause**: An empty directory `~/Live_detector` was created before running the git sparse-checkout command.  
+**Fix**: Remove the empty directory first, then clone and create the symlink:
+```bash
+rm -rf ~/Live_detector
+git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory
+cd ~/Birdsong-Observatory
+git sparse-checkout set Live_detector
+ln -s ~/Birdsong-Observatory/Live_detector ~/Live_detector
+cd ~/Live_detector
+```
+
+---
+
+### Issue 8: "Capture stream returned empty bytes / Device disconnected"
+**Cause**: USB microphone lost power due to a solar dip or was bumped.  
+**Fix**:
+1. Check `arecord -l` to verify the microphone card index.
+2. The capture engine in `capture.py` automatically detects device disconnection and retries every 3 seconds with exponential backoff.
+
+---
+
+### Issue 9: "Under-voltage alert detected / Solar powerbank dip"
+**Cause**: Powerbank output voltage dropped below 4.63V from solar cloud cover or high resistance cable.  
 **Fix**:
 1. Use a short, thick, high-quality 20 AWG USB-C power cable.
 2. In `config.py`, reduce CPU load by increasing `HOP_SECONDS` from `1.5` to `2.5`.
 
 ---
 
-### Issue 4: "Cellular connection down / Outbox database size"
-**Behavior**: The agent stores all detections, windows, and telemetry in `data/live_detector_outbox.db`. When internet connectivity returns, `uploader.py` uploads the backlog in batches.  
-To verify pending queue count on the Pi:
-```bash
-sqlite3 /home/pi/Live_detector/data/live_detector_outbox.db "SELECT count(*) FROM outbox_windows WHERE uploaded=0;"
-```
-
----
-
-### Issue 5: SD Card Space Filling Up
-**Behavior**: The outbox automatically removes uploaded records older than 7 days, and deleted local temporary audio clips as soon as they are uploaded to cloud storage.  
-To check disk space manually via SSH:
+### Issue 10: SD Card Space Filling Up
+**Behavior**: The outbox automatically removes uploaded records older than 7 days and cleans up local temporary 3s audio clips immediately after upload to Supabase storage.  
+To check free disk space manually via SSH:
 ```bash
 df -h /
 ```
