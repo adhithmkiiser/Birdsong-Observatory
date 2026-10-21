@@ -105,12 +105,12 @@ Plug in your USB microphone and verify the Raspberry Pi detects it:
 ```bash
 arecord -l
 ```
-You should see a device like:
-`card 1: Device [USB PnP Audio Device], device 0: USB Audio [USB Audio]`
+You should see your USB microphone listed, for example:
+`card 3: Audio [AB13X USB Audio], device 0: USB Audio [USB Audio]`
 
-Test recording 5 seconds of audio to confirm sound capture:
+Test recording 5 seconds of audio to confirm sound capture (replace `3,0` with your card index, or use `default`):
 ```bash
-arecord -D default -d 5 -f S16_LE -r 48000 test.wav
+arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav
 ls -lh test.wav
 # Play it back if speakers attached:
 aplay test.wav
@@ -123,18 +123,24 @@ rm test.wav
 Run these commands in your Raspberry Pi SSH terminal:
 
 ```bash
-# 1. Clone only the repository tree (without downloading the rest of the web app)
+# 1. Clean up any empty directory if previously created
+rm -rf ~/Live_detector
+
+# 2. Clone only the repository tree (without downloading the rest of the web app)
 git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory
 
-# 2. Download only the Live_detector folder
+# 3. Download only the Live_detector folder
 cd ~/Birdsong-Observatory
 git sparse-checkout set Live_detector
 
-# 3. Create a convenient shortcut link at ~/Live_detector
+# 4. Create a convenient shortcut link at ~/Live_detector
 ln -s ~/Birdsong-Observatory/Live_detector ~/Live_detector
 
-# 4. Enter the Live_detector directory
+# 5. Enter the Live_detector directory
 cd ~/Live_detector
+
+# 6. Set your microphone hardware card in .env (e.g. card 3)
+echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> .env
 ```
 *(In the future, you can simply type `git pull` inside this folder to update your detector code whenever you push changes to GitHub!)*
 

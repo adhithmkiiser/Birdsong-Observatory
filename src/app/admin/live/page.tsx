@@ -1302,6 +1302,7 @@ WantedBy=multi-user.target`;
             </div>
 
             {/* Step-by-Step Playbook */}
+            {/* Step-by-Step Playbook */}
             <div className="space-y-6 pt-4 border-t border-[#2d3630]">
 
               {/* Step 1: SSH Login */}
@@ -1310,7 +1311,7 @@ WantedBy=multi-user.target`;
                   <span className="font-bold text-sm text-emerald-400">Step 1: SSH Login to Raspberry Pi</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`ssh ${genPiUser}@raspberrypi.local`);
+                      navigator.clipboard.writeText(`ssh ${genPiUser}@livedetector.local`);
                       showNotification('SSH login command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
@@ -1319,17 +1320,21 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all">
-                  ssh {genPiUser}@raspberrypi.local
+                  ssh {genPiUser}@livedetector.local
                 </pre>
+                <div className="text-[11px] text-[#a0aba3] space-y-1">
+                  <p>• If using the default hostname or IP address: <code className="text-emerald-400">ssh {genPiUser}@raspberrypi.local</code> or <code className="text-emerald-400">ssh {genPiUser}@&lt;ip_address&gt;</code></p>
+                  <p>• If you get <em>"REMOTE HOST IDENTIFICATION HAS CHANGED"</em> after re-flashing your SD card, run on Windows: <code className="text-amber-300 select-all">ssh-keygen -R livedetector.local</code></p>
+                </div>
               </div>
 
               {/* Step 2: System Audio & Library Packages */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-emerald-400">Step 2: Install System Packages &amp; FFmpeg Audio Drivers</span>
+                  <span className="font-bold text-sm text-emerald-400">Step 2: Install System Packages, Git &amp; Audio Drivers</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('sudo apt update && sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils git libatlas-base-dev');
+                      navigator.clipboard.writeText('sudo apt update && sudo apt install -y git python3-pip python3-venv ffmpeg alsa-utils libopenblas-dev');
                       showNotification('Apt install command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
@@ -1338,7 +1343,7 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  sudo apt update &amp;&amp; sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils git libatlas-base-dev
+                  sudo apt update &amp;&amp; sudo apt install -y git python3-pip python3-venv ffmpeg alsa-utils libopenblas-dev
                 </pre>
               </div>
 
@@ -1348,7 +1353,7 @@ WantedBy=multi-user.target`;
                   <span className="font-bold text-sm text-emerald-400">Step 3: Verify USB Microphone Ingestion</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('arecord -l && arecord -D default -d 5 -f S16_LE -r 48000 test.wav && ls -lh test.wav && rm test.wav');
+                      navigator.clipboard.writeText('arecord -l && arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav && ls -lh test.wav && rm test.wav');
                       showNotification('Mic test command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
@@ -1357,14 +1362,39 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  arecord -l &amp;&amp; arecord -D default -d 5 -f S16_LE -r 48000 test.wav &amp;&amp; ls -lh test.wav &amp;&amp; rm test.wav
+                  arecord -l &amp;&amp; arecord -D {genAudioDevice !== 'default' ? genAudioDevice : 'plughw:3,0'} -d 5 -f S16_LE -r 48000 test.wav &amp;&amp; ls -lh test.wav &amp;&amp; rm test.wav
+                </pre>
+                <p className="text-[11px] text-[#a0aba3]">
+                  Check the card number listed in <code className="text-emerald-400">arecord -l</code> (e.g. card 3 is <code className="text-emerald-400">plughw:3,0</code>).
+                </p>
+              </div>
+
+              {/* Step 4: Download Live_detector from GitHub (Sparse Checkout) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-emerald-400">Step 4: Download Live_detector from GitHub (Sparse Checkout)</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`rm -rf /home/${genPiUser}/Live_detector && git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory && cd ~/Birdsong-Observatory && git sparse-checkout set Live_detector && ln -s ~/Birdsong-Observatory/Live_detector /home/${genPiUser}/Live_detector && cd /home/${genPiUser}/Live_detector`);
+                      showNotification('GitHub sparse-checkout command copied!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Command
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#a0aba3]">
+                  Downloads <strong>only</strong> the lightweight <code className="text-emerald-400">Live_detector</code> engine directly onto your Pi without cloning the rest of the web app:
+                </p>
+                <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
+                  rm -rf /home/{genPiUser}/Live_detector &amp;&amp; git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory &amp;&amp; cd ~/Birdsong-Observatory &amp;&amp; git sparse-checkout set Live_detector &amp;&amp; ln -s ~/Birdsong-Observatory/Live_detector /home/{genPiUser}/Live_detector &amp;&amp; cd /home/{genPiUser}/Live_detector
                 </pre>
               </div>
 
-              {/* Step 4: Python Virtual Environment */}
+              {/* Step 5: Python Virtual Environment */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-emerald-400">Step 4: Create Virtualenv &amp; Install Python Dependencies</span>
+                  <span className="font-bold text-sm text-emerald-400">Step 5: Create Virtualenv &amp; Install Python Dependencies</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && python3 -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt tflite-runtime`);
@@ -1376,17 +1406,17 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  cd /home/{genPiUser}/Live_detector &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate &amp;&amp; pip install -r requirements.txt tflite-runtime
+                  cd /home/{genPiUser}/Live_detector &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate &amp;&amp; pip install --upgrade pip &amp;&amp; pip install -r requirements.txt tflite-runtime
                 </pre>
               </div>
 
-              {/* Step 5: Test Solar & Hardware Telemetry Tool */}
+              {/* Step 6: Test Solar & Hardware Telemetry Tool */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-amber-400">Step 5: Standalone Solar &amp; Battery Telemetry Test</span>
+                  <span className="font-bold text-sm text-amber-400">Step 6: Standalone Solar &amp; Battery Telemetry Test</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && python3 telemetry.py`);
+                      navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && source venv/bin/activate && python3 telemetry.py`);
                       showNotification('Telemetry test command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
@@ -1402,10 +1432,10 @@ WantedBy=multi-user.target`;
                 </pre>
               </div>
 
-              {/* Step 6: Create .env File */}
+              {/* Step 7: Create .env File */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-amber-400">Step 6: Write Configuration to .env</span>
+                  <span className="font-bold text-sm text-amber-400">Step 7: Write Configuration to .env</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(generatedEnvScript);
@@ -1421,10 +1451,10 @@ WantedBy=multi-user.target`;
                 </pre>
               </div>
 
-              {/* Step 7: Systemd Service Installation */}
+              {/* Step 8: Systemd Service Installation */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-cyan-400">Step 7: Install Systemd Auto-Start Service</span>
+                  <span className="font-bold text-sm text-cyan-400">Step 8: Install Systemd Auto-Start Service</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(generatedSystemdService);
@@ -1439,14 +1469,14 @@ WantedBy=multi-user.target`;
                   {generatedSystemdService}
                 </pre>
                 <div className="space-y-1 pt-2">
-                  <p className="text-xs text-[#a0aba3]">Run on the Pi to enable and start:</p>
+                  <p className="text-xs text-[#a0aba3]">Run on the Pi to enable and start 24/7 background operation:</p>
                   <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-cyan-300 select-all overflow-x-auto">
                     sudo cp /home/{genPiUser}/Live_detector/service/live-detector.service /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now live-detector
                   </pre>
                 </div>
               </div>
 
-              {/* Step 8: Management & Journalctl Commands */}
+              {/* Step 9: Management & Journalctl Commands */}
               <div className="space-y-3 pt-3 border-t border-[#2d3630]">
                 <h4 className="font-bold text-sm text-white">Daily Operations &amp; Live Log Inspection Commands</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
