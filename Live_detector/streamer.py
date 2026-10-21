@@ -12,15 +12,15 @@ import logging
 import threading
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import queue
 import numpy as np
 
-from ring_buffer import CircularRingBuffer
 from config import STREAM_PORT, SAMPLE_RATE
 
 logger = logging.getLogger("LiveAudioStreamer")
 
 class StreamHandler(BaseHTTPRequestHandler):
-    ring_buffer: CircularRingBuffer = None
+    capture_worker = None
     active_listeners: int = 0
     listener_lock = threading.Lock()
 
@@ -42,6 +42,10 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         ffmpeg_proc = None
+        audio_queue = queue.Queue(maxsize=150)
+        if StreamHandler.capture_worker:
+            StreamHandler.capture_worker.add_stream_listener(audio_queue)
+
         try:
             # Spawn FFmpeg encoder streaming to HTTP response socket
             cmd = [
@@ -65,17 +69,18 @@ class StreamHandler(BaseHTTPRequestHandler):
                 bufsize=2048
             )
 
-            # Thread to pipe ring buffer audio into FFmpeg stdin
+            # Thread to pipe linear capture audio directly into FFmpeg stdin
             streaming = True
             def pipe_audio():
                 while streaming and ffmpeg_proc.poll() is None:
-                    win = StreamHandler.ring_buffer.get_window(timeout=1.0)
-                    if win:
-                        try:
-                            ffmpeg_proc.stdin.write(win.audio.astype(np.float32).tobytes())
-                            ffmpeg_proc.stdin.flush()
-                        except Exception:
-                            break
+                    try:
+                        raw_bytes = audio_queue.get(timeout=1.0)
+                        ffmpeg_proc.stdin.write(raw_bytes)
+                        ffmpeg_proc.stdin.flush()
+                    except queue.Empty:
+                        continue
+                    except Exception:
+                        break
 
             pipe_thread = threading.Thread(target=pipe_audio, daemon=True)
             pipe_thread.start()
@@ -94,6 +99,8 @@ class StreamHandler(BaseHTTPRequestHandler):
             logger.debug(f"Streaming notice: {e}")
         finally:
             streaming = False
+            if StreamHandler.capture_worker:
+                StreamHandler.capture_worker.remove_stream_listener(audio_queue)
             if ffmpeg_proc:
                 try:
                     ffmpeg_proc.terminate()
@@ -108,14 +115,14 @@ class StreamHandler(BaseHTTPRequestHandler):
         return
 
 class LiveAudioStreamServer(threading.Thread):
-    def __init__(self, ring_buffer: CircularRingBuffer, port: int = STREAM_PORT):
+    def __init__(self, capture_worker=None, port: int = STREAM_PORT):
         super().__init__(daemon=True, name="LiveAudioStreamServer")
-        self.ring_buffer = ring_buffer
+        self.capture_worker = capture_worker
         self.port = port
         self.server = None
 
     def run(self):
-        StreamHandler.ring_buffer = self.ring_buffer
+        StreamHandler.capture_worker = self.capture_worker
         try:
             self.server = HTTPServer(("0.0.0.0", self.port), StreamHandler)
             logger.info(f"📻 Live Audio HTTP Streamer listening on port {self.port} (URL: http://<pi_ip>:{self.port}/stream.opus)")

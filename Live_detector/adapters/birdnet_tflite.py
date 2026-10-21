@@ -36,14 +36,17 @@ class BirdNetTFLiteAdapter(ModelAdapter):
         if self.use_geo_filter and self.lat is not None and self.lon is not None:
             self._load_geo_species_filter(model_path)
 
-        # Import TFLite interpreter (supports lightweight tflite-runtime or full tensorflow)
+        # Import TFLite interpreter (supports ai-edge-litert, tflite-runtime or full tensorflow)
         try:
-            from tflite_runtime.interpreter import Interpreter
+            from ai_edge_litert.interpreter import Interpreter
         except ImportError:
             try:
-                from tensorflow.lite.python.interpreter import Interpreter
+                from tflite_runtime.interpreter import Interpreter
             except ImportError:
-                raise ImportError("Please install 'tflite-runtime' or 'tensorflow' to use BirdNET TFLite models.")
+                try:
+                    from tensorflow.lite.python.interpreter import Interpreter
+                except ImportError:
+                    raise ImportError("Please install 'tflite-runtime', 'ai-edge-litert', or 'tensorflow' to use BirdNET TFLite models.")
 
         self.interpreter = Interpreter(model_path=model_path, num_threads=4)
         self.interpreter.allocate_tensors()

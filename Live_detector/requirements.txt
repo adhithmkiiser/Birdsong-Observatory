@@ -16,9 +16,4 @@ psutil>=5.9.0
 
 # Inference Engines (Install appropriate wheel for Raspberry Pi OS)
 onnxruntime>=1.15.0
-
-# Note on TFLite:
-# On Raspberry Pi OS (Debian Bullseye/Bookworm), install via:
-# pip install tflite-runtime
-# or if on x86/64:
-# pip install tensorflow
+tflite-runtime>=2.14.0; sys_platform != "win32"

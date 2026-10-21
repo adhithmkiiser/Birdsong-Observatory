@@ -137,6 +137,44 @@ class ControlManager:
                     with open(local_manifest, "w", encoding="utf-8") as f:
                         json.dump(manifest, f, indent=2)
 
+                    # If model is official BirdNET and still missing, auto-fetch from official repository
+                    if (not os.path.exists(local_weights) or not os.path.exists(local_labels)) and (runtime == "birdnet_tflite" or "birdnet" in name.lower()):
+                        import urllib.request
+                        logger.info("🌿 Initiating automatic download of official Cornell BirdNET v2.4 model assets...")
+                        os.makedirs(os.path.dirname(local_weights), exist_ok=True)
+                        
+                        # 1. Download official class labels (6k+ species)
+                        if not os.path.exists(local_labels):
+                            try:
+                                logger.info("Downloading official BirdNET v2.4 labels.txt...")
+                                labels_url = "https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt"
+                                req = urllib.request.Request(labels_url, headers={"User-Agent": "BirdSongObservatory/2.4"})
+                                with urllib.request.urlopen(req) as resp, open(local_labels, "wb") as f:
+                                    f.write(resp.read())
+                                logger.info(f"✓ Downloaded labels.txt successfully ({os.path.getsize(local_labels):,} bytes).")
+                            except Exception as dl_err:
+                                logger.warning(f"Could not download BirdNET labels: {dl_err}")
+
+                        # 2. Download official FP32 TFLite core model weights (~51 MB)
+                        if not os.path.exists(local_weights):
+                            try:
+                                logger.info("Downloading official BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite (~51 MB)... Please wait.")
+                                model_url = "https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"
+                                req = urllib.request.Request(model_url, headers={"User-Agent": "BirdSongObservatory/2.4"})
+                                with urllib.request.urlopen(req) as resp, open(local_weights, "wb") as f:
+                                    total_read = 0
+                                    while True:
+                                        chunk = resp.read(1024 * 512)
+                                        if not chunk:
+                                            break
+                                        f.write(chunk)
+                                        total_read += len(chunk)
+                                        if total_read % (10 * 1024 * 1024) < (512 * 1024):
+                                            logger.info(f"  ...downloaded {total_read / (1024 * 1024):.1f} MB")
+                                logger.info(f"✓ Downloaded BirdNET v2.4 TFLite model successfully ({os.path.getsize(local_weights):,} bytes)!")
+                            except Exception as dl_err:
+                                logger.warning(f"Could not download BirdNET TFLite weights: {dl_err}")
+
                 # Check if files exist locally before attempting to load
                 if not os.path.exists(local_weights) or not os.path.exists(local_labels):
                     logger.warning(

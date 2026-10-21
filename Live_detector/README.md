@@ -100,19 +100,33 @@ sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils git libopenblas-d
 
 ---
 
-### Step 3: Verify Your USB Microphone
+### Step 3: Verify Your USB Microphone & Tune Input Gain
 Plug in your USB microphone and verify the Raspberry Pi detects it:
 ```bash
 arecord -l
 ```
 You should see your USB microphone listed, for example:
-`card 3: Audio [AB13X USB Audio], device 0: USB Audio [USB Audio]`
+`card 1: Audio [AB13X USB Audio], device 0: USB Audio [USB Audio]`
 
-Test recording 5 seconds of audio to confirm sound capture (replace `3,0` with your card index, or use `default`):
+#### 🎙️ Adjust Microphone Gain (Avoid Distorted / Clipped Audio)
+If the microphone hardware input volume in ALSA is boosted to 100% (+30 dB digital gain), incoming audio will digital-clip into a square wave, creating terrible distortion, buzzing, and crackling.
+To calibrate clean acoustic levels:
 ```bash
-arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav
+alsamixer
+```
+1. Press `F6` and select your USB Audio Device.
+2. Press `F4` to switch to **Capture / Input** controls.
+3. Use the arrow keys to adjust the capture volume to **65% – 75%** (in the green/mild yellow range).
+4. Press `ESC` to exit, and make the setting permanent across reboots:
+```bash
+sudo alsactl store
+```
+
+Test recording 5 seconds of audio to confirm clean sound capture:
+```bash
+arecord -D plughw:1,0 -d 5 -f S16_LE -r 48000 test.wav
 ls -lh test.wav
-# Play it back if speakers attached:
+# Play it back if speakers / headphones attached:
 aplay test.wav
 rm test.wav
 ```
@@ -139,8 +153,8 @@ ln -s ~/Birdsong-Observatory/Live_detector ~/Live_detector
 # 5. Enter the Live_detector directory
 cd ~/Live_detector
 
-# 6. Set your microphone hardware card in .env (e.g. card 3)
-echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> .env
+# 6. Set your microphone hardware card in .env (e.g. card 1)
+echo "AUDIO_INPUT_DEVICE=plughw:1,0" >> .env
 ```
 *(In the future, you can simply type `git pull` inside this folder to update your detector code whenever you push changes to GitHub!)*
 
@@ -162,6 +176,26 @@ pip install -r requirements.txt
 
 ---
 
+### Step 5b: Official Cornell BirdNET-Pi v2.4 Edge Model Setup
+The Raspberry Pi runs **Cornell BirdNET v2.4 directly on the edge hardware** to classify 6,000+ species with zero cloud latency.
+
+The agent's `control.py` will automatically download the model on first launch if missing. Alternatively, you can download the official model weights and taxonomy labels immediately via terminal:
+
+```bash
+# 1. Create default model assets directory
+mkdir -p ~/Live_detector/models/birdnet_default
+
+# 2. Download official taxonomy labels (6,522 species)
+curl -L -o ~/Live_detector/models/birdnet_default/labels.txt \
+  https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt
+
+# 3. Download official Cornell BirdNET v2.4 FP32 TFLite core model (~51 MB)
+curl -L -o ~/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite \
+  https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+```
+
+---
+
 ### Step 6: Test Solar & Battery Telemetry
 Run the telemetry tool standalone to check SD card space, CPU temp, and powerbank supply:
 ```bash
@@ -172,31 +206,37 @@ python3 telemetry.py
 ============================================================
 📡 BIRDSONG OBSERVATORY - EDGE NODE TELEMETRY REPORT
 ============================================================
-🕒 Timestamp:          2026-10-19T18:00:00Z
-🌡️  CPU Temperature:    46.2 °C
-💾 SD Card Free:       24.8 GB (82.1% free)
+🕒 Timestamp:          2026-10-21T18:00:00Z
+🌡️  CPU Temperature:    40.4 °C
+💾 SD Card Free:       25.5 GB (94.0% free)
 ⚠️  SD Low Space Alert: False
-🔋 Solar Power Status: Stable Solar Powerbank Supply (5V Active)
-⚡ Under-Voltage Alert: False (Powerbank dip alert)
+🔋 Solar Power Status: Stable 5V Power Supply
+⚡ Under-Voltage Alert: False (Powerbank nominal)
 🧠 RAM Usage:          182.4 MB (18.6%)
-⏱️  System Uptime:      4.2 hours
+⏱️  System Uptime:      5.5 hours
 ============================================================
 ```
 
 ---
 
 ### Step 7: Test Run the Full Live Detector Agent Manually
-Run the supervisor manually to verify mic ingestion, windowing, and cloud connectivity:
+Run the supervisor manually to verify mic ingestion, BirdNET edge inference, live streaming, and cloud synchronization:
 ```bash
 python3 main.py
 ```
 You should see:
 ```
-[2026-10-19 18:02:00] [INFO] [LiveDetectorMain] 🌿 INITIALIZING LIVE DETECTOR AGENT: WesternGhats_Node_01
-[2026-10-19 18:02:01] [INFO] [CaptureEngine] Starting Audio Capture Worker on device: 'default' @ 48000 Hz
-[2026-10-19 18:02:01] [INFO] [LiveAudioStreamer] 📻 Live Audio HTTP Streamer listening on port 8888
-[2026-10-19 18:02:02] [INFO] [CloudUploader] Connected to Supabase successfully.
-[2026-10-19 18:02:03] [INFO] [LiveDetectorMain] 🚀 All systems operational! Beginning real-time audio analysis loop...
+[2026-10-21 18:02:00] [INFO] [LiveDetectorMain] =================================================================
+[2026-10-21 18:02:00] [INFO] [LiveDetectorMain] 🌿 INITIALIZING LIVE DETECTOR AGENT: Test_01
+[2026-10-21 18:02:00] [INFO] [LiveDetectorMain] 📍 Project Scope: Test_custom
+[2026-10-21 18:02:00] [INFO] [LiveDetectorMain] =================================================================
+[2026-10-21 18:02:01] [INFO] [CloudUploader] Connected to Supabase successfully.
+[2026-10-21 18:02:01] [INFO] [ControlManager] ControlManager connected to Supabase.
+[2026-10-21 18:02:01] [INFO] [CaptureEngine] Starting Audio Capture Worker on device: 'plughw:1,0' @ 48000 Hz
+[2026-10-21 18:02:01] [INFO] [LiveAudioStreamer] 📻 Live Audio HTTP Streamer listening on port 8888 (URL: http://<pi_ip>:8888/stream.opus)
+[2026-10-21 18:02:02] [INFO] [ControlManager] ✓ Successfully hot-loaded model 'BirdNET-Pi v2.4 (Official)' into live inference pipeline!
+[2026-10-21 18:02:02] [INFO] [BirdNetAdapter] 🌿 BirdNET GPS species filter active for (13.6288, 79.4192)
+[2026-10-21 18:02:03] [INFO] [LiveDetectorMain] 🚀 All systems operational! Beginning real-time audio analysis loop...
 ```
 *(Press `Ctrl + C` to stop the test).*
 
@@ -346,7 +386,43 @@ cd ~/Live_detector
 
 ---
 
-### Issue 9: "Under-voltage alert detected / Solar powerbank dip"
+### Issue 9: Distorted, Scratchy, or Repeating / Stuttering Live Audio
+**Cause**:
+1. **ALSA Microphone Input Gain Too High (Clipping)**: If the USB microphone capture gain in Linux is at 100% (+30 dB digital gain), all incoming sound digital-clips into a harsh, buzzy square wave.
+2. **Old Streamer Hop Loop**: In older versions, `streamer.py` was pulling from the 1.5s sliding window buffer, causing audio to repeat every 1.5 seconds.
+**Fix**:
+1. Open `alsamixer` on your Raspberry Pi:
+   ```bash
+   alsamixer
+   ```
+   - Press `F6` and select your USB Audio Device.
+   - Press `F4` to enter **Capture** settings.
+   - Lower the volume bar to **65% – 75%** (nominal green range).
+   - Press `ESC` to exit, and run `sudo alsactl store` to persist across reboots.
+2. Run `git pull` in `~/Live_detector` to ensure you have the updated `streamer.py` and `capture.py`, which use direct linear audio queues with zero overlap and zero stutter.
+
+---
+
+### Issue 10: 0 Live Detections / "Awaiting incoming species detections..." (Missing BirdNET Model)
+**Cause**: In the cloud registry, the model `BirdNET-Pi v2.4 (Official)` is assigned to your node, but the Cornell BirdNET model weights (`BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite` ~51 MB) and class labels (`labels.txt`) have not been downloaded to the Raspberry Pi yet. Without model weights, edge AI inference cannot run.  
+**Fix**:
+Download the official Cornell BirdNET v2.4 model assets onto your Raspberry Pi:
+```bash
+mkdir -p ~/Live_detector/models/birdnet_default
+
+# Download official class taxonomy (6,522 species)
+curl -L -o ~/Live_detector/models/birdnet_default/labels.txt \
+  https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt
+
+# Download official FP32 TFLite model weights (~51 MB)
+curl -L -o ~/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite \
+  https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+```
+*(Alternatively, simply running `git pull` and `python3 main.py` will now trigger the built-in auto-downloader in `control.py` to fetch them automatically).*
+
+---
+
+### Issue 11: "Under-voltage alert detected / Solar powerbank dip"
 **Cause**: Powerbank output voltage dropped below 4.63V from solar cloud cover or high resistance cable.  
 **Fix**:
 1. Use a short, thick, high-quality 20 AWG USB-C power cable.
@@ -354,7 +430,7 @@ cd ~/Live_detector
 
 ---
 
-### Issue 10: SD Card Space Filling Up
+### Issue 12: SD Card Space Filling Up
 **Behavior**: The outbox automatically removes uploaded records older than 7 days and cleans up local temporary 3s audio clips immediately after upload to Supabase storage.  
 To check free disk space manually via SSH:
 ```bash
@@ -363,9 +439,45 @@ df -h /
 
 ---
 
-## 🧠 7. Deploying Custom Models (ONNX / TFLite) via Dashboard
+## 📻 7. Audio Streaming Architecture: Direct Live Stream vs Cloud Call Clips
 
-To deploy a custom model (e.g. for Western Ghats endemics or nocturnal animals) to your Raspberry Pi without restarting it:
+The observatory provides two distinct acoustic pipelines designed for different operational workflows:
+
+```
+                  ┌───────────────────────────────────────────────┐
+                  │           Raspberry Pi Edge Node              │
+                  │   (Continuous 48 kHz Mono USB Microphone)     │
+                  └───────────────┬───────────────────────────────┘
+                                  │
+                 ┌────────────────┴────────────────┐
+                 ▼                                 ▼
+   📻 DIRECT LIVE STREAM (PORT 8888)    ☁️ CLOUD CALL CLIPS (SUPABASE)
+   • Dedicated linear streaming queue   • 3.0s sliding analysis windows
+   • Real-time Opus encoding            • BirdNET & DSP triage evaluation
+   • Sent directly to local browser     • On species detection / anomaly:
+   • 0% buffer overlap, 0% stutter        compresses to 24 KB Opus clip &
+   • Shuts down when no one listens       uploads to Supabase Storage ('clips/')
+   • Purpose: Real-time live listening  • Purpose: Click-to-play past calls
+```
+
+### 1. Direct Live Stream (Port 8888) — *Recommended for Live Field Monitoring*
+- **What it is**: Direct real-time Opus stream transmitted directly from your Raspberry Pi's local HTTP streamer on port 8888:
+  ```
+  http://<raspberry_pi_ip>:8888/stream.opus
+  ```
+- **How it works**: Uses a dedicated, non-overlapping linear audio queue connected directly to ALSA capture. Provides crystal-clear, low-latency live acoustic monitoring without disturbing AI sliding window inference.
+- **Power Efficiency**: The live encoder only runs when an active web browser is connected; when disconnected, it shuts down to conserve solar battery power.
+
+### 2. Cloud Call Clips — *Stored Historical Recordings*
+- **What it is**: High-fidelity 3.0-second `.opus` clips saved when a bird species is detected or when an anomalous acoustic event triggers the DSP triage watchdog.
+- **Where it is stored**: Uploaded to Supabase Storage in the `clips/` bucket.
+- **How it works**: These clips are linked to individual detection cards in the Live Dashboard and review queue, allowing researchers to click "Play" on any historical bird detection card to inspect the spectrogram and listen to the call.
+
+---
+
+## 🧠 8. Deploying Custom Models (ONNX / TFLite) via Dashboard
+
+To deploy a custom model (e.g. for regional endemics, nocturnal mammals, or frogs) to your Raspberry Pi without restarting it:
 
 1. Package your model into a folder:
    - `model.onnx` (or `model.tflite`)
@@ -384,3 +496,4 @@ To deploy a custom model (e.g. for Western Ghats endemics or nocturnal animals) 
 2. Upload the model files to Supabase Storage in the `models/` bucket.
 3. Insert a record into `models` and link it to your node in `node_models`.
 4. Your Raspberry Pi agent hears the update, automatically downloads the files, verifies SHA256, and begins multi-model inference on the very next 3-second window!
+

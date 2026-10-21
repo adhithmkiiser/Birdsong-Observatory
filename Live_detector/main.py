@@ -64,7 +64,7 @@ class LiveDetectorAgent:
         self.capture_worker = AudioCaptureWorker(self.ring_buffer)
         self.uploader_worker = CloudUploaderWorker(self.outbox)
         self.control_manager = ControlManager(self.active_models, self.models_lock)
-        self.stream_server = LiveAudioStreamServer(self.ring_buffer)
+        self.stream_server = LiveAudioStreamServer(self.capture_worker)
 
         # 3. Setup OS Signal Handlers
         signal.signal(signal.SIGINT, self._signal_handler)

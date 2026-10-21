@@ -23,12 +23,15 @@ class GenericTFLiteAdapter(ModelAdapter):
         self.labels = self.parse_labels(labels_path)
 
         try:
-            from tflite_runtime.interpreter import Interpreter
+            from ai_edge_litert.interpreter import Interpreter
         except ImportError:
             try:
-                from tensorflow.lite.python.interpreter import Interpreter
+                from tflite_runtime.interpreter import Interpreter
             except ImportError:
-                raise ImportError("Please install 'tflite-runtime' or 'tensorflow' for custom TFLite models.")
+                try:
+                    from tensorflow.lite.python.interpreter import Interpreter
+                except ImportError:
+                    raise ImportError("Please install 'tflite-runtime', 'ai-edge-litert', or 'tensorflow' for custom TFLite models.")
 
         self.interpreter = Interpreter(model_path=model_path, num_threads=4)
         self.interpreter.allocate_tensors()

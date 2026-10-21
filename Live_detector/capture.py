@@ -23,6 +23,20 @@ class AudioCaptureWorker(threading.Thread):
         self.device = device
         self.running = False
         self.process = None
+        self._stream_listeners = []
+        self._listeners_lock = threading.Lock()
+
+    def add_stream_listener(self, queue_obj):
+        """Register a queue to receive real-time linear raw audio bytes without disturbing AI inference."""
+        with self._listeners_lock:
+            if queue_obj not in self._stream_listeners:
+                self._stream_listeners.append(queue_obj)
+
+    def remove_stream_listener(self, queue_obj):
+        """Deregister an active streaming listener."""
+        with self._listeners_lock:
+            if queue_obj in self._stream_listeners:
+                self._stream_listeners.remove(queue_obj)
 
     def run(self):
         self.running = True
@@ -60,9 +74,17 @@ class AudioCaptureWorker(threading.Thread):
                         logger.warning("Capture stream returned empty bytes. Device may have disconnected.")
                         break
 
-                    # Convert raw bytes to numpy float32 array
+                    # Convert raw bytes to numpy float32 array for AI sliding window ring buffer
                     samples = np.frombuffer(raw_bytes, dtype=np.float32)
                     self.ring_buffer.write(samples)
+
+                    # Also broadcast linear raw bytes directly to any connected live audio listeners
+                    with self._listeners_lock:
+                        for q in list(self._stream_listeners):
+                            try:
+                                q.put_nowait(raw_bytes)
+                            except Exception:
+                                pass
 
             except FileNotFoundError:
                 logger.error("FFmpeg not found! Falling back to sounddevice library...")

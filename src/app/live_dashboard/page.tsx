@@ -158,16 +158,20 @@ export default function LiveDashboardPage() {
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
 
   // Live Audio & Detection Streaming States
+  const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
   const [isLiveAudioPlaying, setIsLiveAudioPlaying] = useState(false);
-  const [liveAudioSource, setLiveAudioSource] = useState<'cloud' | 'direct'>('cloud');
+  const [liveAudioSource, setLiveAudioSource] = useState<'cloud' | 'direct'>('direct');
   const [directStreamUrl, setDirectStreamUrl] = useState('http://livedetector.local:8888/stream.opus');
-  const [selectedStreamNode, setSelectedStreamNode] = useState('WesternGhats_Node_01');
+  const [selectedStreamNode, setSelectedStreamNode] = useState('Test_01');
   const [liveAudioVolume, setLiveAudioVolume] = useState(0.85);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [autoPlayOnDetection, setAutoPlayOnDetection] = useState(false);
   const [currentCloudClipIndex, setCurrentCloudClipIndex] = useState(0);
   const [lastLiveDetectionId, setLastLiveDetectionId] = useState<any>(null);
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
+
+  // RBAC Permission: Only managers and admins can monitor live edge audio & spectrogram
+  const canAccessLiveStream = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
 
   // Read initial tab from URL
   useEffect(() => {
@@ -198,6 +202,24 @@ export default function LiveDashboardPage() {
       setLoading(true);
       setLoadingProgress(20);
       try {
+        // 1. Fetch from server admin API for bypass of client RLS
+        let adminTelemetry: any[] = [];
+        let adminRecorders: any[] = [];
+        let adminProjects: any[] = [];
+        try {
+          const adminRes = await fetch('/api/live/admin');
+          if (adminRes.ok) {
+            const adminJson = await adminRes.json();
+            if (adminJson.success) {
+              adminTelemetry = adminJson.telemetry || [];
+              adminRecorders = adminJson.recorders || [];
+              adminProjects = adminJson.projects || [];
+            }
+          }
+        } catch (e) {
+          console.warn('API live admin fetch note:', e);
+        }
+
         const [
           { data: projs },
           { data: recordersData },
@@ -215,6 +237,10 @@ export default function LiveDashboardPage() {
           supabase.from('window_summaries').select('*').order('timestamp', { ascending: false }).limit(100),
           supabase.from('live_detections').select('*', { count: 'exact', head: true })
         ]);
+
+        const combinedTelemetry = adminTelemetry.length > 0 ? adminTelemetry : (telemetryData || []);
+        const combinedRecorders = adminRecorders.length > 0 ? adminRecorders : (recordersData || []);
+        const combinedProjects = adminProjects.length > 0 ? adminProjects : (projs || []);
 
         const totalCount = liveCount || 0;
         let detData: any[] = [];
@@ -241,7 +267,7 @@ export default function LiveDashboardPage() {
         if (!isCurrent) return;
         setLoadingProgress(prev => Math.max(prev, 70));
 
-        let scopedProjs = projs || [];
+        let scopedProjs = combinedProjects;
         let rawSites = sitesData || [];
 
         // Apply RBAC filters to projects and sites
@@ -267,27 +293,27 @@ export default function LiveDashboardPage() {
           setSelectedProjectId(scopedProjs[0].id);
         }
 
-        // Scope hardware nodes, plus auto-synthesize any active nodes from telemetry
-        let scopedRecorders = [...(recordersData || [])];
-        if (telemetryData && telemetryData.length > 0) {
+        // Scope hardware nodes, and auto-link any active nodes from telemetry
+        let scopedRecorders = [...combinedRecorders];
+        if (combinedTelemetry && combinedTelemetry.length > 0) {
           const existingIds = new Set(scopedRecorders.map((r: any) => r.recorder_id));
-          for (const tel of telemetryData) {
+          for (const tel of combinedTelemetry) {
             const sid = tel.node_id || tel.station_id;
             if (sid && !existingIds.has(sid)) {
               existingIds.add(sid);
               scopedRecorders.push({
-                id: `auto::${sid}`,
+                id: sid,
                 project_type: 'Live',
-                project_name: 'Western Ghats Biodiversity Monitoring',
-                site_name: 'Western Ghats Canopy',
+                project_name: scopedProjs[0]?.name || 'Test_custom',
+                site_name: 'Tirupati',
                 recorder_id: sid,
                 status: 'online',
-                lat: 11.3419,
-                long: 76.6437,
-                elevation: 1420,
+                lat: 13.6288,
+                long: 79.4192,
+                elevation: null,
                 last_ping: tel.ping_time || tel.timestamp || new Date().toISOString(),
                 battery_level: tel.battery_level ?? (tel.battery_capacity_percent ? Math.round(tel.battery_capacity_percent) : 100),
-                cpu_temperature: tel.cpu_temp_c ?? tel.cpu_temperature ?? 40.9,
+                cpu_temperature: tel.cpu_temp_c ?? tel.cpu_temperature ?? 40.4,
                 storage_used_percent: tel.disk_usage ?? 6,
                 firmware_version: 'v2.4'
               });
@@ -313,8 +339,8 @@ export default function LiveDashboardPage() {
         setSpeciesEcologyMap(ecoMap);
 
         const tMap: Record<string, any> = {};
-        if (telemetryData && telemetryData.length > 0) {
-          for (const t of telemetryData) {
+        if (combinedTelemetry && combinedTelemetry.length > 0) {
+          for (const t of combinedTelemetry) {
             const nId = t.node_id || t.station_id;
             if (nId && !tMap[nId]) tMap[nId] = t;
             if (t.station_id && !tMap[t.station_id]) tMap[t.station_id] = t;
@@ -327,6 +353,17 @@ export default function LiveDashboardPage() {
         setStationsList(scopedRecorders);
         setSitesList(liveSites);
         setDetections(dedupeDetections(detData || []));
+
+        if (scopedRecorders.length > 0) {
+          setSelectedStreamNode((prev) => {
+            const hasPrev = scopedRecorders.some(r => (r.recorder_id || r.id) === prev);
+            if (!prev || !hasPrev) {
+              return scopedRecorders[0].recorder_id || scopedRecorders[0].id;
+            }
+            return prev;
+          });
+        }
+
         setLoadingProgress(100);
       } catch (err) {
         console.error('Failed to load Live Dashboard data:', err);
@@ -631,9 +668,9 @@ export default function LiveDashboardPage() {
     });
   }, [windowSummaries, triageFilterStatus, triageFilterFlag, selectedStationId, selectedProjectId, availableStations]);
 
-  // Audio clips available for the selected stream node from window_summaries
+  // Audio clips available for the selected stream node from window_summaries & live_detections
   const nodeClips = useMemo(() => {
-    return windowSummaries
+    const fromWindows = windowSummaries
       .filter(w => (!selectedStreamNode || w.node_id === selectedStreamNode) && w.clip_path)
       .map(w => ({
         window_id: w.window_id,
@@ -642,7 +679,46 @@ export default function LiveDashboardPage() {
         snr_db: w.snr_db,
         species: w.species_detected
       }));
-  }, [windowSummaries, selectedStreamNode]);
+    const fromDetections = detections
+      .filter(d => (!selectedStreamNode || d.recorder_id === selectedStreamNode || d.station_id === selectedStreamNode) && d.audio_url)
+      .map(d => ({
+        window_id: d.id || `${d.common_name}_${d.timestamp}`,
+        clip_path: d.audio_url!,
+        timestamp: d.timestamp,
+        snr_db: 14.0,
+        species: [d.common_name]
+      }));
+    return [...fromWindows, ...fromDetections];
+  }, [windowSummaries, detections, selectedStreamNode]);
+
+  // Start and open live stream on demand
+  const handleOpenAndStartLiveStream = () => {
+    setIsLiveStreamActive(true);
+    setTimeout(() => {
+      if (!liveAudioElementRef.current) return;
+      const targetUrl = liveAudioSource === 'direct' 
+        ? directStreamUrl 
+        : (nodeClips.length > 0 ? nodeClips[0].clip_path : directStreamUrl);
+      
+      liveAudioElementRef.current.src = targetUrl;
+      liveAudioElementRef.current.play().then(() => {
+        setIsLiveAudioPlaying(true);
+      }).catch(err => {
+        console.warn('Live audio play request interrupted:', err);
+      });
+    }, 100);
+  };
+
+  // Completely turn off and disconnect stream
+  const handleCloseLiveStream = () => {
+    if (liveAudioElementRef.current) {
+      liveAudioElementRef.current.pause();
+      liveAudioElementRef.current.src = '';
+      liveAudioElementRef.current.load();
+    }
+    setIsLiveAudioPlaying(false);
+    setIsLiveStreamActive(false);
+  };
 
   // Handle Play / Pause for Live Audio
   const handleToggleLiveAudio = () => {
@@ -652,14 +728,10 @@ export default function LiveDashboardPage() {
       liveAudioElementRef.current.pause();
       setIsLiveAudioPlaying(false);
     } else {
-      if (liveAudioSource === 'direct') {
-        liveAudioElementRef.current.src = directStreamUrl;
-      } else {
-        if (nodeClips.length > 0) {
-          liveAudioElementRef.current.src = nodeClips[currentCloudClipIndex % nodeClips.length].clip_path;
-        } else {
-          liveAudioElementRef.current.src = 'https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/clips/Western%20Ghats%20Biodiversity%20Monitoring/WesternGhats_Node_01/WesternGhats_Node_01_20261021_092103_560.opus';
-        }
+      if (!liveAudioElementRef.current.src || liveAudioElementRef.current.src === window.location.href) {
+        liveAudioElementRef.current.src = liveAudioSource === 'direct'
+          ? directStreamUrl
+          : (nodeClips.length > 0 ? nodeClips[currentCloudClipIndex % nodeClips.length].clip_path : directStreamUrl);
       }
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
@@ -668,6 +740,13 @@ export default function LiveDashboardPage() {
       });
     }
   };
+
+  // Auto turn off stream when switching to another tab
+  useEffect(() => {
+    if (activeTab !== 'live' && isLiveStreamActive) {
+      handleCloseLiveStream();
+    }
+  }, [activeTab, isLiveStreamActive]);
 
   // Sync volume & mute state
   useEffect(() => {
@@ -1007,8 +1086,8 @@ export default function LiveDashboardPage() {
           const activeStation = availableStations.find((s: any) => s.recorder_id === selectedStationId) || 
                                 availableStations.find((s: any) => s.status === 'online') || 
                                 availableStations[0];
-          const primaryLat = Number(activeStation?.lat ?? activeStation?.latitude ?? 11.3419);
-          const primaryLong = Number(activeStation?.long ?? activeStation?.longitude ?? 76.6437);
+          const primaryLat = Number(activeStation?.lat ?? activeStation?.latitude ?? 13.6288);
+          const primaryLong = Number(activeStation?.long ?? activeStation?.longitude ?? 79.4192);
           const mapCenter: [number, number] = [primaryLat, primaryLong];
 
           return (
@@ -1029,14 +1108,14 @@ export default function LiveDashboardPage() {
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="font-bold text-sm text-[#1a1f1c]">
-                      {activeStation?.site_name || activeStation?.recorder_id || 'Western Ghats Canopy'}
+                      {activeStation?.site_name || activeStation?.recorder_id || 'Tirupati (Test_01)'}
                     </span>
                     <span className="font-mono text-[11px] bg-white text-[#1f4d3a] border border-[#dde1dc] px-2 py-0.5 rounded font-semibold">
-                      {activeStation?.recorder_id || 'WesternGhats_Node_01'}
+                      {activeStation?.recorder_id || 'Test_01'}
                     </span>
                   </div>
                   <div className="text-xs text-[#5a635d]">
-                    Project: <strong className="text-[#1a1f1c]">{activeStation?.project_name || 'Western Ghats Biodiversity Monitoring'}</strong>
+                    Project: <strong className="text-[#1a1f1c]">{activeStation?.project_name || 'Test_custom'}</strong>
                   </div>
                 </div>
 
@@ -1068,8 +1147,8 @@ export default function LiveDashboardPage() {
                     name: s.site_name || s.recorder_id,
                     site_group: s.site_name || s.recorder_id,
                     recorder_id: s.recorder_id || s.id || 'Node',
-                    lat: Number(s.lat ?? s.latitude ?? 11.3419),
-                    lng: Number(s.long ?? s.longitude ?? 76.6437),
+                    lat: Number(s.lat ?? s.latitude ?? 13.6288),
+                    lng: Number(s.long ?? s.longitude ?? 79.4192),
                     detectionsCount: filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).length,
                     speciesCount: new Set(filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).map(d => d.common_name)).size,
                     color: s.status === 'online' ? '#1f4d3a' : '#943a29'
@@ -1267,7 +1346,7 @@ export default function LiveDashboardPage() {
                       </option>
                     ))}
                     {availableStations.length === 0 && (
-                      <option value="WesternGhats_Node_01">WesternGhats_Node_01 (Live)</option>
+                      <option value="Test_01">Test_01 (Live)</option>
                     )}
                   </select>
                 </div>
@@ -1276,12 +1355,12 @@ export default function LiveDashboardPage() {
 
             {/* Quick Live Telemetry Diagnostic Cards */}
             {(() => {
-              const activeTel = telemetryMap[selectedStreamNode] || telemetryMap['WesternGhats_Node_01'];
-              const cpuVal = activeTel?.cpu_temp_c ?? activeTel?.cpu_temperature ?? 40.9;
-              const battVal = activeTel?.battery_capacity_percent ?? activeTel?.battery_level ?? 100;
-              const voltVal = activeTel?.battery_voltage_v ?? 5.05;
-              const diskVal = activeTel?.disk_free_gb ?? 219.4;
-              const isCool = cpuVal < 60;
+              const activeTel = telemetryMap[selectedStreamNode] || telemetryMap['Test_01'] || null;
+              const cpuVal = activeTel?.cpu_temp_c ?? activeTel?.cpu_temperature ?? null;
+              const battVal = activeTel?.battery_capacity_percent ?? activeTel?.battery_level ?? null;
+              const voltVal = activeTel?.battery_voltage_v ?? null;
+              const diskVal = activeTel?.disk_free_gb ?? null;
+              const isCool = cpuVal != null ? cpuVal < 60 : true;
 
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1289,10 +1368,10 @@ export default function LiveDashboardPage() {
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
                       <Cpu className="w-3 h-3 text-[#1f4d3a]" /> Edge Station
                     </span>
-                    <div className="text-sm font-bold font-mono text-[#1a1f1c] truncate">{selectedStreamNode}</div>
+                    <div className="text-sm font-bold font-mono text-[#1a1f1c] truncate">{selectedStreamNode || 'Test_01'}</div>
                     <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                      Online &bull; Streaming Active
+                      {activeTel ? 'Online • Ingesting' : 'Connected'}
                     </div>
                   </div>
 
@@ -1301,10 +1380,10 @@ export default function LiveDashboardPage() {
                       <Sun className="w-3 h-3 text-amber-500" /> Solar / Battery
                     </span>
                     <div className="text-sm font-bold font-mono text-[#1a1f1c]">
-                      {battVal}% &bull; {voltVal.toFixed(2)}V
+                      {battVal != null ? `${Math.round(battVal)}%` : '--'}{voltVal != null ? ` • ${voltVal.toFixed(2)}V` : ''}
                     </div>
                     <div className="text-[10px] text-[#5a635d] truncate">
-                      {activeTel?.power_status || 'Stable Solar Powerbank'}
+                      {activeTel?.power_status || (battVal != null ? 'Active Power Supply' : 'Awaiting Telemetry')}
                     </div>
                   </div>
 
@@ -1312,9 +1391,11 @@ export default function LiveDashboardPage() {
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
                       <Thermometer className="w-3 h-3 text-[#1f4d3a]" /> CPU Temperature
                     </span>
-                    <div className="text-sm font-bold font-mono text-[#1a1f1c]">{cpuVal.toFixed(1)} °C</div>
+                    <div className="text-sm font-bold font-mono text-[#1a1f1c]">
+                      {cpuVal != null ? `${cpuVal.toFixed(1)} °C` : '--'}
+                    </div>
                     <div className={`text-[10px] font-semibold ${isCool ? 'text-emerald-700' : 'text-amber-700'}`}>
-                      {isCool ? 'Cool & Nominal' : 'Warm'}
+                      {cpuVal != null ? (isCool ? 'Cool & Nominal' : 'Warm') : 'Awaiting Sensor'}
                     </div>
                   </div>
 
@@ -1322,202 +1403,272 @@ export default function LiveDashboardPage() {
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
                       <HardDrive className="w-3 h-3 text-[#1f4d3a]" /> Storage Free
                     </span>
-                    <div className="text-sm font-bold font-mono text-[#1a1f1c]">{diskVal.toFixed(1)} GB Free</div>
-                    <div className="text-[10px] text-emerald-700 font-semibold">MicroSD Expanded</div>
+                    <div className="text-sm font-bold font-mono text-[#1a1f1c]">
+                      {diskVal != null ? `${diskVal.toFixed(1)} GB Free` : '--'}
+                    </div>
+                    <div className="text-[10px] text-emerald-700 font-semibold">
+                      {activeTel?.disk_percent_free != null ? `${Math.round(activeTel.disk_percent_free)}% Available` : (diskVal != null ? 'MicroSD Storage' : 'Awaiting Storage')}
+                    </div>
                   </div>
                 </div>
               );
             })()}
 
-            {/* 2. MASTER LIVE AUDIO PLAYER BANNER */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a1e16] via-[#123627] to-[#0d281e] p-6 text-white shadow-lg border border-[#1f4d3a]">
-              {/* Invisible HTML Audio Element */}
-              <audio
-                ref={liveAudioElementRef}
-                onEnded={() => {
-                  if (liveAudioSource === 'cloud' && nodeClips.length > 0) {
-                    setCurrentCloudClipIndex((prev) => (prev + 1) % nodeClips.length);
-                  }
-                }}
-                onError={() => {
-                  console.warn('Live audio playback error. Checking fallback clip...');
-                }}
-              />
+            {/* Hidden HTML Audio Element always available in DOM */}
+            <audio
+              ref={liveAudioElementRef}
+              onEnded={() => {
+                if (liveAudioSource === 'cloud' && nodeClips.length > 0) {
+                  setCurrentCloudClipIndex((prev) => (prev + 1) % nodeClips.length);
+                }
+              }}
+              onError={() => {
+                console.warn('Live audio playback error. Checking fallback clip...');
+              }}
+            />
 
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                {/* Left: Player status & Controls */}
-                <div className="space-y-4">
+            {/* 2. MASTER LIVE AUDIO PLAYER BANNER - ON DEMAND & RBAC PROTECTED */}
+            {!canAccessLiveStream ? (
+              <div className="p-6 rounded-2xl bg-[#f8faf8] border border-[#dde1dc] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-800 font-semibold text-xs">
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    <span>RESTRICTED ACCESS: LIVE EDGE AUDIO &amp; SPECTROGRAM</span>
+                  </div>
+                  <h3 className="text-lg font-serif font-bold text-[#1a1f1c]">
+                    Observatory Manager &amp; Admin Access Required
+                  </h3>
+                  <p className="text-xs text-[#5a635d] max-w-xl leading-relaxed">
+                    Direct real-time microphone acoustic streaming and edge spectrogram visualization are reserved for authenticated Project Managers, Site Managers, and System Administrators. Public observers can monitor incoming species classifications and detection feeds below.
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#dde1dc] text-[#5a635d] text-xs font-mono">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#1f4d3a]" />
+                    Current Role: {currentRole}
+                  </span>
+                </div>
+              </div>
+            ) : !isLiveStreamActive ? (
+              /* Standby Card with activation trigger */
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0e271d] via-[#163c2c] to-[#0a1e16] p-6 text-white shadow-md border border-[#1f4d3a] flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                      isLiveAudioPlaying
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
-                        : 'bg-white/10 text-white/70 border border-white/20'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${isLiveAudioPlaying ? 'bg-emerald-400 animate-ping' : 'bg-gray-400'}`}></span>
-                      {isLiveAudioPlaying ? 'AUDIO STREAMING ACTIVE' : 'AUDIO PAUSED'}
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-white/10 text-emerald-300 border border-white/20">
+                      Standby Mode
                     </span>
-
-                    <span className="text-xs font-mono text-emerald-200/70">
-                      {liveAudioSource === 'cloud' ? '☁️ Cloud Relay (Synchronized 3s Clips)' : '📻 Direct Edge Stream (Port 8888)'}
+                    <span className="text-xs font-mono text-emerald-200/80">
+                      Edge Stream Disconnected (Conserving Bandwidth &amp; Pi Compute)
                     </span>
                   </div>
-
                   <div>
-                    <h3 className="text-2xl font-bold font-serif tracking-tight text-white">
-                      {selectedStreamNode} Live Audio Feed
+                    <h3 className="text-xl font-bold font-serif text-white">
+                      Live Edge Audio &amp; Real-Time Spectrogram
                     </h3>
-                    <p className="text-xs text-white/70 mt-1 max-w-xl">
-                      {liveAudioSource === 'cloud'
-                        ? `Relaying high-fidelity Opus clips uploaded directly by ${selectedStreamNode}. Real-time synchronization active.`
-                        : `Streaming live audio directly from local edge streamer at ${directStreamUrl}.`}
+                    <p className="text-xs text-white/70 max-w-xl mt-1 leading-relaxed">
+                      Connect to {selectedStreamNode} to listen to the live acoustic feed on port 8888 and visualize real-time avian frequency spectrums. Stream will immediately disconnect when turned off.
                     </p>
                   </div>
-
-                  {/* Play / Pause & Volume Controls */}
-                  <div className="flex items-center gap-4 flex-wrap pt-1">
-                    <button
-                      onClick={handleToggleLiveAudio}
-                      className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer ${
+                </div>
+                <div className="shrink-0 flex items-center gap-3">
+                  <button
+                    onClick={handleOpenAndStartLiveStream}
+                    className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16] font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer hover:shadow-lg"
+                  >
+                    <Radio className="w-4 h-4 text-[#0a1e16] animate-pulse" />
+                    <span>Connect Live Audio &amp; Spectrogram Stream</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Active Stream Banner with Disconnect Button */
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a1e16] via-[#123627] to-[#0d281e] p-6 text-white shadow-lg border border-[#1f4d3a] space-y-6">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  {/* Left: Player status & Controls */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                         isLiveAudioPlaying
-                          ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                          : 'bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16]'
-                      }`}
-                    >
-                      {isLiveAudioPlaying ? (
-                        <>
-                          <Pause className="w-4 h-4 fill-current" />
-                          <span>Mute / Pause Stream</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 fill-current ml-0.5" />
-                          <span>Listen to Live Audio</span>
-                        </>
-                      )}
-                    </button>
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
+                          : 'bg-white/10 text-white/70 border border-white/20'
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${isLiveAudioPlaying ? 'bg-emerald-400 animate-ping' : 'bg-gray-400'}`}></span>
+                        {isLiveAudioPlaying ? 'AUDIO STREAMING ACTIVE' : 'AUDIO PAUSED'}
+                      </span>
 
-                    {/* Volume Slider */}
-                    <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                      <button
-                        onClick={() => setIsAudioMuted(!isAudioMuted)}
-                        className="text-white/80 hover:text-white cursor-pointer"
-                        title={isAudioMuted ? 'Unmute' : 'Mute'}
-                      >
-                        {isAudioMuted || liveAudioVolume === 0 ? (
-                          <VolumeX className="w-4 h-4 text-rose-400" />
-                        ) : (
-                          <Volume2 className="w-4 h-4" />
-                        )}
-                      </button>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={isAudioMuted ? 0 : liveAudioVolume}
-                        onChange={(e) => {
-                          setLiveAudioVolume(parseFloat(e.target.value));
-                          setIsAudioMuted(false);
-                        }}
-                        className="w-20 accent-emerald-400 h-1.5 cursor-pointer"
-                      />
-                      <span className="text-[10px] font-mono text-white/70 w-7">
-                        {isAudioMuted ? '0%' : `${Math.round(liveAudioVolume * 100)}%`}
+                      <span className="text-xs font-mono text-emerald-200/70">
+                        {liveAudioSource === 'cloud' ? '☁️ Cloud Call Clips (Stored 3s Detections)' : '📻 Direct Edge Stream (Port 8888)'}
                       </span>
                     </div>
 
-                    {/* Auto-Play on New Detection Toggle */}
-                    <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={autoPlayOnDetection}
-                        onChange={(e) => setAutoPlayOnDetection(e.target.checked)}
-                        className="accent-emerald-400 rounded cursor-pointer"
-                      />
-                      <span className="text-[11px] font-medium">Auto-play on new detection</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Right: Audio Visualizer & Source Toggle */}
-                <div className="w-full lg:w-80 flex flex-col items-center lg:items-end justify-between gap-4">
-                  {/* Source Toggle Pills */}
-                  <div className="flex items-center bg-black/30 p-1 rounded-xl border border-white/10 text-xs font-mono">
-                    <button
-                      onClick={() => {
-                        setLiveAudioSource('cloud');
-                        setIsLiveAudioPlaying(false);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                        liveAudioSource === 'cloud'
-                          ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                          : 'text-white/70 hover:text-white'
-                      }`}
-                    >
-                      ☁️ Cloud Relay
-                    </button>
-                    <button
-                      onClick={() => {
-                        setLiveAudioSource('direct');
-                        setIsLiveAudioPlaying(false);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                        liveAudioSource === 'direct'
-                          ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                          : 'text-white/70 hover:text-white'
-                      }`}
-                    >
-                      📻 Direct Pi LAN
-                    </button>
-                  </div>
-
-                  {/* 28-Bar Animated Bioacoustic Equalizer Bars */}
-                  <div className="w-full bg-black/20 p-4 rounded-xl border border-white/10 flex flex-col items-center gap-2">
-                    <div className="flex items-end justify-between gap-1 w-full h-14 px-2">
-                      {Array.from({ length: 28 }).map((_, i) => {
-                        const heights = [
-                          'h-2', 'h-4', 'h-7', 'h-10', 'h-12', 'h-8', 'h-5',
-                          'h-9', 'h-13', 'h-11', 'h-6', 'h-10', 'h-14', 'h-9',
-                          'h-4', 'h-8', 'h-11', 'h-13', 'h-7', 'h-10', 'h-5',
-                          'h-3', 'h-6', 'h-9', 'h-12', 'h-8', 'h-4', 'h-2'
-                        ];
-                        const activeHeight = heights[i % heights.length];
-                        return (
-                          <div
-                            key={i}
-                            className={`w-1 rounded-full transition-all duration-150 ${
-                              isLiveAudioPlaying
-                                ? `${activeHeight} bg-gradient-to-t from-emerald-500 to-teal-300 animate-pulse`
-                                : 'h-1.5 bg-white/20'
-                            }`}
-                            style={{
-                              animationDelay: `${(i * 45) % 800}ms`
-                            }}
-                          />
-                        );
-                      })}
+                    <div>
+                      <h3 className="text-2xl font-bold font-serif tracking-tight text-white">
+                        {selectedStreamNode} Live Audio Feed
+                      </h3>
+                      <p className="text-xs text-white/70 mt-1 max-w-xl">
+                        {liveAudioSource === 'cloud'
+                          ? `Playing 3-second audio call clips stored in cloud storage for ${selectedStreamNode}.`
+                          : `Streaming continuous live microphone audio directly from edge hardware at ${directStreamUrl}.`}
+                      </p>
                     </div>
-                    <div className="flex items-center justify-between w-full text-[10px] font-mono text-white/50 px-1">
-                      <span>150 Hz</span>
-                      <span>Avian Vocal Range (1.2–8 kHz)</span>
-                      <span>20 kHz</span>
+
+                    {/* Play / Pause & Volume Controls */}
+                    <div className="flex items-center gap-4 flex-wrap pt-1">
+                      <button
+                        onClick={handleToggleLiveAudio}
+                        className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer ${
+                          isLiveAudioPlaying
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                            : 'bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16]'
+                        }`}
+                      >
+                        {isLiveAudioPlaying ? (
+                          <>
+                            <Pause className="w-4 h-4 fill-current" />
+                            <span>Mute / Pause Stream</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                            <span>Listen to Live Audio</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Volume Slider */}
+                      <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+                        <button
+                          onClick={() => setIsAudioMuted(!isAudioMuted)}
+                          className="text-white/80 hover:text-white cursor-pointer"
+                          title={isAudioMuted ? 'Unmute' : 'Mute'}
+                        >
+                          {isAudioMuted || liveAudioVolume === 0 ? (
+                            <VolumeX className="w-4 h-4 text-rose-400" />
+                          ) : (
+                            <Volume2 className="w-4 h-4" />
+                          )}
+                        </button>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={isAudioMuted ? 0 : liveAudioVolume}
+                          onChange={(e) => {
+                            setLiveAudioVolume(parseFloat(e.target.value));
+                            setIsAudioMuted(false);
+                          }}
+                          className="w-20 accent-emerald-400 h-1.5 cursor-pointer"
+                        />
+                        <span className="text-[10px] font-mono text-white/70 w-7">
+                          {isAudioMuted ? '0%' : `${Math.round(liveAudioVolume * 100)}%`}
+                        </span>
+                      </div>
+
+                      {/* Auto-Play on New Detection Toggle */}
+                      <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={autoPlayOnDetection}
+                          onChange={(e) => setAutoPlayOnDetection(e.target.checked)}
+                          className="accent-emerald-400 rounded cursor-pointer"
+                        />
+                        <span className="text-[11px] font-medium">Auto-play on new detection</span>
+                      </label>
+
+                      {/* Turn Off Stream & Disconnect Button */}
+                      <button
+                        onClick={handleCloseLiveStream}
+                        className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Turn off live stream and disconnect audio"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Turn Off Stream &amp; Disconnect</span>
+                      </button>
                     </div>
                   </div>
 
-                  {liveAudioSource === 'direct' && (
-                    <div className="w-full flex items-center gap-2 text-[11px] font-mono">
-                      <input
-                        type="text"
-                        value={directStreamUrl}
-                        onChange={(e) => setDirectStreamUrl(e.target.value)}
-                        placeholder="http://livedetector.local:8888/stream.opus"
-                        className="bg-black/30 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full focus:outline-none"
-                      />
+                  {/* Right: Audio Visualizer & Source Toggle */}
+                  <div className="w-full lg:w-80 flex flex-col items-center lg:items-end justify-between gap-4">
+                    {/* Source Toggle Pills */}
+                    <div className="flex items-center bg-black/30 p-1 rounded-xl border border-white/10 text-xs font-mono">
+                      <button
+                        onClick={() => {
+                          setLiveAudioSource('direct');
+                          setIsLiveAudioPlaying(false);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          liveAudioSource === 'direct'
+                            ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                      >
+                        📻 Direct Live (8888)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLiveAudioSource('cloud');
+                          setIsLiveAudioPlaying(false);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          liveAudioSource === 'cloud'
+                            ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                        title="Play recorded 3-second call clips uploaded to cloud storage"
+                      >
+                        ☁️ Cloud Call Clips
+                      </button>
                     </div>
-                  )}
+
+                    {/* 28-Bar Animated Bioacoustic Equalizer Bars */}
+                    <div className="w-full bg-black/20 p-4 rounded-xl border border-white/10 flex flex-col items-center gap-2">
+                      <div className="flex items-end justify-between gap-1 w-full h-14 px-2">
+                        {Array.from({ length: 28 }).map((_, i) => {
+                          const heights = [
+                            'h-2', 'h-4', 'h-7', 'h-10', 'h-12', 'h-8', 'h-5',
+                            'h-9', 'h-13', 'h-11', 'h-6', 'h-10', 'h-14', 'h-9',
+                            'h-4', 'h-8', 'h-11', 'h-13', 'h-7', 'h-10', 'h-5',
+                            'h-3', 'h-6', 'h-9', 'h-12', 'h-8', 'h-4', 'h-2'
+                          ];
+                          const activeHeight = heights[i % heights.length];
+                          return (
+                            <div
+                              key={i}
+                              className={`w-1 rounded-full transition-all duration-150 ${
+                                isLiveAudioPlaying
+                                  ? `${activeHeight} bg-gradient-to-t from-emerald-500 to-teal-300 animate-pulse`
+                                  : 'h-1.5 bg-white/20'
+                              }`}
+                              style={{
+                                animationDelay: `${(i * 45) % 800}ms`
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between w-full text-[10px] font-mono text-white/50 px-1">
+                        <span>150 Hz</span>
+                        <span>Avian Vocal Range (1.2–8 kHz)</span>
+                        <span>20 kHz</span>
+                      </div>
+                    </div>
+
+                    {liveAudioSource === 'direct' && (
+                      <div className="w-full flex items-center gap-2 text-[11px] font-mono">
+                        <input
+                          type="text"
+                          value={directStreamUrl}
+                          onChange={(e) => setDirectStreamUrl(e.target.value)}
+                          placeholder="http://livedetector.local:8888/stream.opus"
+                          className="bg-black/30 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* 3. REALTIME BIOACOUSTIC DETECTIONS STREAM */}
             <div className="dashboard-section space-y-4">
@@ -1593,7 +1744,7 @@ export default function LiveDashboardPage() {
                             {clip.window_id}
                           </div>
                           <div className="text-[10px] font-mono text-[#5a635d] flex items-center gap-2 flex-wrap">
-                            <span className="text-[#1f4d3a] font-semibold">{selectedStreamNode || 'WesternGhats_Node_01'}</span>
+                            <span className="text-[#1f4d3a] font-semibold">{selectedStreamNode || 'Test_01'}</span>
                             <span>&bull;</span>
                             <span>{clip.timestamp ? new Date(clip.timestamp).toLocaleTimeString() : 'Just now'}</span>
                             <span>&bull;</span>
@@ -1971,12 +2122,12 @@ export default function LiveDashboardPage() {
               ) : (
                 availableStations.map((stn: any) => {
                   const isOnline = stn.status === 'online' || true;
-                  const tel = telemetryMap[stn.recorder_id] || telemetryMap[stn.id] || telemetryMap[stn.station_id] || (stn.recorder_id === 'WesternGhats_Node_01' ? telemetryMap['WesternGhats_Node_01'] : null);
+                  const tel = telemetryMap[stn.recorder_id] || telemetryMap[stn.id] || telemetryMap[stn.station_id] || null;
                   const hasTel = !!tel;
                   const cpuTemp = tel?.cpu_temp_c ?? tel?.cpu_temperature ?? (stn.cpu_temperature != null ? Number(stn.cpu_temperature) : null);
-                  const diskFree = tel?.disk_free_gb ?? (stn.recorder_id === 'WesternGhats_Node_01' ? 219.4 : null);
+                  const diskFree = tel?.disk_free_gb ?? null;
                   const diskPercent = tel?.disk_percent_free ?? (tel?.disk_usage != null ? 100 - Number(tel.disk_usage) : (stn.storage_used_percent != null ? 100 - Number(stn.storage_used_percent) : null));
-                  const batteryVolt = tel?.battery_voltage_v ?? (stn.recorder_id === 'WesternGhats_Node_01' ? 5.05 : null);
+                  const batteryVolt = tel?.battery_voltage_v ?? null;
                   const powerStatus = tel?.power_status || (tel?.battery_capacity_percent != null ? `Battery ${Math.round(tel.battery_capacity_percent)}%` : (stn.battery_level != null ? `Battery ${stn.battery_level}%` : 'Awaiting Telemetry'));
                   const hasUnderVoltage = tel?.under_voltage_flag;
 
@@ -2061,7 +2212,7 @@ export default function LiveDashboardPage() {
 
                         <button
                           onClick={() => {
-                            setSelectedStreamNode(stn.recorder_id || 'WesternGhats_Node_01');
+                            setSelectedStreamNode(stn.recorder_id || 'Test_01');
                             setActiveTab('live');
                           }}
                           className="px-3 py-1.5 rounded-lg bg-[#1f4d3a] hover:bg-[#163a2b] text-white text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"

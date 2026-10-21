@@ -196,15 +196,15 @@ export default function LiveAdminPage() {
   // ----------------------------------------------------------------------------
   // State: Generator & SSH Playbook
   // ----------------------------------------------------------------------------
-  const [genStationName, setGenStationName] = useState('Western Ghats Canopy');
-  const [genProjectName, setGenProjectName] = useState('Western Ghats Biodiversity Monitoring');
-  const [genRecorderId, setGenRecorderId] = useState('WesternGhats_Node_01');
+  const [genStationName, setGenStationName] = useState('Tirupati Observatory');
+  const [genProjectName, setGenProjectName] = useState('Test_custom');
+  const [genRecorderId, setGenRecorderId] = useState('Test_01');
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
   const [genAudioDevice, setGenAudioDevice] = useState('plughw:1,0');
   const [genHopSeconds, setGenHopSeconds] = useState('1.5');
-  const [genLatitude, setGenLatitude] = useState('11.3419');
-  const [genLongitude, setGenLongitude] = useState('76.6437');
+  const [genLatitude, setGenLatitude] = useState('13.6288');
+  const [genLongitude, setGenLongitude] = useState('79.4192');
   const [genPiUser, setGenPiUser] = useState('pi');
 
   // ----------------------------------------------------------------------------
@@ -428,7 +428,7 @@ export default function LiveAdminPage() {
       alert('Please enter valid numeric latitude and longitude coordinates.');
       return;
     }
-    const targetNodeId = genRecorderId.trim() || 'WesternGhats_Node_01';
+    const targetNodeId = genRecorderId.trim() || 'Test_01';
     await handleUpdateNodeGps(targetNodeId, latNum, lonNum);
   };
 
@@ -1005,11 +1005,87 @@ WantedBy=multi-user.target`;
 
               <button
                 onClick={() => setIsCreateModelOpen(true)}
-                className="px-4 py-2 rounded-xl bg-[#1f4d3a] hover:bg-[#16382a] text-white text-xs font-semibold flex items-center gap-2 transition shadow-xs self-start sm:self-auto"
+                className="px-4 py-2 rounded-xl bg-[#1f4d3a] hover:bg-[#16382a] text-white text-xs font-semibold flex items-center gap-2 transition shadow-xs self-start sm:self-auto cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>Upload New Model</span>
               </button>
+            </div>
+
+            {/* Cornell BirdNET-Pi v2.4 Architecture & Edge Asset Setup Banner */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-[#121614] to-[#1a221e] text-white border border-[#2d3630] space-y-4 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2d3630] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    <Sparkles className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h3 className="font-serif font-bold text-sm text-white flex items-center gap-2">
+                      Cornell BirdNET-Pi v2.4 (Official Edge Engine)
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60 uppercase">
+                        Built-in Edge TFLite
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#a0aba3]">
+                      Runs offline on Raspberry Pi CPU &bull; 6,000+ avifauna species &bull; Dynamic GPS geographic range filtering
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText('mkdir -p ~/Live_detector/models/birdnet_default && curl -L -o ~/Live_detector/models/birdnet_default/labels.txt https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt && curl -L -o ~/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite');
+                    showNotification('BirdNET model download command copied!');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Pi Download Command</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="p-3.5 rounded-xl bg-[#0e1210] border border-[#232c26] space-y-1.5">
+                  <div className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>Edge Hardware Inference</span>
+                  </div>
+                  <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                    Inference executes 100% locally on the Raspberry Pi ARM64 CPU via TFLite in 3.0s sliding windows every 1.5s hop. Audio is never sent to third-party cloud APIs.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0e1210] border border-[#232c26] space-y-1.5">
+                  <div className="font-semibold text-cyan-400 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>GPS Regional Range Filter</span>
+                  </div>
+                  <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                    Uses the node&apos;s GPS coordinates ({genLatitude}° N, {genLongitude}° E) to query regional species occurrence probabilities, automatically suppressing foreign species and preventing false detections.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0e1210] border border-[#232c26] space-y-1.5">
+                  <div className="font-semibold text-amber-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Required Files on Pi</span>
+                  </div>
+                  <div className="font-mono text-[10px] text-[#a0aba3] space-y-1">
+                    <div>• <code className="text-white">labels.txt</code> (6,522 species)</div>
+                    <div>• <code className="text-white">BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite</code> (~51 MB)</div>
+                    <div className="text-[10px] text-emerald-400 pt-0.5">Dir: <code className="text-emerald-300">~/Live_detector/models/birdnet_default/</code></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#a0aba3] pt-1 border-t border-[#232c26]">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-amber-400 font-bold">💡 Tip:</span>
+                  <span>The Live Detector supervisor also auto-downloads missing weights on startup if internet is available.</span>
+                </div>
+                <span className="font-mono text-[10px] text-emerald-400 font-semibold">TFLite 48kHz Waveform &bull; Sigmoid</span>
+              </div>
             </div>
 
             {/* Model Cards Grid */}
@@ -1589,26 +1665,48 @@ WantedBy=multi-user.target`;
                 </pre>
               </div>
 
-              {/* Step 3: Test USB Microphone */}
+              {/* Step 3: Test USB Microphone & Calibrate Input Gain */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-emerald-400">Step 3: Verify USB Microphone Ingestion</span>
+                  <span className="font-bold text-sm text-emerald-400">Step 3: Verify USB Microphone &amp; Calibrate Gain (alsamixer)</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('arecord -l && arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav && ls -lh test.wav && rm test.wav');
+                      navigator.clipboard.writeText(`arecord -l && arecord -D ${genAudioDevice !== 'default' ? genAudioDevice : 'plughw:1,0'} -d 5 -f S16_LE -r 48000 test.wav && ls -lh test.wav && rm test.wav`);
                       showNotification('Mic test command copied!');
                     }}
-                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Copy className="w-3.5 h-3.5" /> Copy Command
+                    <Copy className="w-3.5 h-3.5" /> Copy Test Command
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  arecord -l &amp;&amp; arecord -D {genAudioDevice !== 'default' ? genAudioDevice : 'plughw:3,0'} -d 5 -f S16_LE -r 48000 test.wav &amp;&amp; ls -lh test.wav &amp;&amp; rm test.wav
+                  arecord -l &amp;&amp; arecord -D {genAudioDevice !== 'default' ? genAudioDevice : 'plughw:1,0'} -d 5 -f S16_LE -r 48000 test.wav &amp;&amp; ls -lh test.wav &amp;&amp; rm test.wav
                 </pre>
-                <p className="text-[11px] text-[#a0aba3]">
-                  Check the card number listed in <code className="text-emerald-400">arecord -l</code> (e.g. card 3 is <code className="text-emerald-400">plughw:3,0</code>).
-                </p>
+                
+                {/* Alsamixer Gain Calibration Box */}
+                <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs text-amber-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5" />
+                      <span>Calibrate Microphone Gain (Avoid Distorted / Clipped Audio)</span>
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText('alsamixer');
+                        showNotification('alsamixer command copied!');
+                      }}
+                      className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono hover:bg-amber-500/30 transition cursor-pointer"
+                    >
+                      Copy alsamixer
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                    If ALSA input volume is boosted to 100% (+30 dB), sound digital-clips into harsh, buzzy distortion. Run <code className="text-amber-300">alsamixer</code> &rarr; press <code className="text-white">F6</code> to select your USB Audio Device &rarr; press <code className="text-white">F4</code> to switch to <strong>Capture</strong> &rarr; lower the capture bar to <strong>65% &ndash; 75%</strong> (green range). Press <code className="text-white">ESC</code>, then persist across reboots with:
+                  </p>
+                  <pre className="p-2 rounded-lg bg-[#121614] font-mono text-[11px] text-amber-300 select-all">
+                    sudo alsactl store
+                  </pre>
+                </div>
               </div>
 
               {/* Step 4: Download Live_detector from GitHub (Sparse Checkout) */}
@@ -1620,7 +1718,7 @@ WantedBy=multi-user.target`;
                       navigator.clipboard.writeText(`rm -rf /home/${genPiUser}/Live_detector && git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory && cd ~/Birdsong-Observatory && git sparse-checkout set Live_detector && ln -s ~/Birdsong-Observatory/Live_detector /home/${genPiUser}/Live_detector && cd /home/${genPiUser}/Live_detector`);
                       showNotification('GitHub sparse-checkout command copied!');
                     }}
-                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Command
                   </button>
@@ -1642,13 +1740,35 @@ WantedBy=multi-user.target`;
                       navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`);
                       showNotification('Python venv install command copied!');
                     }}
-                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Command
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
                   cd /home/{genPiUser}/Live_detector &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate &amp;&amp; pip install -r requirements.txt
+                </pre>
+              </div>
+
+              {/* Step 5b: Official Cornell BirdNET Edge Model Setup */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-emerald-400">Step 5b: Download Official Cornell BirdNET v2.4 Model Weights &amp; Taxonomy</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`mkdir -p /home/${genPiUser}/Live_detector/models/birdnet_default && curl -L -o /home/${genPiUser}/Live_detector/models/birdnet_default/labels.txt https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt && curl -L -o /home/${genPiUser}/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite`);
+                      showNotification('BirdNET model download command copied!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Download Command
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#a0aba3]">
+                  Downloads the official 6,522 species taxonomy and Cornell BirdNET FP32 TFLite core model directly to your Pi:
+                </p>
+                <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
+                  mkdir -p /home/{genPiUser}/Live_detector/models/birdnet_default &amp;&amp; curl -L -o /home/{genPiUser}/Live_detector/models/birdnet_default/labels.txt https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt &amp;&amp; curl -L -o /home/{genPiUser}/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
                 </pre>
               </div>
 
@@ -1872,7 +1992,7 @@ WantedBy=multi-user.target`;
                           navigator.clipboard.writeText('vcgencmd get_throttled');
                           showNotification('Throttled query copied!');
                         }}
-                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
                         title="Copy fix command"
                       >
                         <Copy className="w-3.5 h-3.5" />
@@ -1884,6 +2004,77 @@ WantedBy=multi-user.target`;
                     <code className="text-amber-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
                       vcgencmd get_throttled
                     </code>
+                  </div>
+
+                  {/* Issue 7: Distorted or Stuttering Audio */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">Distorted, Scratchy, or Repeating Audio</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText('alsamixer && sudo alsactl store');
+                          showNotification('Alsamixer command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px] leading-relaxed">
+                      1. <strong>Input Gain Clipping</strong>: If ALSA gain is at 100%, audio square-wave clips. Run <code className="text-emerald-400">alsamixer</code> &rarr; F6 &rarr; F4 &rarr; lower Capture volume to <strong>65%&ndash;75%</strong> &rarr; ESC &rarr; <code className="text-emerald-400">sudo alsactl store</code>.<br/>
+                      2. <strong>Buffer Stutter</strong>: Run <code className="text-emerald-400">git pull</code> in <code className="text-emerald-400">~/Live_detector</code> to use dedicated non-overlapping streaming queues.
+                    </p>
+                    <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
+                      alsamixer &amp;&amp; sudo alsactl store
+                    </code>
+                  </div>
+
+                  {/* Issue 8: 0 Live Detections / Missing BirdNET Weights */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white">0 Live Detections / Awaiting Species</strong>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`mkdir -p /home/${genPiUser}/Live_detector/models/birdnet_default && curl -L -o /home/${genPiUser}/Live_detector/models/birdnet_default/labels.txt https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt && curl -L -o /home/${genPiUser}/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite`);
+                          showNotification('BirdNET download command copied!');
+                        }}
+                        className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                        title="Copy fix command"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[#a0aba3] text-[11px] leading-relaxed">
+                      Occurs if the model is assigned in the cloud but Cornell BirdNET weights (<code className="text-emerald-400">BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite</code> ~51MB) or <code className="text-emerald-400">labels.txt</code> have not been downloaded to the Pi yet. Run:
+                    </p>
+                    <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[10px] select-all break-all">
+                      mkdir -p /home/{genPiUser}/Live_detector/models/birdnet_default &amp;&amp; curl -L -o /home/{genPiUser}/Live_detector/models/birdnet_default/labels.txt https://huggingface.co/tphakala/BirdNET-v2.4/resolve/main/labels.txt &amp;&amp; curl -L -o /home/{genPiUser}/Live_detector/models/birdnet_default/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite https://raw.githubusercontent.com/woheller69/whoBIRD-TFlite/master/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+                    </code>
+                  </div>
+
+                  {/* Issue 9: Direct Stream vs Cloud Call Clips */}
+                  <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-white flex items-center gap-2">
+                        <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                        Understanding Audio Architecture: Direct Live Stream vs Cloud Call Clips
+                      </strong>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-[#a0aba3] pt-1">
+                      <div className="p-3 rounded-lg bg-[#121614] border border-[#232c26] space-y-1">
+                        <strong className="text-emerald-300 block">📻 Direct Live Stream (Port 8888)</strong>
+                        <p>
+                          Continuous Opus audio sent straight from your Raspberry Pi&apos;s local HTTP server (<code className="text-white">http://&lt;pi_ip&gt;:8888/stream.opus</code>). Used for real-time live field monitoring in the browser with minimal latency. Shuts down automatically when no browser is connected to save battery.
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#121614] border border-[#232c26] space-y-1">
+                        <strong className="text-cyan-300 block">☁️ Cloud Call Clips (Supabase Storage)</strong>
+                        <p>
+                          Short, high-fidelity 3.0-second `.opus` audio slices uploaded to Supabase Storage whenever a bird call or unusual acoustic event is detected. These are linked to historical species detection cards so researchers can click &quot;Play&quot; on past records.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
