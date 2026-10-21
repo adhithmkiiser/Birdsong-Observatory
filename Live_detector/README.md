@@ -95,7 +95,7 @@ ssh pi@raspberrypi.local
 Update package lists and install essential system audio & compilation libraries:
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils git libatlas-base-dev
+sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils git libopenblas-dev
 ```
 
 ---
@@ -119,16 +119,24 @@ rm test.wav
 
 ---
 
-### Step 4: Transfer / Clone `Live_detector` to the Pi
-On your Raspberry Pi, create the directory:
+### Step 4: Clone Only the `Live_detector` Folder from GitHub
+Run these commands in your Raspberry Pi SSH terminal:
+
 ```bash
-mkdir -p /home/pi/Live_detector
+# 1. Clone only the repository tree (without downloading the rest of the web app)
+git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory
+
+# 2. Download only the Live_detector folder
+cd ~/Birdsong-Observatory
+git sparse-checkout set Live_detector
+
+# 3. Create a convenient shortcut link at ~/Live_detector
+ln -s ~/Birdsong-Observatory/Live_detector ~/Live_detector
+
+# 4. Enter the Live_detector directory
+cd ~/Live_detector
 ```
-Copy the contents of `D:\BirdSongObservatory.in\Live_detector` to `/home/pi/Live_detector` (via `scp`, Git, or USB drive):
-```bash
-# Example copying from your Windows PC using SCP:
-scp -r D:/BirdSongObservatory.in/Live_detector/* pi@<pi_ip_address>:/home/pi/Live_detector/
-```
+*(In the future, you can simply type `git pull` inside this folder to update your detector code whenever you push changes to GitHub!)*
 
 ---
 
