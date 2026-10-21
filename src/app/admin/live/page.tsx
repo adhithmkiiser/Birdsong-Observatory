@@ -1397,7 +1397,7 @@ WantedBy=multi-user.target`;
                   <span className="font-bold text-sm text-emerald-400">Step 5: Create Virtualenv &amp; Install Python Dependencies</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && python3 -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt tflite-runtime`);
+                      navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`);
                       showNotification('Python venv install command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
@@ -1406,7 +1406,7 @@ WantedBy=multi-user.target`;
                   </button>
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  cd /home/{genPiUser}/Live_detector &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate &amp;&amp; pip install --upgrade pip &amp;&amp; pip install -r requirements.txt tflite-runtime
+                  cd /home/{genPiUser}/Live_detector &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate &amp;&amp; pip install -r requirements.txt
                 </pre>
               </div>
 

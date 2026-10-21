@@ -155,13 +155,10 @@ cd /home/pi/Live_detector
 python3 -m venv venv
 source venv/bin/activate
 
-# Install required libraries
-pip install --upgrade pip
+# Install required dependencies (NumPy, SciPy, Supabase, Sounddevice, ONNXRuntime)
 pip install -r requirements.txt
-
-# Install TFLite runtime for Raspberry Pi OS:
-pip install tflite-runtime
 ```
+*(Note: `requirements.txt` installs `onnxruntime` which powers fast multi-model edge inference natively on Python 3.11, 3.12, and 3.13).*
 
 ---
 
