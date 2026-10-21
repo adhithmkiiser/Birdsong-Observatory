@@ -141,36 +141,64 @@ class CloudUploaderWorker(threading.Thread):
                     except Exception:
                         pass
             except Exception as e:
-                logger.error(f"Error inserting window_summary {window_id}: {e}")
+                err_msg = str(e)
+                if "PGRST205" in err_msg or "window_summaries" in err_msg:
+                    logger.warning(
+                        "Supabase table 'public.window_summaries' not created yet. "
+                        "To enable Acoustic Watchdog Triage, run Live_detector/schema.sql in Supabase SQL Editor. "
+                        "Skipping window summaries sync for this cycle."
+                    )
+                    # Clean up local clip if it was uploaded to storage to save SD space
+                    if clip_local and os.path.exists(clip_local):
+                        try:
+                            os.remove(clip_local)
+                        except Exception:
+                            pass
+                    uploaded_window_ids.append(window_id)
+                else:
+                    logger.error(f"Error inserting window_summary {window_id}: {e}")
                 break
 
         if uploaded_window_ids:
             self.outbox.mark_windows_uploaded(uploaded_window_ids)
-            logger.info(f"Synced {len(uploaded_window_ids)} window summaries to cloud.")
+            logger.info(f"Synced {len(uploaded_window_ids)} window summaries.")
 
-        # 2. Sync Individual Model Detections
+        # 2. Sync Individual Model Detections to live_detections
         pending_detections = self.outbox.get_pending_detections(limit=50)
         if pending_detections:
-            det_records = []
+            live_records = []
             det_ids = []
             for d in pending_detections:
                 det_ids.append(d["id"])
-                det_records.append({
+                ts_str = str(d["timestamp"])
+                date_part = ts_str[:10] if len(ts_str) >= 10 else ""
+                time_part = ts_str[11:19] if len(ts_str) >= 19 else ""
+
+                live_records.append({
+                    "project_name": PROJECT_NAME,
+                    "site_name": "Western Ghats Canopy",
+                    "recorder_id": d["node_id"],
+                    "station_id": d["node_id"],
                     "station_name": d["node_id"],
-                    "timestamp": d["timestamp"],
                     "common_name": d["common_name"],
                     "scientific_name": d["scientific_name"],
-                    "confidence": d["confidence"],
-                    "model_id": d["model_id"] if d["model_id"] != "default" else None,
-                    "window_id": d["window_id"]
+                    "confidence": float(d["confidence"]),
+                    "timestamp": d["timestamp"],
+                    "date_str": date_part,
+                    "time_str": time_part,
+                    "duration": 3.0,
+                    "audio_url": "",
+                    "verification_status": "PENDING",
+                    "reviewed": False,
+                    "verified": False
                 })
 
             try:
-                self.supabase.table("detections").insert(det_records).execute()
+                self.supabase.table("live_detections").insert(live_records).execute()
                 self.outbox.mark_detections_uploaded(det_ids)
-                logger.info(f"Synced {len(det_records)} model detections to cloud.")
+                logger.info(f"Synced {len(live_records)} detections to live_detections.")
             except Exception as e:
-                logger.error(f"Error inserting detections: {e}")
+                logger.error(f"Error inserting live_detections: {e}")
 
         # 3. Sync Solar & Battery Hardware Telemetry
         pending_telemetry = self.outbox.get_pending_telemetry(limit=20)
@@ -204,21 +232,27 @@ class CloudUploaderWorker(threading.Thread):
             except Exception as e:
                 err_str = str(e)
                 # If modern columns like battery_capacity_percent are missing, fallback to legacy schema
-                if "column" in err_str or "PGRST204" in err_str:
+                if "column" in err_str or "PGRST204" in err_str or "400" in err_str or "Bad Request" in err_str:
                     try:
                         legacy_records = []
                         for t in pending_telemetry:
+                            disk_pct = t.get("disk_percent_free")
+                            disk_used = int(round(100.0 - float(disk_pct))) if disk_pct is not None else 10
+                            bat_pct = t.get("battery_capacity_percent")
+                            bat_int = int(round(float(bat_pct))) if bat_pct is not None else 100
+                            temp_val = float(t.get("cpu_temp_c")) if t.get("cpu_temp_c") is not None else 40.0
+
                             legacy_records.append({
                                 "station_id": t["node_id"],
                                 "ping_time": t["timestamp"],
-                                "cpu_temperature": t["cpu_temp_c"],
-                                "battery_level": int(t["battery_capacity_percent"]) if t["battery_capacity_percent"] is not None else 100,
-                                "disk_usage": f"{100 - (t['disk_percent_free'] or 0):.1f}%",
+                                "cpu_temperature": temp_val,
+                                "battery_level": bat_int,
+                                "disk_usage": disk_used,
                                 "pending_queue_count": 0
                             })
                         self.supabase.table("station_telemetry").insert(legacy_records).execute()
                         self.outbox.mark_telemetry_uploaded(telem_ids)
-                        logger.info(f"Synced {len(legacy_records)} telemetry records to cloud (legacy table format).")
+                        logger.info(f"Synced {len(legacy_records)} telemetry records to cloud (legacy format).")
                     except Exception as e2:
                         logger.error(f"Error inserting telemetry: {e2}")
                 else:
