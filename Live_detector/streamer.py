@@ -11,7 +11,7 @@ import socket
 import logging
 import threading
 import subprocess
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import queue
 import numpy as np
 
@@ -42,7 +42,7 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         ffmpeg_proc = None
-        audio_queue = queue.Queue(maxsize=150)
+        audio_queue = queue.Queue(maxsize=300)
         if StreamHandler.capture_worker:
             StreamHandler.capture_worker.add_stream_listener(audio_queue)
 
@@ -124,7 +124,7 @@ class LiveAudioStreamServer(threading.Thread):
     def run(self):
         StreamHandler.capture_worker = self.capture_worker
         try:
-            self.server = HTTPServer(("0.0.0.0", self.port), StreamHandler)
+            self.server = ThreadingHTTPServer(("0.0.0.0", self.port), StreamHandler)
             logger.info(f"📻 Live Audio HTTP Streamer listening on port {self.port} (URL: http://<pi_ip>:{self.port}/stream.opus)")
             self.server.serve_forever()
         except Exception as e:

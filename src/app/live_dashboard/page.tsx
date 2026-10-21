@@ -42,6 +42,7 @@ import { DiurnalChart } from '@/components/charts/DiurnalChart';
 import { TopSpeciesChart } from '@/components/charts/TopSpeciesChart';
 import { PolarDiurnalChart } from '@/components/charts/PolarDiurnalChart';
 import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
+import { RavenProLiveSpectrogram } from '@/components/audio/RavenProLiveSpectrogram';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
@@ -741,6 +742,41 @@ export default function LiveDashboardPage() {
     }
   };
 
+  const handleStreamUrlChange = (newUrl: string) => {
+    setDirectStreamUrl(newUrl);
+    if (liveAudioElementRef.current && liveAudioSource === 'direct') {
+      const wasPlaying = isLiveAudioPlaying;
+      liveAudioElementRef.current.src = newUrl;
+      if (wasPlaying) {
+        liveAudioElementRef.current.play().catch(console.warn);
+      }
+    }
+  };
+
+  const handleAudioSourceChange = (newSource: 'direct' | 'cloud') => {
+    setLiveAudioSource(newSource);
+    if (liveAudioElementRef.current) {
+      const targetUrl = newSource === 'direct' 
+        ? directStreamUrl 
+        : (nodeClips.length > 0 ? nodeClips[0].clip_path : directStreamUrl);
+      liveAudioElementRef.current.src = targetUrl;
+      if (isLiveAudioPlaying) {
+        liveAudioElementRef.current.play().catch(console.warn);
+      }
+    }
+  };
+
+  const handlePlayDetectionClipFromSpectrogram = (clipUrl: string) => {
+    if (liveAudioElementRef.current) {
+      setIsLiveStreamActive(true);
+      setLiveAudioSource('cloud');
+      liveAudioElementRef.current.src = clipUrl;
+      liveAudioElementRef.current.play().then(() => {
+        setIsLiveAudioPlaying(true);
+      }).catch(console.warn);
+    }
+  };
+
   // Auto turn off stream when switching to another tab
   useEffect(() => {
     if (activeTab !== 'live' && isLiveStreamActive) {
@@ -1417,13 +1453,14 @@ export default function LiveDashboardPage() {
             {/* Hidden HTML Audio Element always available in DOM */}
             <audio
               ref={liveAudioElementRef}
+              crossOrigin="anonymous"
               onEnded={() => {
                 if (liveAudioSource === 'cloud' && nodeClips.length > 0) {
                   setCurrentCloudClipIndex((prev) => (prev + 1) % nodeClips.length);
                 }
               }}
               onError={() => {
-                console.warn('Live audio playback error. Checking fallback clip...');
+                console.warn('Live audio playback error. Checking direct stream URL...');
               }}
             />
 
@@ -1481,192 +1518,32 @@ export default function LiveDashboardPage() {
                 </div>
               </div>
             ) : (
-              /* Active Stream Banner with Disconnect Button */
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a1e16] via-[#123627] to-[#0d281e] p-6 text-white shadow-lg border border-[#1f4d3a] space-y-6">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  {/* Left: Player status & Controls */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                        isLiveAudioPlaying
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
-                          : 'bg-white/10 text-white/70 border border-white/20'
-                      }`}>
-                        <span className={`w-2 h-2 rounded-full ${isLiveAudioPlaying ? 'bg-emerald-400 animate-ping' : 'bg-gray-400'}`}></span>
-                        {isLiveAudioPlaying ? 'AUDIO STREAMING ACTIVE' : 'AUDIO PAUSED'}
-                      </span>
-
-                      <span className="text-xs font-mono text-emerald-200/70">
-                        {liveAudioSource === 'cloud' ? '☁️ Cloud Call Clips (Stored 3s Detections)' : '📻 Direct Edge Stream (Port 8888)'}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h3 className="text-2xl font-bold font-serif tracking-tight text-white">
-                        {selectedStreamNode} Live Audio Feed
-                      </h3>
-                      <p className="text-xs text-white/70 mt-1 max-w-xl">
-                        {liveAudioSource === 'cloud'
-                          ? `Playing 3-second audio call clips stored in cloud storage for ${selectedStreamNode}.`
-                          : `Streaming continuous live microphone audio directly from edge hardware at ${directStreamUrl}.`}
-                      </p>
-                    </div>
-
-                    {/* Play / Pause & Volume Controls */}
-                    <div className="flex items-center gap-4 flex-wrap pt-1">
-                      <button
-                        onClick={handleToggleLiveAudio}
-                        className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer ${
-                          isLiveAudioPlaying
-                            ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                            : 'bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16]'
-                        }`}
-                      >
-                        {isLiveAudioPlaying ? (
-                          <>
-                            <Pause className="w-4 h-4 fill-current" />
-                            <span>Mute / Pause Stream</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-4 h-4 fill-current ml-0.5" />
-                            <span>Listen to Live Audio</span>
-                          </>
-                        )}
-                      </button>
-
-                      {/* Volume Slider */}
-                      <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                        <button
-                          onClick={() => setIsAudioMuted(!isAudioMuted)}
-                          className="text-white/80 hover:text-white cursor-pointer"
-                          title={isAudioMuted ? 'Unmute' : 'Mute'}
-                        >
-                          {isAudioMuted || liveAudioVolume === 0 ? (
-                            <VolumeX className="w-4 h-4 text-rose-400" />
-                          ) : (
-                            <Volume2 className="w-4 h-4" />
-                          )}
-                        </button>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={isAudioMuted ? 0 : liveAudioVolume}
-                          onChange={(e) => {
-                            setLiveAudioVolume(parseFloat(e.target.value));
-                            setIsAudioMuted(false);
-                          }}
-                          className="w-20 accent-emerald-400 h-1.5 cursor-pointer"
-                        />
-                        <span className="text-[10px] font-mono text-white/70 w-7">
-                          {isAudioMuted ? '0%' : `${Math.round(liveAudioVolume * 100)}%`}
-                        </span>
-                      </div>
-
-                      {/* Auto-Play on New Detection Toggle */}
-                      <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={autoPlayOnDetection}
-                          onChange={(e) => setAutoPlayOnDetection(e.target.checked)}
-                          className="accent-emerald-400 rounded cursor-pointer"
-                        />
-                        <span className="text-[11px] font-medium">Auto-play on new detection</span>
-                      </label>
-
-                      {/* Turn Off Stream & Disconnect Button */}
-                      <button
-                        onClick={handleCloseLiveStream}
-                        className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-                        title="Turn off live stream and disconnect audio"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Turn Off Stream &amp; Disconnect</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Right: Audio Visualizer & Source Toggle */}
-                  <div className="w-full lg:w-80 flex flex-col items-center lg:items-end justify-between gap-4">
-                    {/* Source Toggle Pills */}
-                    <div className="flex items-center bg-black/30 p-1 rounded-xl border border-white/10 text-xs font-mono">
-                      <button
-                        onClick={() => {
-                          setLiveAudioSource('direct');
-                          setIsLiveAudioPlaying(false);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                          liveAudioSource === 'direct'
-                            ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                            : 'text-white/70 hover:text-white'
-                        }`}
-                      >
-                        📻 Direct Live (8888)
-                      </button>
-                      <button
-                        onClick={() => {
-                          setLiveAudioSource('cloud');
-                          setIsLiveAudioPlaying(false);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                          liveAudioSource === 'cloud'
-                            ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                            : 'text-white/70 hover:text-white'
-                        }`}
-                        title="Play recorded 3-second call clips uploaded to cloud storage"
-                      >
-                        ☁️ Cloud Call Clips
-                      </button>
-                    </div>
-
-                    {/* 28-Bar Animated Bioacoustic Equalizer Bars */}
-                    <div className="w-full bg-black/20 p-4 rounded-xl border border-white/10 flex flex-col items-center gap-2">
-                      <div className="flex items-end justify-between gap-1 w-full h-14 px-2">
-                        {Array.from({ length: 28 }).map((_, i) => {
-                          const heights = [
-                            'h-2', 'h-4', 'h-7', 'h-10', 'h-12', 'h-8', 'h-5',
-                            'h-9', 'h-13', 'h-11', 'h-6', 'h-10', 'h-14', 'h-9',
-                            'h-4', 'h-8', 'h-11', 'h-13', 'h-7', 'h-10', 'h-5',
-                            'h-3', 'h-6', 'h-9', 'h-12', 'h-8', 'h-4', 'h-2'
-                          ];
-                          const activeHeight = heights[i % heights.length];
-                          return (
-                            <div
-                              key={i}
-                              className={`w-1 rounded-full transition-all duration-150 ${
-                                isLiveAudioPlaying
-                                  ? `${activeHeight} bg-gradient-to-t from-emerald-500 to-teal-300 animate-pulse`
-                                  : 'h-1.5 bg-white/20'
-                              }`}
-                              style={{
-                                animationDelay: `${(i * 45) % 800}ms`
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className="flex items-center justify-between w-full text-[10px] font-mono text-white/50 px-1">
-                        <span>150 Hz</span>
-                        <span>Avian Vocal Range (1.2–8 kHz)</span>
-                        <span>20 kHz</span>
-                      </div>
-                    </div>
-
-                    {liveAudioSource === 'direct' && (
-                      <div className="w-full flex items-center gap-2 text-[11px] font-mono">
-                        <input
-                          type="text"
-                          value={directStreamUrl}
-                          onChange={(e) => setDirectStreamUrl(e.target.value)}
-                          placeholder="http://livedetector.local:8888/stream.opus"
-                          className="bg-black/30 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full focus:outline-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
+              /* Active Stream View with Cornell Raven Pro Live Waterfall Spectrogram */
+              <div className="space-y-4">
+                <RavenProLiveSpectrogram
+                  audioElement={liveAudioElementRef.current}
+                  isPlaying={isLiveAudioPlaying}
+                  onTogglePlay={handleToggleLiveAudio}
+                  streamUrl={directStreamUrl}
+                  onStreamUrlChange={handleStreamUrlChange}
+                  stationName={selectedStreamNode}
+                  stationIp={telemetryMap[selectedStreamNode]?.ip_address || telemetryMap['Test_01']?.ip_address}
+                  audioSource={liveAudioSource}
+                  onAudioSourceChange={handleAudioSourceChange}
+                  detections={filteredDetections.map((d: any) => ({
+                    id: d.id,
+                    common_name: d.common_name,
+                    scientific_name: d.scientific_name,
+                    confidence: d.confidence || 0,
+                    timestamp: d.timestamp,
+                    low_freq: d.low_freq || 1800,
+                    high_freq: d.high_freq || 7200,
+                    audio_url: d.audio_url,
+                    verification_status: d.verification_status
+                  }))}
+                  onPlayDetectionClip={handlePlayDetectionClipFromSpectrogram}
+                  onCloseStream={handleCloseLiveStream}
+                />
               </div>
             )}
 

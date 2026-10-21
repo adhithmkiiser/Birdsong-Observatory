@@ -84,7 +84,11 @@ class AudioCaptureWorker(threading.Thread):
                             try:
                                 q.put_nowait(raw_bytes)
                             except Exception:
-                                pass
+                                try:
+                                    q.get_nowait()
+                                    q.put_nowait(raw_bytes)
+                                except Exception:
+                                    pass
 
             except FileNotFoundError:
                 logger.error("FFmpeg not found! Falling back to sounddevice library...")
