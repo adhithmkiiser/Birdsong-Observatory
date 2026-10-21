@@ -82,6 +82,21 @@ create table if not exists station_telemetry (
   created_at timestamptz default now()
 );
 
+-- Ensure all modern telemetry columns exist if table was previously created with older schema:
+alter table if exists station_telemetry add column if not exists node_id text;
+alter table if exists station_telemetry add column if not exists cpu_temp_c real;
+alter table if exists station_telemetry add column if not exists disk_free_gb real;
+alter table if exists station_telemetry add column if not exists disk_percent_free real;
+alter table if exists station_telemetry add column if not exists is_low_space boolean default false;
+alter table if exists station_telemetry add column if not exists battery_capacity_percent real;
+alter table if exists station_telemetry add column if not exists battery_voltage_v real;
+alter table if exists station_telemetry add column if not exists power_status text;
+alter table if exists station_telemetry add column if not exists under_voltage_flag boolean default false;
+alter table if exists station_telemetry add column if not exists throttling_flag boolean default false;
+alter table if exists station_telemetry add column if not exists cpu_percent real;
+alter table if exists station_telemetry add column if not exists ram_percent real;
+alter table if exists station_telemetry add column if not exists uptime_hours real;
+
 -- 5. ENHANCE EXISTING DETECTIONS TABLE
 -- Links individual predictions to window_id and model_id for side-by-side comparison
 alter table if exists detections add column if not exists model_id uuid references models(id);

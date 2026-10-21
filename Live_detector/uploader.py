@@ -197,12 +197,32 @@ class CloudUploaderWorker(threading.Thread):
                 })
 
             try:
-                # Upsert into station_telemetry table
+                # Try inserting full modern telemetry schema
                 self.supabase.table("station_telemetry").insert(telem_records).execute()
                 self.outbox.mark_telemetry_uploaded(telem_ids)
                 logger.info(f"Synced {len(telem_records)} solar/battery telemetry records to cloud.")
             except Exception as e:
-                logger.error(f"Error inserting telemetry: {e}")
+                err_str = str(e)
+                # If modern columns like battery_capacity_percent are missing, fallback to legacy schema
+                if "column" in err_str or "PGRST204" in err_str:
+                    try:
+                        legacy_records = []
+                        for t in pending_telemetry:
+                            legacy_records.append({
+                                "station_id": t["node_id"],
+                                "ping_time": t["timestamp"],
+                                "cpu_temperature": t["cpu_temp_c"],
+                                "battery_level": int(t["battery_capacity_percent"]) if t["battery_capacity_percent"] is not None else 100,
+                                "disk_usage": f"{100 - (t['disk_percent_free'] or 0):.1f}%",
+                                "pending_queue_count": 0
+                            })
+                        self.supabase.table("station_telemetry").insert(legacy_records).execute()
+                        self.outbox.mark_telemetry_uploaded(telem_ids)
+                        logger.info(f"Synced {len(legacy_records)} telemetry records to cloud (legacy table format).")
+                    except Exception as e2:
+                        logger.error(f"Error inserting telemetry: {e2}")
+                else:
+                    logger.error(f"Error inserting telemetry: {e}")
 
     def run(self):
         self.running = True

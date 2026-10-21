@@ -8,9 +8,14 @@ Values can be overridden using environment variables or a local .env file.
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
+
+# Load local .env file if present
+load_dotenv(BASE_DIR / ".env")
+
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 MODELS_DIR = DATA_DIR / "models"
 CLIPS_DIR = DATA_DIR / "clips"
