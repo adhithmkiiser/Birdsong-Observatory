@@ -78,7 +78,7 @@ export default function LiveDetectionsPage() {
           supabase.from('projects').select('*').eq('project_type', 'Live').order('name'),
           supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false }),
           supabase.from('sites').select('*').order('name'),
-          supabase.from('station_telemetry').select('*').order('timestamp', { ascending: false }).limit(50),
+          supabase.from('station_telemetry').select('*').order('ping_time', { ascending: false }).limit(50),
           supabase.from('live_detections').select('*', { count: 'exact', head: true })
         ]);
 

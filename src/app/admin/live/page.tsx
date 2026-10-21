@@ -253,15 +253,16 @@ export default function LiveAdminPage() {
         const { data: teleData, error: teleErr } = await supabase
           .from('station_telemetry')
           .select('*')
-          .order('timestamp', { ascending: false })
+          .order('ping_time', { ascending: false })
           .limit(100);
 
         if (!teleErr && teleData && teleData.length > 0) {
           const map: Record<string, StationTelemetry> = {};
           for (const item of teleData) {
-            if (!map[item.node_id]) {
-              map[item.node_id] = item;
-            }
+            const nid = item.node_id || item.station_id;
+            if (nid && !map[nid]) map[nid] = item;
+            if (item.station_id && !map[item.station_id]) map[item.station_id] = item;
+            if (item.node_id && !map[item.node_id]) map[item.node_id] = item;
           }
           setTelemetryMap(map);
         } else {
