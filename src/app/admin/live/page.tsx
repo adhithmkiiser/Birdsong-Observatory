@@ -128,6 +128,8 @@ interface LiveNodeItem {
   pendingQueue: number;
   lastSyncTime: string;
   status: 'online' | 'offline' | 'syncing';
+  lat?: number;
+  long?: number;
   telemetry?: StationTelemetry;
   assignedModels?: NodeModelAssignment[];
 }
@@ -160,11 +162,12 @@ export default function LiveAdminPage() {
   const STATION_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
   // ----------------------------------------------------------------------------
-  // State: Recorders & Telemetry
+  // State: Recorders & Telemetry & GPS Coordinates
   // ----------------------------------------------------------------------------
   const [recorders, setRecorders] = useState<any[]>([]);
   const [telemetryMap, setTelemetryMap] = useState<Record<string, StationTelemetry>>({});
   const [now, setNow] = useState(Date.now());
+  const [editingNodeGps, setEditingNodeGps] = useState<{ id: string; name: string; lat: string; long: string } | null>(null);
 
   // ----------------------------------------------------------------------------
   // State: Multi-Model Registry & Edge Assignments
@@ -185,15 +188,15 @@ export default function LiveAdminPage() {
   // ----------------------------------------------------------------------------
   // State: Generator & SSH Playbook
   // ----------------------------------------------------------------------------
-  const [genStationName, setGenStationName] = useState('');
-  const [genProjectName, setGenProjectName] = useState('');
-  const [genRecorderId, setGenRecorderId] = useState('');
+  const [genStationName, setGenStationName] = useState('Western Ghats Canopy');
+  const [genProjectName, setGenProjectName] = useState('Western Ghats Biodiversity Monitoring');
+  const [genRecorderId, setGenRecorderId] = useState('WesternGhats_Node_01');
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
-  const [genAudioDevice, setGenAudioDevice] = useState('default');
+  const [genAudioDevice, setGenAudioDevice] = useState('plughw:1,0');
   const [genHopSeconds, setGenHopSeconds] = useState('1.5');
-  const [genLatitude, setGenLatitude] = useState('13.6288');
-  const [genLongitude, setGenLongitude] = useState('79.4192');
+  const [genLatitude, setGenLatitude] = useState('11.3419');
+  const [genLongitude, setGenLongitude] = useState('76.6437');
   const [genPiUser, setGenPiUser] = useState('pi');
 
   // ----------------------------------------------------------------------------
@@ -346,7 +349,7 @@ export default function LiveAdminPage() {
     }
   }, [liveProjects, selectedProjectId]);
 
-  // Combined Nodes List with Telemetry
+  // Combined Nodes List with Telemetry & GPS Coordinates
   const nodesList = useMemo<LiveNodeItem[]>(() => {
     return recorders.map((r: any) => {
       const lastPingAt = r.last_ping ? new Date(r.last_ping) : null;
@@ -364,6 +367,8 @@ export default function LiveAdminPage() {
         pendingQueue: 0,
         lastSyncTime: r.last_ping ? new Date(r.last_ping).toLocaleTimeString() : '--',
         status,
+        lat: Number(r.lat ?? r.latitude ?? 11.3419),
+        long: Number(r.long ?? r.longitude ?? 76.6437),
         telemetry: tel,
         assignedModels: assigned
       };
@@ -373,6 +378,41 @@ export default function LiveAdminPage() {
   // ==============================================================================
   // Action Handlers
   // ==============================================================================
+
+  const handleUpdateNodeGps = async (nodeId: string, lat: number, long: number) => {
+    try {
+      const { error } = await supabase
+        .from('recorders_registry')
+        .update({
+          lat: lat,
+          long: long,
+          latitude: lat,
+          longitude: long
+        })
+        .eq('recorder_id', nodeId);
+
+      if (error) {
+        console.warn('Supabase update note:', error);
+      }
+
+      setRecorders(prev => prev.map(r => r.recorder_id === nodeId ? { ...r, lat, long, latitude: lat, longitude: long } : r));
+      setEditingNodeGps(null);
+      showNotification(`📍 Node "${nodeId}" coordinates updated to (${lat.toFixed(4)}, ${long.toFixed(4)})! Survey map & BirdNET filter synced.`);
+    } catch (e: any) {
+      alert(`Failed to update GPS: ${e.message}`);
+    }
+  };
+
+  const handleSaveGeneratorGpsToDatabase = async () => {
+    const latNum = parseFloat(genLatitude);
+    const lonNum = parseFloat(genLongitude);
+    if (isNaN(latNum) || isNaN(lonNum)) {
+      alert('Please enter valid numeric latitude and longitude coordinates.');
+      return;
+    }
+    const targetNodeId = genRecorderId.trim() || 'WesternGhats_Node_01';
+    await handleUpdateNodeGps(targetNodeId, latNum, lonNum);
+  };
 
   const handleToggleNodeModel = async (nodeId: string, modelId: string, currentEnabled: boolean) => {
     const updated = !currentEnabled;
@@ -500,9 +540,12 @@ SAMPLE_RATE=48000
 WINDOW_SECONDS=3.0
 HOP_SECONDS=${genHopSeconds}
 
-# GPS Coordinates
+# GPS Coordinates for BirdNET Geographic Species Filtering & Observatory Mapping
 LATITUDE=${genLatitude}
 LONGITUDE=${genLongitude}
+NODE_LATITUDE=${genLatitude}
+NODE_LONGITUDE=${genLongitude}
+BIRDNET_USE_LAT_LON_FILTER=true
 
 # Live Stream Server & Synchronization
 STREAM_PORT=8888
@@ -712,9 +755,33 @@ WantedBy=multi-user.target`;
                           </span>
                         </div>
                         <p className="text-xs text-[#5a635d] font-medium pl-5">{node.projectName}</p>
+                        <div className="flex items-center gap-2 pl-5 pt-0.5 flex-wrap">
+                          <span className="font-mono text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
+                            <MapPin className="w-3 h-3 text-emerald-600" />
+                            GPS: {node.lat !== undefined ? Number(node.lat).toFixed(4) : '11.3419'}° N, {node.long !== undefined ? Number(node.long).toFixed(4) : '76.6437'}° E
+                          </span>
+                          <span className="text-[10px] font-mono text-[#5a635d]">
+                            &bull; BirdNET Range Filter: Active
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2.5">
+                        {/* Choose / Edit GPS Coordinates */}
+                        <button
+                          onClick={() => setEditingNodeGps({
+                            id: node.id,
+                            name: node.stationName,
+                            lat: String(node.lat ?? 11.3419),
+                            long: String(node.long ?? 76.6437)
+                          })}
+                          className="px-3 py-1.5 rounded-lg bg-[#f0f7f3] hover:bg-[#e2ede6] border border-[#dde1dc] text-[#1f4d3a] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                          title="Configure physical latitude and longitude for BirdNET species filtering and Survey Map"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-[#1f4d3a]" />
+                          <span>Choose / Edit GPS</span>
+                        </button>
+
                         {/* Audio Stream Link */}
                         <a
                           href={`http://${node.ipAddress}:8888/stream`}
@@ -1204,6 +1271,115 @@ WantedBy=multi-user.target`;
         </div>
       )}
 
+      {/* Node GPS Location Modal */}
+      {editingNodeGps && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-[#dde1dc] shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between border-b border-[#dde1dc] pb-3">
+              <h3 className="text-base font-serif font-bold text-[#1a1f1c] flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#1f4d3a]" /> Configure Station GPS Location
+              </h3>
+              <button 
+                onClick={() => setEditingNodeGps(null)}
+                className="text-xs font-mono text-[#5a635d] hover:text-[#1a1f1c] cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-[#f0f7f3] border border-[#dde1dc] rounded-xl space-y-1">
+                <div className="font-semibold text-[#1f4d3a] flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>Hardware Node: {editingNodeGps.id}</span>
+                </div>
+                <div className="text-[11px] text-[#5a635d] leading-relaxed">
+                  These GPS coordinates dictate <strong>BirdNET geographic species occurrence filtering</strong> (restricting species to regional avifauna) and determine marker placement on the Live Observatory survey map.
+                </div>
+              </div>
+
+              {/* Location Presets */}
+              <div>
+                <label className="font-semibold text-[#1a1f1c] block mb-1.5">Quick Regional Presets:</label>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {[
+                    { name: 'Western Ghats Canopy', lat: '11.3419', long: '76.6437', desc: 'Ooty / Shola Mountain Forest' },
+                    { name: 'Nilgiris Shola Reserve', lat: '11.4102', long: '76.6950', desc: 'Naduvattam Shola Forest' },
+                    { name: 'IISER Tirupati BioLab', lat: '13.6288', long: '79.4192', desc: 'Tirupati Campus Edge Node' }
+                  ].map(preset => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => setEditingNodeGps(prev => prev ? { ...prev, lat: preset.lat, long: preset.long } : null)}
+                      className="px-3 py-2 text-left rounded-lg bg-[#f9faf8] hover:bg-[#eaf2ed] border border-[#dde1dc] flex items-center justify-between transition cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-semibold text-[#1a1f1c]">{preset.name}</div>
+                        <div className="text-[10px] text-[#5a635d]">{preset.desc}</div>
+                      </div>
+                      <span className="font-mono text-[10px] text-[#1f4d3a] font-bold">
+                        {preset.lat}, {preset.long}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="font-semibold text-[#1a1f1c] block mb-1">Latitude (°N)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={editingNodeGps.lat}
+                    onChange={(e) => setEditingNodeGps(prev => prev ? { ...prev, lat: e.target.value } : null)}
+                    className="w-full bg-[#f9faf8] border border-[#dde1dc] rounded-xl px-3 py-2 font-mono text-xs font-semibold text-[#1a1f1c] outline-none focus:border-[#1f4d3a]"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-[#1a1f1c] block mb-1">Longitude (°E)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={editingNodeGps.long}
+                    onChange={(e) => setEditingNodeGps(prev => prev ? { ...prev, long: e.target.value } : null)}
+                    className="w-full bg-[#f9faf8] border border-[#dde1dc] rounded-xl px-3 py-2 font-mono text-xs font-semibold text-[#1a1f1c] outline-none focus:border-[#1f4d3a]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#dde1dc]">
+                <button
+                  type="button"
+                  onClick={() => setEditingNodeGps(null)}
+                  className="px-4 py-2 rounded-xl bg-[#f5f6f4] text-[#5a635d] font-semibold hover:bg-[#e8eae6] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const latNum = parseFloat(editingNodeGps.lat);
+                    const lonNum = parseFloat(editingNodeGps.long);
+                    if (isNaN(latNum) || isNaN(lonNum)) {
+                      alert('Please enter valid numeric latitude and longitude.');
+                      return;
+                    }
+                    handleUpdateNodeGps(editingNodeGps.id, latNum, lonNum);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-[#1f4d3a] text-white font-semibold hover:bg-[#16382a] shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Save Location</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ============================================================================== */}
       {/* TAB 3: PI SETUP, SSH COMMAND PLAYBOOK & SERVICE GENERATOR                      */}
       {/* ============================================================================== */}
@@ -1283,21 +1459,58 @@ WantedBy=multi-user.target`;
                   className="w-full bg-[#121614] border border-[#2d3630] rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 outline-none"
                 />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-[#a0aba3] block mb-1">GPS (Lat, Lon)</label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-[#a0aba3] block">GPS (Lat, Lon)</label>
+                  <button
+                    type="button"
+                    onClick={handleSaveGeneratorGpsToDatabase}
+                    className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition"
+                    title="Write this latitude and longitude to recorders_registry for this station"
+                  >
+                    <MapPin className="w-3 h-3" />
+                    <span>Save to DB</span>
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={genLatitude}
                     onChange={(e) => setGenLatitude(e.target.value)}
-                    className="w-1/2 bg-[#121614] border border-[#2d3630] rounded-xl px-2 py-2 text-xs font-mono text-[#a0aba3]"
+                    placeholder="Latitude"
+                    className="w-1/2 bg-[#121614] border border-[#2d3630] rounded-xl px-2.5 py-2 text-xs font-mono text-emerald-300 outline-none focus:border-emerald-500"
                   />
                   <input
                     type="text"
                     value={genLongitude}
                     onChange={(e) => setGenLongitude(e.target.value)}
-                    className="w-1/2 bg-[#121614] border border-[#2d3630] rounded-xl px-2 py-2 text-xs font-mono text-[#a0aba3]"
+                    placeholder="Longitude"
+                    className="w-1/2 bg-[#121614] border border-[#2d3630] rounded-xl px-2.5 py-2 text-xs font-mono text-emerald-300 outline-none focus:border-emerald-500"
                   />
+                </div>
+                {/* Quick Preset Buttons */}
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setGenLatitude('11.3419'); setGenLongitude('76.6437'); }}
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 hover:bg-emerald-900/60 transition cursor-pointer"
+                  >
+                    Western Ghats
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGenLatitude('11.4102'); setGenLongitude('76.6950'); }}
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1f2622] text-[#a0aba3] border border-[#2d3630] hover:text-white transition cursor-pointer"
+                  >
+                    Nilgiris
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGenLatitude('13.6288'); setGenLongitude('79.4192'); }}
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1f2622] text-[#a0aba3] border border-[#2d3630] hover:text-white transition cursor-pointer"
+                  >
+                    Tirupati
+                  </button>
                 </div>
               </div>
             </div>

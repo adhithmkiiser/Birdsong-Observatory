@@ -1003,38 +1003,89 @@ export default function LiveDashboardPage() {
         )}
 
         {/* ─── TAB 2: SPATIAL MAP ──────────────────────────────────────────────── */}
-        {activeTab === 'map' && (
-          <div className="dashboard-section">
-            <div className="section-header">
-              <div>
-                <h2>Survey Site Map</h2>
-                <p>Physical monitoring station locations and active hardware nodes.</p>
+        {activeTab === 'map' && (() => {
+          const activeStation = availableStations.find((s: any) => s.recorder_id === selectedStationId) || 
+                                availableStations.find((s: any) => s.status === 'online') || 
+                                availableStations[0];
+          const primaryLat = Number(activeStation?.lat ?? activeStation?.latitude ?? 11.3419);
+          const primaryLong = Number(activeStation?.long ?? activeStation?.longitude ?? 76.6437);
+          const mapCenter: [number, number] = [primaryLat, primaryLong];
+
+          return (
+            <div className="dashboard-section space-y-4">
+              <div className="section-header">
+                <div>
+                  <h2 className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-[#1f4d3a]" />
+                    Survey Site Map &amp; Node GPS Coordinates
+                  </h2>
+                  <p>Physical monitoring station locations and active hardware nodes in the landscape.</p>
+                </div>
+              </div>
+
+              {/* Station Coordinates & BirdNET Geographic Scope Banner */}
+              <div className="p-4 rounded-xl bg-[#f0f7f3] border border-[#dde1dc] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-bold text-sm text-[#1a1f1c]">
+                      {activeStation?.site_name || activeStation?.recorder_id || 'Western Ghats Canopy'}
+                    </span>
+                    <span className="font-mono text-[11px] bg-white text-[#1f4d3a] border border-[#dde1dc] px-2 py-0.5 rounded font-semibold">
+                      {activeStation?.recorder_id || 'WesternGhats_Node_01'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-[#5a635d]">
+                    Project: <strong className="text-[#1a1f1c]">{activeStation?.project_name || 'Western Ghats Biodiversity Monitoring'}</strong>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <div className="bg-white border border-[#dde1dc] px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-2xs">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                    <div>
+                      <span className="text-[10px] text-[#5a635d] uppercase block font-mono">GPS Coordinates</span>
+                      <strong className="font-mono text-[#1a1f1c]">
+                        {primaryLat.toFixed(4)}° N, {primaryLong.toFixed(4)}° E
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-[#dde1dc] px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-2xs">
+                    <Bird className="w-3.5 h-3.5 text-[#1f4d3a]" />
+                    <div>
+                      <span className="text-[10px] text-[#5a635d] uppercase block font-mono">BirdNET Filter</span>
+                      <strong className="text-emerald-700 font-semibold">Restricted by GPS</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-[540px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
+                <LantanaMap
+                  sites={availableStations.map((s: any) => ({
+                    id: s.id || s.recorder_id,
+                    name: s.site_name || s.recorder_id,
+                    site_group: s.site_name || s.recorder_id,
+                    recorder_id: s.recorder_id || s.id || 'Node',
+                    lat: Number(s.lat ?? s.latitude ?? 11.3419),
+                    lng: Number(s.long ?? s.longitude ?? 76.6437),
+                    detectionsCount: filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).length,
+                    speciesCount: new Set(filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).map(d => d.common_name)).size,
+                    color: s.status === 'online' ? '#1f4d3a' : '#943a29'
+                  }))}
+                  center={mapCenter}
+                  zoom={12}
+                  projectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
+                  selectedSiteId={selectedSiteId !== 'ALL' ? selectedSiteId : (selectedStationId !== 'ALL' ? selectedStationId : undefined)}
+                  onSelectSite={(_siteName: string, siteId: string) => {
+                    setSelectedStationId(siteId);
+                  }}
+                />
               </div>
             </div>
-            <div className="h-[540px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
-              <LantanaMap
-                sites={availableStations.map((s: any) => ({
-                  id: s.id || s.recorder_id,
-                  name: s.site_name || s.recorder_id,
-                  site_group: s.site_name || s.recorder_id,
-                  recorder_id: s.recorder_id || s.id || 'Node',
-                  lat: Number(s.latitude || s.lat || 13.6288),
-                  lng: Number(s.longitude || s.long || 79.4192),
-                  detectionsCount: filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).length,
-                  speciesCount: new Set(filteredDetections.filter(d => d.recorder_id === s.recorder_id || d.station_id === s.id).map(d => d.common_name)).size,
-                  color: s.status === 'online' ? '#1f4d3a' : '#943a29'
-                }))}
-                center={[13.6288, 79.4192]}
-                zoom={11}
-                projectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
-                selectedSiteId={selectedSiteId !== 'ALL' ? selectedSiteId : (selectedStationId !== 'ALL' ? selectedStationId : undefined)}
-                onSelectSite={(_siteName: string, siteId: string) => {
-                  setSelectedStationId(siteId);
-                }}
-              />
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ─── TAB 3: SPECIES ACCUMULATION CURVE (WEEKLY / MONTHLY / YEARLY) ──── */}
         {activeTab === 'accumulation' && (
@@ -1517,16 +1568,68 @@ export default function LiveDashboardPage() {
                 </div>
               </div>
 
-              {/* Detections List Grid */}
+              {/* Detections / Live Audio Streams List Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[650px] overflow-y-auto pr-1">
                 {filteredDetections.length === 0 ? (
-                  <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
-                    <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
-                    <p className="font-semibold">Awaiting incoming species detections...</p>
-                    <p className="text-[11px] text-[#5a635d]/70">
-                      The edge AI is actively monitoring the audio spectrum. Detections will appear here live.
-                    </p>
-                  </div>
+                  nodeClips.length > 0 ? (
+                    nodeClips.slice(0, 30).map((clip, idx) => (
+                      <div
+                        key={clip.window_id}
+                        className="p-4 bg-white border border-[#dde1dc] rounded-xl flex items-center justify-between transition-all shadow-2xs hover:border-[#1f4d3a]"
+                      >
+                        <div className="space-y-1.5 min-w-0 pr-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-[#1a1f1c]">Live Pi Field Audio Recording</span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                              SNR: {clip.snr_db ? `${clip.snr_db.toFixed(1)} dB` : 'Active'}
+                            </span>
+                            {idx < 3 && (
+                              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white animate-pulse">
+                                LATEST
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs font-mono text-[#5a635d] truncate">
+                            {clip.window_id}
+                          </div>
+                          <div className="text-[10px] font-mono text-[#5a635d] flex items-center gap-2 flex-wrap">
+                            <span className="text-[#1f4d3a] font-semibold">{selectedStreamNode || 'WesternGhats_Node_01'}</span>
+                            <span>&bull;</span>
+                            <span>{clip.timestamp ? new Date(clip.timestamp).toLocaleTimeString() : 'Just now'}</span>
+                            <span>&bull;</span>
+                            <span className="text-emerald-700">3.0s Opus Stream</span>
+                          </div>
+                        </div>
+
+                        {/* Play Live Pi Audio Clip Button */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              if (liveAudioElementRef.current) {
+                                liveAudioElementRef.current.src = clip.clip_path;
+                                liveAudioElementRef.current.play().then(() => {
+                                  setIsLiveAudioPlaying(true);
+                                }).catch(console.warn);
+                              }
+                            }}
+                            className="p-2.5 rounded-xl bg-[#f0f7f3] hover:bg-[#1f4d3a] text-[#1f4d3a] hover:text-white transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                            title="Play live 3.0s audio clip recorded by this edge station"
+                          >
+                            <Play className="w-4 h-4 fill-current" />
+                            <span className="hidden sm:inline">Play Pi Audio</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
+                      <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
+                      <p className="font-semibold">Awaiting incoming species detections...</p>
+                      <p className="text-[11px] text-[#5a635d]/70">
+                        The edge AI is actively monitoring the audio spectrum. Detections will appear here live.
+                      </p>
+                    </div>
+                  )
                 ) : (
                   filteredDetections.map((det) => {
                     const isHigh = (det.confidence || 0) >= 0.8;

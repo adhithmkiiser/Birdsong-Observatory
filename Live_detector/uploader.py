@@ -187,7 +187,7 @@ class CloudUploaderWorker(threading.Thread):
                     "date_str": date_part,
                     "time_str": time_part,
                     "duration": 3.0,
-                    "audio_url": "",
+                    "audio_url": f"https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/clips/{PROJECT_NAME.replace(' ', '%20')}/{d['node_id']}/{d.get('window_id', '')}.opus" if d.get('window_id') else "",
                     "verification_status": "PENDING",
                     "reviewed": False,
                     "verified": False
