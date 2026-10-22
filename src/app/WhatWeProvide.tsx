@@ -95,7 +95,7 @@ export default function WhatWeProvide() {
 
   return (
     <section id="method" className="w-full bg-[#fbfcfb] py-16 sm:py-20 border-b border-[#e2e8f0]">
-      <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-8">
         
         {/* Section Heading - Academic & Understated */}
         <div className="space-y-2 border-b border-[#e2e8f0] pb-5">

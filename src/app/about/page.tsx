@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 export default function AboutPage() {
   return (
     <div className="w-full bg-[#ffffff] text-[#1a1f1c] font-sans">
-      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 space-y-16">
+      <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-14 sm:py-20 space-y-16">
 
         {/* Header */}
         <div className="space-y-2 border-b border-[#dde1dc] pb-6">

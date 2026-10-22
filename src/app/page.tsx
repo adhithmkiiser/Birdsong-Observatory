@@ -166,8 +166,8 @@ export default function HomePage() {
       <Hero />
 
       {/* 2. Interactive Bioacoustics Spectrogram & Summary Cards Section */}
-      <section className="w-full bg-gradient-to-b from-[#ffffff] via-[#f9faf9] to-[#ffffff] py-16 sm:py-20 border-b border-[#dde1dc]">
-        <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <section className="w-full bg-gradient-to-b from-[#ffffff] via-[#f9faf9] to-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
+        <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-8">
           
           <div className="space-y-2 border-b border-[#dde1dc] pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
@@ -195,8 +195,8 @@ export default function HomePage() {
               </figcaption>
             </div>
 
-            {/* Right Side: Colorful Minimal Summary Cards Stacked One Below Another */}
-            <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
+            {/* Right Side: Responsive Summary Cards (1 col on mobile, 2 cols on tablet, 1 col on desktop next to spectrogram) */}
+            <div className="lg:col-span-5 xl:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
               
               {/* Card 1: Total Projects (Forest Emerald Accent) */}
               <div className="p-5 rounded-2xl border border-[#b8dbc8] bg-gradient-to-br from-[#f0f7f3] to-[#ffffff] hover:border-[#1f4d3a] hover:shadow-sm transition-all space-y-1.5 group">
@@ -281,8 +281,8 @@ export default function HomePage() {
       </section>
 
       {/* 3. Projects Section (PAM & Live Detectors) */}
-      <section id="projects" className="w-full bg-[#ffffff] py-16 sm:py-24 border-b border-[#dde1dc]">
-        <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
+      <section id="projects" className="w-full bg-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
+        <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-12">
           
           <div className="space-y-2 border-b border-[#dde1dc] pb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
@@ -503,8 +503,8 @@ export default function HomePage() {
       <WhatWeProvide />
 
       {/* 6. Collaborative Applications */}
-      <section className="w-full bg-[#ffffff] py-16 sm:py-20 border-b border-[#dde1dc]">
-        <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="w-full bg-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
+        <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
           <div className="p-8 sm:p-10 rounded-2xl border border-[#b8dbc8] bg-gradient-to-br from-[#f0f7f3] to-[#ffffff] grid grid-cols-1 lg:grid-cols-12 gap-8 items-start shadow-xs">
             
             <div className="lg:col-span-5 space-y-2">

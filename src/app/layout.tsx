@@ -91,7 +91,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
             ? "flex-1 w-full min-w-0 h-[calc(100vh-80px)] overflow-hidden"
             : isFullBleedRoute 
               ? "flex-1 w-full min-w-0" 
-              : "flex-1 p-6 overflow-y-auto w-full mx-auto space-y-6 max-w-7xl"
+              : "flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto w-full mx-auto space-y-6 max-w-7xl 2xl:max-w-[1700px]"
         }>
           {children}
         </main>

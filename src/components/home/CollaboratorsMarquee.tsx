@@ -36,7 +36,7 @@ export function CollaboratorsMarquee() {
 
   return (
     <section className="w-full bg-gradient-to-b from-[#f8faf8] via-[#ffffff] to-[#f8faf8] py-16 sm:py-20 border-b border-[#dde1dc] overflow-hidden">
-      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 mb-10">
+      <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 mb-10">
         <div className="space-y-2 border-b border-[#dde1dc] pb-6">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono text-[#1f4d3a] font-semibold mb-1">
             <Sparkles className="w-3 h-3 text-[#10b981]" />

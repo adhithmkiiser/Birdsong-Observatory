@@ -16,8 +16,8 @@ export function Header() {
   const isProjects = pathname === '/#projects' || pathname.startsWith('/dashboard') || pathname.startsWith('/live_dashboard');
 
   return (
-    <header className="w-full bg-[#ffffff] border-b border-[#dde1dc]">
-      <div className="max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+    <header className="w-full bg-[#ffffff] border-b border-[#dde1dc] sticky top-0 z-50 backdrop-blur-md bg-white/95">
+      <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 h-20 flex items-center justify-between">
         
         {/* Institutional Wordmark */}
         <Link href="/" className="flex flex-col group">

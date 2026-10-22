@@ -10,7 +10,7 @@ export default function AdminHubPage() {
   const { currentRole } = useRole();
 
   return (
-    <div className="w-full max-w-[1160px] mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 font-sans">
+    <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-8 sm:py-10 space-y-8 font-sans">
       
       {/* Centralized Admin Console Switcher */}
       <AdminNavTabs />
