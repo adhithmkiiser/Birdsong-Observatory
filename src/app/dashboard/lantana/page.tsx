@@ -31,9 +31,11 @@ import {
   TrendingUp,
   Radio,
   Sliders,
-  ShieldCheck
+  ShieldCheck,
+  FileText
 } from 'lucide-react';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 
 // ─── Exact Audio Player replication from BirdSearch.tsx ──────────────────────
 const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, speciesName }) => {
@@ -135,9 +137,11 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
 // ─── Main Lantana Dashboard Page ──────────────────────────────────────────────
 export default function LantanaDashboardPage() {
   const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
+  const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
   const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'richness' | 'explorer' | 'indicators' | 'performance'>('summary');
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_LANTANA');
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // Raw Supabase data
   const [rawRecorders, setRawRecorders] = useState<any[]>([]);
@@ -1101,6 +1105,16 @@ export default function LantanaDashboardPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              {canAccessReports && (
+                <button
+                  onClick={() => setIsReportModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Create formatted Lantana restoration monitoring report"
+                >
+                  <FileText className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Create Report</span>
+                </button>
+              )}
               {activeTab === 'summary' && (
                 <button onClick={downloadSummaryCSV} className="btn-primary text-xs" title="Download Summary CSV">
                   <Download className="w-3.5 h-3.5" />
@@ -1705,6 +1719,14 @@ export default function LantanaDashboardPage() {
         )}
 
       </main>
+
+      {/* ─── CREATE RESEARCH REPORT MODAL ────────────────────────────────────── */}
+      <ReportGeneratorModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        defaultFormat="lantana"
+        defaultProjectId={selectedProjectId !== 'ALL_LANTANA' ? selectedProjectId : 'tst_lantana'}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   FileText, 
@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Layers,
   Trees,
-  Cpu
+  Cpu,
+  Lock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRole } from '@/components/layout/RoleContext';
@@ -37,7 +38,7 @@ export function ReportGeneratorModal({
   defaultSiteId
 }: ReportGeneratorModalProps) {
   const router = useRouter();
-  const { currentRole, currentUser } = useRole();
+  const { currentRole, currentUser, visibilitySettings } = useRole();
 
   const [format, setFormat] = useState<ReportFormat>(defaultFormat);
   const [projectId, setProjectId] = useState<string>(defaultProjectId || 'ALL_PROJECTS');
@@ -48,7 +49,7 @@ export function ReportGeneratorModal({
   const [authorName, setAuthorName] = useState<string>(currentUser?.name || 'Dr. Robin Vijayan');
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
-  const [sitesList, setSitesList] = useState<any[]>([]);
+  const [allUnifiedSites, setAllUnifiedSites] = useState<any[]>([]);
   const [loadingFilters, setLoadingFilters] = useState(false);
 
   // Sync format if defaultFormat changes
@@ -58,41 +59,104 @@ export function ReportGeneratorModal({
     }
   }, [defaultFormat]);
 
-  // Load projects and sites based on selected format
+  // Load projects and sites based on selected format with RBAC
   useEffect(() => {
     if (!isOpen) return;
 
     async function loadData() {
       setLoadingFilters(true);
       try {
-        const [{ data: projs }, { data: sites }] = await Promise.all([
+        const [
+          { data: projs },
+          { data: pamSites },
+          { data: lantanaSites },
+          { data: telemetry }
+        ] = await Promise.all([
           supabase.from('projects').select('*').order('name'),
-          supabase.from('sites').select('*').order('name')
+          supabase.from('sites').select('*').order('name'),
+          supabase.from('lantana_sites').select('*').order('site_name'),
+          supabase.from('station_telemetry').select('node_id').limit(50)
         ]);
 
-        const allProjs = projs || [];
-        const allSites = sites || [];
+        // 1. Map PAM sites
+        const mappedPam = (pamSites || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          project_id: s.project_id || 'nilgiri',
+          type: 'pam'
+        }));
 
-        setProjectsList(allProjs);
-        setSitesList(allSites);
+        // 2. Map Lantana sites (deduplicated by site_name)
+        const lantanaMap = new Map<string, any>();
+        (lantanaSites || []).forEach((s: any) => {
+          const siteName = s.site_name || s.name || s.id;
+          if (!lantanaMap.has(siteName)) {
+            lantanaMap.set(siteName, {
+              id: s.id,
+              name: siteName,
+              project_id: s.project_id || 'tst_lantana',
+              type: 'lantana'
+            });
+          }
+        });
+        const mappedLantana = Array.from(lantanaMap.values());
 
-        // Auto-select sensible project default based on format
+        // 3. Map Live nodes
+        const liveSet = new Set<string>();
+        (telemetry || []).forEach((t: any) => { if (t.node_id) liveSet.add(t.node_id); });
+        liveSet.add('Test_01');
+        const mappedLive = Array.from(liveSet).map((nodeId: string) => ({
+          id: nodeId,
+          name: `${nodeId} (Pi Edge Node)`,
+          project_id: 'test_custom',
+          type: 'live'
+        }));
+
+        const unified = [...mappedPam, ...mappedLantana, ...mappedLive];
+
+        let allowedProjects = projs || [];
+        let allowedSites = unified;
+
+        // RBAC Scoping: Admin vs Project Manager vs Site Manager
+        if (currentRole === 'Project Manager') {
+          const assigned = currentUser?.assignedProjects || [];
+          allowedProjects = allowedProjects.filter((p: any) => assigned.includes(p.id));
+          allowedSites = allowedSites.filter((s: any) => assigned.includes(s.project_id));
+        } else if (currentRole === 'Site Manager') {
+          const assigned = currentUser?.assignedSites || [];
+          allowedSites = allowedSites.filter((s: any) => assigned.includes(s.id) || assigned.includes(s.name));
+          const allowedProjIds = new Set(allowedSites.map((s: any) => s.project_id));
+          allowedProjects = allowedProjects.filter((p: any) => allowedProjIds.has(p.id));
+        }
+
+        setProjectsList(allowedProjects);
+        setAllUnifiedSites(allowedSites);
+
+        // Pre-select project based on format if not provided or invalid
         if (format === 'lantana') {
-          const lantanaProj = allProjs.find(p => p.id === 'tst_lantana' || p.project_type === 'Lantana');
+          const lantanaProj = allowedProjects.find((p: any) => p.id === 'tst_lantana' || p.project_type === 'Lantana');
           if (lantanaProj && (!defaultProjectId || projectId === 'ALL_PROJECTS')) {
             setProjectId(lantanaProj.id);
           }
         } else if (format === 'pam') {
-          const pamProj = allProjs.find(p => p.id === 'nilgiri' || p.project_type === 'PAM');
+          const pamProj = allowedProjects.find((p: any) => p.id === 'nilgiri' || p.project_type === 'PAM');
           if (pamProj && (!defaultProjectId || projectId === 'ALL_PROJECTS')) {
             setProjectId(pamProj.id);
           }
         } else if (format === 'live') {
-          const liveProj = allProjs.find(p => p.id === 'test_custom' || p.project_type === 'Live');
+          const liveProj = allowedProjects.find((p: any) => p.id === 'test_custom' || p.project_type === 'Live');
           if (liveProj && (!defaultProjectId || projectId === 'ALL_PROJECTS')) {
             setProjectId(liveProj.id);
           }
+        } else if (allowedProjects.length > 0 && projectId === 'ALL_PROJECTS' && currentRole !== 'Admin') {
+          setProjectId(allowedProjects[0].id);
         }
+
+        // If Site Manager with assigned sites, preselect first site
+        if (currentRole === 'Site Manager' && allowedSites.length > 0) {
+          setSiteId(allowedSites[0].id);
+        }
+
       } catch (err) {
         console.error('Error loading report filters:', err);
       } finally {
@@ -101,14 +165,40 @@ export function ReportGeneratorModal({
     }
 
     loadData();
-  }, [isOpen, format]);
+  }, [isOpen, format, currentRole, currentUser]);
+
+  // Public Role Access Guard
+  const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
+
+  // Filter available sites dynamically based on selected project
+  const availableSites = useMemo(() => {
+    if (projectId === 'ALL_PROJECTS') return allUnifiedSites;
+    return allUnifiedSites.filter(s => s.project_id === projectId);
+  }, [allUnifiedSites, projectId]);
 
   if (!isOpen) return null;
 
-  // Filter available sites based on project
-  const availableSites = projectId === 'ALL_PROJECTS'
-    ? sitesList
-    : sitesList.filter(s => s.project_id === projectId);
+  if (!canAccessReports) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in font-sans">
+        <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-serif font-bold text-slate-900">Access Restricted</h3>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Report generation is reserved for authorized Admins, Project Managers, and Site Managers. Please sign in with an authorized research account.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleApplyPreset = (days: number | 'season') => {
     const end = new Date();
@@ -150,7 +240,7 @@ export function ReportGeneratorModal({
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-serif font-bold text-slate-900">Create Bioacoustic Report</h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase tracking-wider">
-                  Automated Dossier
+                  {currentRole} Scope
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -178,7 +268,11 @@ export function ReportGeneratorModal({
               {/* Format 1 */}
               <button
                 type="button"
-                onClick={() => setFormat('pam')}
+                onClick={() => {
+                  setFormat('pam');
+                  const pamProj = projectsList.find((p: any) => p.id === 'nilgiri' || p.project_type === 'PAM');
+                  if (pamProj) setProjectId(pamProj.id);
+                }}
                 className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                   format === 'pam'
                     ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
@@ -192,7 +286,7 @@ export function ReportGeneratorModal({
                   </div>
                   <h4 className="font-serif font-bold text-slate-900 text-xs">Passive Acoustic Monitoring</h4>
                   <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                    Standard multi-site PAM survey: species richness, accumulation curves, diurnal profile, and elevation gradient.
+                    Multi-site PAM survey: species richness, accumulation curves, diurnal profile, and elevation gradient.
                   </p>
                 </div>
                 <div className="mt-3 pt-2 border-t border-slate-200/60 text-[10px] text-[#1f4d3a] font-semibold">
@@ -203,7 +297,11 @@ export function ReportGeneratorModal({
               {/* Format 2 */}
               <button
                 type="button"
-                onClick={() => setFormat('lantana')}
+                onClick={() => {
+                  setFormat('lantana');
+                  const lantanaProj = projectsList.find((p: any) => p.id === 'tst_lantana' || p.project_type === 'Lantana');
+                  if (lantanaProj) setProjectId(lantanaProj.id);
+                }}
                 className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                   format === 'lantana'
                     ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
@@ -228,7 +326,11 @@ export function ReportGeneratorModal({
               {/* Format 3 */}
               <button
                 type="button"
-                onClick={() => setFormat('live')}
+                onClick={() => {
+                  setFormat('live');
+                  const liveProj = projectsList.find((p: any) => p.id === 'test_custom' || p.project_type === 'Live');
+                  if (liveProj) setProjectId(liveProj.id);
+                }}
                 className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                   format === 'live'
                     ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
@@ -254,22 +356,33 @@ export function ReportGeneratorModal({
 
           {/* 2. Scope Controls */}
           <div className="space-y-3">
-            <label className="font-bold text-slate-700 uppercase tracking-wider text-[11px] font-mono flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-[#1f4d3a]" />
-              <span>Step 2: Project &amp; Survey Site Scope</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-slate-700 uppercase tracking-wider text-[11px] font-mono flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#1f4d3a]" />
+                <span>Step 2: Project &amp; Survey Site Scope</span>
+              </label>
+              <span className="text-[10px] font-mono text-[#5a635d]">
+                Role: <strong className="text-[#1f4d3a]">{currentRole}</strong>
+                {currentRole === 'Project Manager' && ' (Assigned Projects Only)'}
+                {currentRole === 'Site Manager' && ' (Assigned Sites Only)'}
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] font-medium text-slate-600 block mb-1">Project Scope</label>
                 <select
                   value={projectId}
+                  disabled={currentRole === 'Site Manager'}
                   onChange={(e) => {
                     setProjectId(e.target.value);
                     setSiteId('ALL_SITES');
                   }}
-                  className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-none focus:border-[#1f4d3a]"
+                  className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-none focus:border-[#1f4d3a] disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
+                  {currentRole === 'Admin' && (
+                    <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
+                  )}
                   {projectsList.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -277,15 +390,19 @@ export function ReportGeneratorModal({
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-slate-600 block mb-1">Site / Station Scope</label>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                  Site / Station Scope ({availableSites.length} Available)
+                </label>
                 <select
                   value={siteId}
                   onChange={(e) => setSiteId(e.target.value)}
                   className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-none focus:border-[#1f4d3a]"
                 >
-                  <option value="ALL_SITES">All Survey Sites ({availableSites.length})</option>
+                  {currentRole !== 'Site Manager' && (
+                    <option value="ALL_SITES">All Stations in Scope ({availableSites.length} Sites)</option>
+                  )}
                   {availableSites.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name || s.station_name}</option>
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>

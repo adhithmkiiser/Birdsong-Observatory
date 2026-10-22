@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   FileText, 
   Download, 
@@ -56,6 +56,7 @@ import DashboardLoader from '@/components/ui/DashboardLoader';
 export type ReportFormat = 'pam' | 'lantana' | 'live';
 
 function ReportsContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { currentRole, currentUser, visibilitySettings } = useRole();
 
@@ -80,7 +81,7 @@ function ReportsContent() {
   const [copiedLink, setCopiedLink] = useState(false);
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
-  const [stationsList, setStationsList] = useState<any[]>([]);
+  const [allUnifiedSites, setAllUnifiedSites] = useState<any[]>([]);
   const [topSpeciesList, setTopSpeciesList] = useState<any[]>([]);
   const [speciesTaxonomyMap, setSpeciesTaxonomyMap] = useState<Record<string, any>>({});
   const [telemetryNodes, setTelemetryNodes] = useState<any[]>([]);
@@ -123,62 +124,119 @@ function ReportsContent() {
     loadTaxonomy();
   }, []);
 
-  // 2. Load Projects and Sites with Role Filtering
+  // 2. Load Projects and Sites with Multi-Table Unification and Strict RBAC Scoping
   useEffect(() => {
     async function loadReportsFilters() {
       setLoading(true);
       try {
-        const [{ data: projs }, { data: sitesData }, { data: telemetry }] = await Promise.all([
+        const [
+          { data: projs },
+          { data: pamSites },
+          { data: lantanaSites },
+          { data: telemetry }
+        ] = await Promise.all([
           supabase.from('projects').select('*').order('name'),
           supabase.from('sites').select('*').order('name'),
+          supabase.from('lantana_sites').select('*').order('site_name'),
           supabase.from('station_telemetry').select('*').order('created_at', { ascending: false }).limit(20)
         ]);
 
-        let allProjects = projs || [];
-        let allSites = sitesData || [];
-
-        // Role-Based Filtering
-        if (currentRole === 'Project Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          allProjects = allProjects.filter((p: any) => assigned.includes(p.id));
-          allSites = allSites.filter((s: any) => assigned.includes(s.project_id));
-        } else if (currentRole === 'Site Manager') {
-          const assigned = currentUser?.assignedSites || [];
-          allSites = allSites.filter((s: any) => assigned.includes(s.id));
-          const allowedProjIds = new Set(allSites.map((s: any) => s.project_id));
-          allProjects = allProjects.filter((p: any) => allowedProjIds.has(p.id));
-        }
-
-        setProjectsList(allProjects);
-
-        const mappedSites = allSites.map((s: any) => ({
+        // A. Map PAM sites
+        const mappedPam = (pamSites || []).map((s: any) => ({
           id: s.id,
-          project_id: s.project_id,
-          station_name: s.name,
+          name: s.name,
+          project_id: s.project_id || 'nilgiri',
           latitude: s.latitude,
           longitude: s.longitude,
           elevation: s.elevation || 1420,
-          habitat: s.habitat_type || 'Shola-Grassland Mosaic / Secondary Forest',
-          recorder_id: s.recorder_id || `AudioMoth_${s.id}`
+          habitat: s.habitat_type || 'Shola-Grassland Mosaic / Montane Forest',
+          recorder_id: s.recorder_id || `AudioMoth_${s.id}`,
+          type: 'pam'
         }));
-        setStationsList(mappedSites);
+
+        // B. Map Lantana sites (deduplicated by site_name)
+        const lantanaMap = new Map<string, any>();
+        (lantanaSites || []).forEach((s: any) => {
+          const siteName = s.site_name || s.name || s.id;
+          if (!lantanaMap.has(siteName)) {
+            lantanaMap.set(siteName, {
+              id: s.id,
+              name: siteName,
+              project_id: s.project_id || 'tst_lantana',
+              latitude: s.lat || 11.58,
+              longitude: s.long || 76.54,
+              elevation: 980,
+              habitat: 'Lantana Cleared / Infested / Reference Stratum',
+              recorder_id: s.recorder_id || `Rec_${siteName}`,
+              type: 'lantana'
+            });
+          }
+        });
+        const mappedLantana = Array.from(lantanaMap.values());
+
+        // C. Map Live hardware nodes
+        const liveSet = new Set<string>();
+        (telemetry || []).forEach((t: any) => { if (t.node_id) liveSet.add(t.node_id); });
+        liveSet.add('Test_01');
+        const mappedLive = Array.from(liveSet).map((nodeId: string) => ({
+          id: nodeId,
+          name: `${nodeId} (Pi Edge Node)`,
+          project_id: 'test_custom',
+          latitude: 13.6288,
+          longitude: 79.4192,
+          elevation: 182,
+          habitat: 'Campus Scrub & Dry Deciduous',
+          recorder_id: nodeId,
+          type: 'live'
+        }));
+
+        const unified = [...mappedPam, ...mappedLantana, ...mappedLive];
+
+        let allowedProjects = projs || [];
+        let allowedSites = unified;
+
+        // RBAC Scoping: Admin vs Project Manager vs Site Manager
+        if (currentRole === 'Project Manager') {
+          const assigned = currentUser?.assignedProjects || [];
+          allowedProjects = allowedProjects.filter((p: any) => assigned.includes(p.id));
+          allowedSites = allowedSites.filter((s: any) => assigned.includes(s.project_id));
+        } else if (currentRole === 'Site Manager') {
+          const assigned = currentUser?.assignedSites || [];
+          allowedSites = allowedSites.filter((s: any) => assigned.includes(s.id) || assigned.includes(s.name));
+          const allowedProjIds = new Set(allowedSites.map((s: any) => s.project_id));
+          allowedProjects = allowedProjects.filter((p: any) => allowedProjIds.has(p.id));
+        }
+
+        setProjectsList(allowedProjects);
+        setAllUnifiedSites(allowedSites);
 
         if (telemetry) {
           setTelemetryNodes(telemetry);
         }
 
-        // Auto-select project according to active format if not specified
-        if (!searchParams.get('project') || selectedProjectId === 'ALL_PROJECTS') {
+        // Scope validation: ensure selectedProjectId is permitted
+        const validProjIds = new Set(allowedProjects.map((p: any) => p.id));
+        if (selectedProjectId !== 'ALL_PROJECTS' && !validProjIds.has(selectedProjectId) && allowedProjects.length > 0) {
+          setSelectedProjectId(allowedProjects[0].id);
+        } else if (selectedProjectId === 'ALL_PROJECTS' && currentRole !== 'Admin' && allowedProjects.length > 0) {
+          setSelectedProjectId(allowedProjects[0].id);
+        } else if (selectedProjectId === 'ALL_PROJECTS' && currentRole === 'Admin') {
+          // Auto-select sensible project default based on format
           if (reportFormat === 'lantana') {
-            const lantanaProj = allProjects.find(p => p.id === 'tst_lantana' || p.project_type === 'Lantana');
+            const lantanaProj = allowedProjects.find((p: any) => p.id === 'tst_lantana' || p.project_type === 'Lantana');
             if (lantanaProj) setSelectedProjectId(lantanaProj.id);
           } else if (reportFormat === 'pam') {
-            const pamProj = allProjects.find(p => p.id === 'nilgiri' || p.project_type === 'PAM');
+            const pamProj = allowedProjects.find((p: any) => p.id === 'nilgiri' || p.project_type === 'PAM');
             if (pamProj) setSelectedProjectId(pamProj.id);
           } else if (reportFormat === 'live') {
-            const liveProj = allProjects.find(p => p.id === 'test_custom' || p.project_type === 'Live');
+            const liveProj = allowedProjects.find((p: any) => p.id === 'test_custom' || p.project_type === 'Live');
             if (liveProj) setSelectedProjectId(liveProj.id);
           }
+        }
+
+        // If Site Manager with assigned sites, preselect first site
+        if (currentRole === 'Site Manager' && allowedSites.length > 0) {
+          setSelectedStationId(allowedSites[0].id);
         }
       } catch (err) {
         console.error('Failed to load reports filters:', err);
@@ -190,10 +248,11 @@ function ReportsContent() {
     loadReportsFilters();
   }, [currentRole, currentUser, reportFormat]);
 
+  // Sites available for currently selected project
   const availableStations = useMemo(() => {
-    if (selectedProjectId === 'ALL_PROJECTS') return stationsList;
-    return stationsList.filter(s => s.project_id === selectedProjectId);
-  }, [stationsList, selectedProjectId]);
+    if (selectedProjectId === 'ALL_PROJECTS') return allUnifiedSites;
+    return allUnifiedSites.filter(s => s.project_id === selectedProjectId);
+  }, [allUnifiedSites, selectedProjectId]);
 
   const selectedProject = useMemo(() => {
     return projectsList.find(p => p.id === selectedProjectId) || {
@@ -219,8 +278,8 @@ function ReportsContent() {
   }, [projectsList, selectedProjectId, reportFormat, authorName, availableStations.length]);
 
   const selectedStation = useMemo(() => {
-    return stationsList.find(s => s.id === selectedStationId);
-  }, [stationsList, selectedStationId]);
+    return allUnifiedSites.find(s => s.id === selectedStationId || s.name === selectedStationId);
+  }, [allUnifiedSites, selectedStationId]);
 
   // 3. Fetch Dynamic Top Species & Stats
   useEffect(() => {
@@ -228,11 +287,11 @@ function ReportsContent() {
       try {
         let p_project_names = null;
         if (selectedProjectId !== 'ALL_PROJECTS') {
-          const allowedSiteNames = availableStations.map(s => s.station_name);
+          const allowedSiteNames = availableStations.map(s => s.name);
           p_project_names = allowedSiteNames.length > 0 ? allowedSiteNames : ['NONE'];
         }
 
-        const p_site_name = selectedStation ? selectedStation.station_name : 'ALL_SITES';
+        const p_site_name = selectedStation ? selectedStation.name : 'ALL_SITES';
 
         const { data, error } = await supabase.rpc('get_top_species', {
           p_project_names,
@@ -376,8 +435,26 @@ function ReportsContent() {
     document.body.removeChild(a);
   };
 
+  // Switch format and update project accordingly
+  const handleSwitchFormat = (newFmt: ReportFormat) => {
+    setReportFormat(newFmt);
+    if (newFmt === 'lantana') {
+      const lantanaProj = projectsList.find((p: any) => p.id === 'tst_lantana' || p.project_type === 'Lantana');
+      if (lantanaProj) setSelectedProjectId(lantanaProj.id);
+    } else if (newFmt === 'pam') {
+      const pamProj = projectsList.find((p: any) => p.id === 'nilgiri' || p.project_type === 'PAM');
+      if (pamProj) setSelectedProjectId(pamProj.id);
+    } else if (newFmt === 'live') {
+      const liveProj = projectsList.find((p: any) => p.id === 'test_custom' || p.project_type === 'Live');
+      if (liveProj) setSelectedProjectId(liveProj.id);
+    }
+    setSelectedStationId('ALL_SITES');
+  };
+
   // Public Role Access Guard
-  if (currentRole === 'Public' && !visibilitySettings?.allowPublicReports) {
+  const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
+
+  if (!canAccessReports) {
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 font-sans text-center space-y-5">
         <div className="w-14 h-14 rounded-2xl bg-[#f0f7f3] border border-[#dde1dc] text-[#1f4d3a] flex items-center justify-center mx-auto shadow-xs">
@@ -385,14 +462,14 @@ function ReportsContent() {
         </div>
         <h1 className="text-2xl font-bold font-serif text-[#1a1f1c]">Report Generation Restricted</h1>
         <p className="text-sm text-[#5a635d] max-w-md mx-auto leading-relaxed">
-          Public report generation is currently restricted by lab administrators. Please sign in with an authorized Site Manager, Project Manager, or Admin account.
+          Public report generation is restricted. Reporting options are available exclusively to authorized Admins, Project Managers, and Site Managers.
         </p>
         <div className="pt-2">
           <Link
             href="/login"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#1f4d3a] text-white text-xs font-semibold rounded-xl hover:bg-[#173b2c] transition-all shadow-xs"
           >
-            <span>Sign In to Access Reports</span>
+            <span>Sign In with Research Account</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
@@ -405,34 +482,30 @@ function ReportsContent() {
   }
 
   return (
-    <div className="space-y-6 pb-16 print:space-y-0 print:pb-0 font-sans text-[#1a1f1c] bg-[#fafbfa] print:bg-white min-h-screen">
+    <div className="w-full text-[#1a1f1c] font-sans p-4 sm:p-6 lg:p-8 space-y-6 bg-[#f8faf8] print:bg-white print:p-0 min-h-screen">
       
       {/* ═════════════════════════════════════════════════════════════════════════
-          TOP INTERACTIVE CONTROLS BAR (Hidden during Print)
+          TOP HEADER & ACTION CONTROLS (Observed Dashboard Style)
           ═════════════════════════════════════════════════════════════════════════ */}
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 rounded-3xl bg-white border border-[#dde1dc] shadow-sm space-y-5 print:hidden">
-        {/* Header Row */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#dde1dc] pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#1f4d3a] text-white flex items-center justify-center shadow-xs">
-              <FileText className="w-5 h-5 text-emerald-300" />
+      <div className="bg-white border border-[#dde1dc] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4 print:hidden">
+        {/* Header Breadcrumbs & Action Buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#dde1dc]">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#1f4d3a] bg-[#eaf2ed] px-2.5 py-0.5 rounded-md">
+                Research Console
+              </span>
+              <span className="text-xs text-[#5a635d] font-mono">/</span>
+              <span className="text-xs font-medium text-[#5a635d]">
+                {reportFormat === 'pam' ? 'Format 1: PAM Survey Report' : reportFormat === 'lantana' ? 'Format 2: Lantana Restoration Report' : 'Format 3: Live Streaming Array Report'}
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-serif font-bold text-[#1a1f1c] tracking-tight">
-                  Bioacoustic Research &amp; Monitoring Report Studio
-                </h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase">
-                  v2.4 Ready
-                </span>
-              </div>
-              <p className="text-xs text-[#5a635d] mt-0.5">
-                Automatically generate publication-grade dossiers with species accumulation, diurnal vocal profiles, and habitat metrics.
-              </p>
-            </div>
+            <h1 className="text-xl sm:text-2xl font-bold font-serif text-[#1a1f1c] tracking-tight mt-1">
+              Bioacoustic Research &amp; Monitoring Dossier
+            </h1>
           </div>
 
-          {/* Quick Action Buttons */}
+          {/* Action Buttons Toolbar */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleShareLink}
@@ -440,7 +513,7 @@ function ReportsContent() {
               title="Copy shareable report URL with active filters"
             >
               {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
-              <span>{copiedLink ? 'Link Copied!' : 'Share Report'}</span>
+              <span>{copiedLink ? 'Link Copied!' : 'Share Direct URL'}</span>
             </button>
 
             <button
@@ -465,93 +538,94 @@ function ReportsContent() {
 
         {/* Format Selector Pills */}
         <div className="space-y-1.5">
-          <label className="text-[11px] font-mono font-bold text-[#5a635d] uppercase tracking-wider block">
-            Select Report Format Specification
-          </label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* Format 1 */}
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-mono font-bold text-[#5a635d] uppercase tracking-wider block">
+              Report Format Specification
+            </label>
+            <span className="text-[10px] font-mono text-[#5a635d]">
+              Active Scope: <strong className="text-[#1f4d3a]">{currentRole}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <button
               type="button"
-              onClick={() => setReportFormat('pam')}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+              onClick={() => handleSwitchFormat('pam')}
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
                 reportFormat === 'pam'
                   ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
                   : 'border-[#dde1dc] bg-[#fafbfa] hover:bg-white'
               }`}
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${reportFormat === 'pam' ? 'bg-[#1f4d3a] text-white' : 'bg-slate-200 text-slate-700'}`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${reportFormat === 'pam' ? 'bg-[#1f4d3a] text-white' : 'bg-slate-200 text-slate-700'}`}>
                 <Bird className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold text-[#1f4d3a] uppercase">Format 1</span>
-                  {reportFormat === 'pam' && <CheckCircle2 className="w-3.5 h-3.5 text-[#1f4d3a]" />}
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif font-bold text-xs text-[#1a1f1c] truncate">Format 1: PAM Survey Report</span>
+                  {reportFormat === 'pam' && <CheckCircle2 className="w-3.5 h-3.5 text-[#1f4d3a] shrink-0" />}
                 </div>
-                <div className="font-serif font-bold text-xs text-[#1a1f1c] truncate">PAM Survey Report</div>
                 <div className="text-[10px] text-[#5a635d] truncate">Transects, Chao curve, elevation &amp; diurnal</div>
               </div>
             </button>
 
-            {/* Format 2 */}
             <button
               type="button"
-              onClick={() => setReportFormat('lantana')}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+              onClick={() => handleSwitchFormat('lantana')}
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
                 reportFormat === 'lantana'
                   ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
                   : 'border-[#dde1dc] bg-[#fafbfa] hover:bg-white'
               }`}
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${reportFormat === 'lantana' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${reportFormat === 'lantana' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
                 <Trees className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold text-amber-700 uppercase">Format 2</span>
-                  {reportFormat === 'lantana' && <CheckCircle2 className="w-3.5 h-3.5 text-amber-700" />}
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif font-bold text-xs text-[#1a1f1c] truncate">Format 2: Lantana Restoration</span>
+                  {reportFormat === 'lantana' && <CheckCircle2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
                 </div>
-                <div className="font-serif font-bold text-xs text-[#1a1f1c] truncate">Lantana Restoration Report</div>
                 <div className="text-[10px] text-[#5a635d] truncate">Invaded vs Restored vs Reference treatments</div>
               </div>
             </button>
 
-            {/* Format 3 */}
             <button
               type="button"
-              onClick={() => setReportFormat('live')}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+              onClick={() => handleSwitchFormat('live')}
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
                 reportFormat === 'live'
                   ? 'border-[#1f4d3a] bg-[#f0f7f3] ring-2 ring-[#1f4d3a]/20 shadow-xs'
                   : 'border-[#dde1dc] bg-[#fafbfa] hover:bg-white'
               }`}
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${reportFormat === 'live' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${reportFormat === 'live' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
                 <Cpu className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase">Format 3</span>
-                  {reportFormat === 'live' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />}
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif font-bold text-xs text-[#1a1f1c] truncate">Format 3: Live Streaming Array</span>
+                  {reportFormat === 'live' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />}
                 </div>
-                <div className="font-serif font-bold text-xs text-[#1a1f1c] truncate">Live Streaming Array Report</div>
                 <div className="text-[10px] text-[#5a635d] truncate">Edge Pi telemetry, solar uptime &amp; watchdog</div>
               </div>
             </button>
           </div>
         </div>
 
-        {/* Filter Parameters Grid */}
+        {/* Filter Controls Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs pt-1">
           {/* Project */}
-          <div>
-            <label className="font-semibold text-[#1a1f1c] block mb-1">Project Scope</label>
+          <div className="flex flex-col gap-1">
+            <label className="filter-label">Monitoring Project Scope</label>
             <select
               value={selectedProjectId}
+              disabled={currentRole === 'Site Manager'}
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
                 setSelectedStationId('ALL_SITES');
               }}
-              className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 text-[#1a1f1c] font-medium focus:outline-none focus:border-[#1f4d3a]"
+              className="select-input font-medium"
             >
               {currentRole === 'Admin' && (
                 <option value="ALL_PROJECTS">All Projects ({projectsList.length})</option>
@@ -562,96 +636,102 @@ function ReportsContent() {
             </select>
           </div>
 
-          {/* Station */}
-          <div>
-            <label className="font-semibold text-[#1a1f1c] block mb-1">Station / Site</label>
+          {/* Station / Site */}
+          <div className="flex flex-col gap-1">
+            <label className="filter-label">
+              Survey Site / Station ({availableStations.length} Sites Available)
+            </label>
             <select
               value={selectedStationId}
               onChange={(e) => setSelectedStationId(e.target.value)}
-              className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 text-[#1a1f1c] font-medium focus:outline-none focus:border-[#1f4d3a]"
+              className="select-input font-medium"
             >
-              <option value="ALL_SITES">All Stations ({availableStations.length} Sites)</option>
+              {currentRole !== 'Site Manager' && (
+                <option value="ALL_SITES">All Stations ({availableStations.length} Sites)</option>
+              )}
               {availableStations.map((s) => (
-                <option key={s.id} value={s.id}>{s.station_name}</option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
 
           {/* Date Pickers */}
           <div className="col-span-1 sm:col-span-2 grid grid-cols-2 gap-2">
-            <div>
-              <label className="font-semibold text-[#1a1f1c] block mb-1">Start Date</label>
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">Start Date</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 text-[#1a1f1c] font-mono text-xs focus:outline-none focus:border-[#1f4d3a]"
+                className="select-input font-mono text-xs"
               />
             </div>
-            <div>
-              <label className="font-semibold text-[#1a1f1c] block mb-1">End Date</label>
+            <div className="flex flex-col gap-1">
+              <label className="filter-label">End Date</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-2 text-[#1a1f1c] font-mono text-xs focus:outline-none focus:border-[#1f4d3a]"
+                className="select-input font-mono text-xs"
               />
             </div>
           </div>
         </div>
 
         {/* Attribution Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1 border-t border-[#dde1dc]/60">
-          <div>
-            <label className="text-[11px] font-medium text-[#5a635d] block mb-1">Lead PI / Author</label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2 border-t border-[#dde1dc]">
+          <div className="flex flex-col gap-1">
+            <label className="filter-label">Lead PI / Author</label>
             <input
               type="text"
               value={authorName}
               onChange={(e) => setAuthorName(e.target.value)}
-              className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-1.5 text-xs text-[#1a1f1c] focus:outline-none focus:border-[#1f4d3a]"
+              className="select-input text-xs"
             />
           </div>
-          <div>
-            <label className="text-[11px] font-medium text-[#5a635d] block mb-1">Partner Agencies</label>
+          <div className="flex flex-col gap-1">
+            <label className="filter-label">Partner Agencies</label>
             <input
               type="text"
               value={partnerAgency}
               onChange={(e) => setPartnerAgency(e.target.value)}
-              className="w-full bg-[#fafbfa] border border-[#dde1dc] rounded-xl px-3 py-1.5 text-xs text-[#1a1f1c] focus:outline-none focus:border-[#1f4d3a]"
+              className="select-input text-xs"
             />
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-medium text-[#5a635d]">Classifier Confidence Cutoff</label>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="filter-label">Classifier Confidence Cutoff</label>
               <span className="font-mono font-bold text-[#1f4d3a]">{confidenceThreshold.toFixed(2)}</span>
             </div>
-            <input
-              type="range"
-              min="0.10"
-              max="0.90"
-              step="0.05"
-              value={confidenceThreshold}
-              onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-              className="w-full accent-[#1f4d3a]"
-            />
+            <div className="slider-wrapper">
+              <input
+                type="range"
+                min="0.10"
+                max="0.90"
+                step="0.05"
+                value={confidenceThreshold}
+                onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                className="range-slider"
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* ═════════════════════════════════════════════════════════════════════════
-          PRINTABLE REPORT DOCUMENT CANVAS
+          PRINTABLE REPORT DOCUMENT CONTAINER (Unified Dashboard Styling)
           ═════════════════════════════════════════════════════════════════════════ */}
-      <div className="max-w-5xl mx-auto bg-white border border-[#dde1dc] rounded-3xl p-8 sm:p-14 shadow-lg space-y-12 print:border-none print:shadow-none print:p-0 print:max-w-full print:rounded-none">
+      <div className="bg-white border border-[#dde1dc] rounded-2xl p-6 sm:p-10 shadow-xs space-y-10 print:border-none print:shadow-none print:p-0 print:rounded-none">
 
         {/* ─── TITLE BLOCK ────────────────────────────────────────────────────── */}
-        <header className="border-b-2 border-[#1f4d3a] pb-8 space-y-5">
+        <header className="border-b-2 border-[#1f4d3a] pb-6 space-y-4">
           <div className="flex items-start justify-between gap-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-3 py-1 rounded-full bg-[#1f4d3a] text-white font-mono text-[10px] font-bold uppercase tracking-wider">
                   {reportFormat === 'pam' ? 'Format 1: Passive Acoustic Monitoring Report' : reportFormat === 'lantana' ? 'Format 2: Lantana Restoration Monitoring Report' : 'Format 3: Live Detector / Streaming Array Report'}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#f0f7f3] text-[#1f4d3a] border border-[#dde1dc] font-mono text-[10px] font-bold">
                   v2.4 Technical Dossier
                 </span>
               </div>
@@ -684,7 +764,7 @@ function ReportsContent() {
           </div>
 
           {/* Metadata Ribbon */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#f0f7f3] border border-[#dde1dc] text-xs font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-[#f0f7f3] border border-[#dde1dc] text-xs font-mono">
             <div>
               <span className="text-[10px] text-[#5a635d] block uppercase">Survey Period</span>
               <strong className="text-[#1a1f1c]">{startDate} &rarr; {endDate}</strong>
@@ -704,10 +784,6 @@ function ReportsContent() {
           </div>
         </header>
 
-        {/* ═══════════════════════════════════════════════════════════════════════
-            CONTENT BRANCHING BASED ON REPORT FORMAT
-            ═══════════════════════════════════════════════════════════════════════ */}
-
         {/* =====================================================================
             FORMAT 1: PASSIVE ACOUSTIC MONITORING (PAM) REPORT
             ===================================================================== */}
@@ -719,7 +795,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-[#f0f7f3] text-[#1f4d3a] flex items-center justify-center font-mono text-xs">1</span>
                 <span>Executive Summary</span>
               </h2>
-              <div className="p-5 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-3 text-xs leading-relaxed">
+              <div className="p-4 sm:p-5 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-3 text-xs leading-relaxed">
                 <p>
                   <strong>Survey Aim:</strong> To evaluate spatial avian community composition, vocal activity rhythms, and species richness patterns across {availableStations.length} continuous passive acoustic monitoring stations in the Nilgiri shola-grassland landscape.
                 </p>
@@ -767,7 +843,7 @@ function ReportsContent() {
                 </p>
 
                 {/* Site Table */}
-                <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+                <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[10px] font-mono font-bold">
                       <tr>
@@ -780,9 +856,9 @@ function ReportsContent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#dde1dc]/60 bg-white font-medium">
-                      {availableStations.slice(0, 8).map((st, idx) => (
+                      {availableStations.slice(0, 10).map((st, idx) => (
                         <tr key={st.id} className="hover:bg-[#f0f7f3]/40">
-                          <td className="p-3 pl-4 font-bold text-[#1a1f1c]">{st.station_name}</td>
+                          <td className="p-3 pl-4 font-bold text-[#1a1f1c]">{st.name}</td>
                           <td className="p-3 font-mono text-[#5a635d]">
                             {st.latitude ? `${Number(st.latitude).toFixed(4)}°N, ${Number(st.longitude).toFixed(4)}°E` : '11.4128°N, 76.6912°E'}
                           </td>
@@ -834,7 +910,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-[#f0f7f3] text-[#1f4d3a] flex items-center justify-center font-mono text-xs">4</span>
                 <span>Analysis Methods</span>
               </h2>
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed">
                 <p>
                   <strong>Classifier Pipeline:</strong> Ingested audio files were processed using <strong>BirdNET v2.4 (TensorFlow / TFLite)</strong> fine-tuned for Western Ghats montane avifauna. Detections below {confidenceThreshold.toFixed(2)} confidence were screened out.
                 </p>
@@ -852,20 +928,20 @@ function ReportsContent() {
               </h2>
 
               {/* 5.1 Overview Metrics */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white shadow-2xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-[#fafbfa]">
                   <span className="text-[10px] text-[#5a635d] font-bold block uppercase font-mono mb-1">Total Stations</span>
                   <strong className="text-2xl font-serif text-[#1a1f1c]">{availableStations.length}</strong>
                 </div>
-                <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white shadow-2xs">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-[#fafbfa]">
                   <span className="text-[10px] text-[#5a635d] font-bold block uppercase font-mono mb-1">Species Richness</span>
                   <strong className="text-2xl font-serif text-[#1f4d3a]">{totalSpeciesCount}</strong>
                 </div>
-                <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white shadow-2xs">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-[#fafbfa]">
                   <span className="text-[10px] text-[#5a635d] font-bold block uppercase font-mono mb-1">Total Detections</span>
                   <strong className="text-2xl font-serif text-[#1a1f1c]">{totalCallsCount.toLocaleString()}</strong>
                 </div>
-                <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white shadow-2xs">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-[#fafbfa]">
                   <span className="text-[10px] text-[#5a635d] font-bold block uppercase font-mono mb-1">Endemic Species</span>
                   <strong className="text-2xl font-serif text-amber-700">
                     {topSpeciesList.filter(s => s.endemic).length}
@@ -874,16 +950,16 @@ function ReportsContent() {
               </div>
 
               {/* 5.2 & 5.3 Figures: Top Species + Species Accumulation */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* 5.2 Top Species Call Ranking */}
-                <div className="p-5 rounded-2xl border border-[#dde1dc] bg-white space-y-3">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                   <div className="flex items-center justify-between">
                     <h3 className="font-serif font-bold text-xs text-[#1a1f1c]">
                       5.2 Top Detected Avian Species
                     </h3>
                     <span className="text-[10px] font-mono text-[#5a635d]">Calls Count</span>
                   </div>
-                  <div className="h-64 w-full">
+                  <div className="h-60 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart layout="vertical" data={topSpeciesList.slice(0, 6)} margin={{ top: 5, right: 15, left: 10, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -897,14 +973,14 @@ function ReportsContent() {
                 </div>
 
                 {/* 5.3 Species Accumulation Curve */}
-                <div className="p-5 rounded-2xl border border-[#dde1dc] bg-white space-y-3">
+                <div className="p-4 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                   <div className="flex items-center justify-between">
                     <h3 className="font-serif font-bold text-xs text-[#1a1f1c]">
                       5.3 Species Accumulation &amp; Chao2 Estimate
                     </h3>
                     <span className="text-[10px] font-mono text-[#1f4d3a] font-bold">Plateau reached</span>
                   </div>
-                  <div className="h-64 w-full">
+                  <div className="h-60 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={accumulationData} margin={{ top: 5, right: 15, left: -20, bottom: 5 }}>
                         <defs>
@@ -926,7 +1002,7 @@ function ReportsContent() {
               </div>
 
               {/* 5.4 Diurnal Vocal Activity Profile */}
-              <div className="p-5 rounded-2xl border border-[#dde1dc] bg-white space-y-3">
+              <div className="p-4 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-serif font-bold text-xs text-[#1a1f1c]">
@@ -936,7 +1012,7 @@ function ReportsContent() {
                   </div>
                   <span className="text-[10px] font-mono text-[#5a635d]">All Survey Detections</span>
                 </div>
-                <div className="h-56 w-full">
+                <div className="h-52 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={hourlyDistribution} margin={{ top: 10, right: 10, left: -15, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -954,7 +1030,7 @@ function ReportsContent() {
                 <h3 className="font-serif font-bold text-xs text-[#1a1f1c] uppercase tracking-wider">
                   5.7 Comprehensive Species Call Activity Ranking
                 </h3>
-                <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+                <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[9px] font-mono font-bold">
                       <tr>
@@ -1005,12 +1081,12 @@ function ReportsContent() {
                   <span className="text-[10px] font-mono text-[#5a635d]">Dual Oscillogram + STFT Waterfall</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white space-y-2">
+                  <div className="p-4 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                     <div className="flex items-center justify-between">
                       <strong className="text-xs font-serif text-[#1a1f1c]">Black-and-orange Flycatcher</strong>
                       <span className="text-[10px] font-mono text-[#1f4d3a]">Ficedula nigrorufa</span>
                     </div>
-                    <div className="h-40 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-200">
+                    <div className="h-40 rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-200">
                       <img 
                         src="/images/spectrogram_flycatcher_viridis.png" 
                         alt="Black-and-orange Flycatcher Spectrogram" 
@@ -1022,12 +1098,12 @@ function ReportsContent() {
                     </p>
                   </div>
 
-                  <div className="p-4 rounded-2xl border border-[#dde1dc] bg-white space-y-2">
+                  <div className="p-4 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                     <div className="flex items-center justify-between">
                       <strong className="text-xs font-serif text-[#1a1f1c]">Nilgiri Laughingthrush</strong>
                       <span className="text-[10px] font-mono text-[#1f4d3a]">Montecincla cachinnans</span>
                     </div>
-                    <div className="h-40 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-200">
+                    <div className="h-40 rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-200">
                       <img 
                         src="/images/bioacoustic_spectrogram_academic.png" 
                         alt="Nilgiri Laughingthrush Spectrogram" 
@@ -1073,22 +1149,22 @@ function ReportsContent() {
             </section>
 
             {/* 7, 8, 9. Interpretation, Limitations & Recommendations */}
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
+            <section className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
                 <h3 className="font-serif font-bold text-xs text-[#1a1f1c] uppercase tracking-wider">7. Ecological Interpretation</h3>
                 <p className="text-[#5a635d] leading-relaxed">
                   High endemism ratios and pronounced biophonic dominance demonstrate that intact shola patches serve as critical microclimatic refugia for climate-vulnerable Western Ghats taxa.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
                 <h3 className="font-serif font-bold text-xs text-[#1a1f1c] uppercase tracking-wider">8. Limitations &amp; Quality</h3>
                 <p className="text-[#5a635d] leading-relaxed">
                   Rain noise during peak monsoon gusts reduced classifier sensitivity between 12:00 and 15:00. Rare canopy frugivores with soft calls may have lower detection probability.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2">
                 <h3 className="font-serif font-bold text-xs text-[#1a1f1c] uppercase tracking-wider">9. Recommendations</h3>
                 <p className="text-[#5a635d] leading-relaxed">
                   Continue acoustic transect monitoring across the pre-breeding transition (Feb–April). Integrate automated audio alerting for habitat disturbance along boundary roads.
@@ -1109,7 +1185,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center font-mono text-xs">1</span>
                 <span>Executive Summary</span>
               </h2>
-              <div className="p-5 rounded-2xl bg-[#fdfcf9] border border-amber-200/70 space-y-3 text-xs leading-relaxed">
+              <div className="p-4 sm:p-5 rounded-xl bg-[#fdfcf9] border border-amber-200/70 space-y-3 text-xs leading-relaxed">
                 <p>
                   <strong>Restoration Intervention:</strong> Systematic uprooting of invasive <em>Lantana camara</em> followed by native grass and shola sapling reintroduction across experimental plots in the Nilgiris and Mudumalai landscape.
                 </p>
@@ -1131,7 +1207,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center font-mono text-xs">2</span>
                 <span>Restoration Context &amp; Objectives</span>
               </h2>
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed text-[#5a635d]">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed text-[#5a635d]">
                 <p>
                   Dense impenetrable Lantana thickets suppress native woody seedling regeneration and alter understory soundscapes. The monitoring objective is to benchmark bird community trajectory in <strong>Restored (LC)</strong> plots against <strong>Invaded (LI)</strong> controls and <strong>Reference (CS)</strong> old-growth forest.
                 </p>
@@ -1145,7 +1221,7 @@ function ReportsContent() {
                 <span>Study Design: Treatment Categories (BACI / Space-for-Time)</span>
               </h2>
 
-              <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+              <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[9px] font-mono font-bold">
                     <tr>
@@ -1183,7 +1259,7 @@ function ReportsContent() {
               </h2>
 
               {/* Recovery Trajectory Chart */}
-              <div className="p-5 rounded-2xl border border-[#dde1dc] bg-white space-y-3">
+              <div className="p-4 sm:p-5 rounded-xl border border-[#dde1dc] bg-white space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-serif font-bold text-xs text-[#1a1f1c]">
@@ -1193,7 +1269,7 @@ function ReportsContent() {
                   </div>
                   <span className="text-[10px] font-mono text-emerald-800 font-bold">Target: 40 Species</span>
                 </div>
-                <div className="h-64 w-full">
+                <div className="h-60 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={lantanaTrajectoryData} margin={{ top: 10, right: 20, left: -10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -1210,18 +1286,18 @@ function ReportsContent() {
               </div>
 
               {/* 6.5 Guild Response */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-1.5">
                   <span className="font-mono text-[10px] font-bold text-emerald-800 uppercase">Understory Insectivores</span>
                   <strong className="text-xl font-serif text-emerald-950 block">+142% in Restored</strong>
                   <p className="text-[#5a635d]">Babblers and laughingthrushes readily forage in cleared micro-openings.</p>
                 </div>
-                <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 space-y-2">
+                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 space-y-1.5">
                   <span className="font-mono text-[10px] font-bold text-amber-800 uppercase">Canopy Frugivores</span>
                   <strong className="text-xl font-serif text-amber-950 block">+68% in Restored</strong>
                   <p className="text-[#5a635d]">Pigeons and barbets utilize emergent native trees planted post-clearing.</p>
                 </div>
-                <div className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 space-y-2">
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/50 space-y-1.5">
                   <span className="font-mono text-[10px] font-bold text-rose-800 uppercase">Generalist Weed-Lovers</span>
                   <strong className="text-xl font-serif text-rose-950 block">-54% in Restored</strong>
                   <p className="text-[#5a635d]">Red-vented bulbuls and prinias decline as dense weed thickets are replaced.</p>
@@ -1233,7 +1309,7 @@ function ReportsContent() {
                 <h3 className="font-serif font-bold text-xs text-[#1a1f1c] uppercase tracking-wider">
                   7. Restoration Success Matrix
                 </h3>
-                <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+                <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[9px] font-mono font-bold">
                       <tr>
@@ -1295,7 +1371,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-900 flex items-center justify-center font-mono text-xs">1</span>
                 <span>Executive Summary &amp; Array Status</span>
               </h2>
-              <div className="p-5 rounded-2xl bg-[#f0f7f3] border border-emerald-200/80 space-y-3 text-xs leading-relaxed">
+              <div className="p-4 sm:p-5 rounded-xl bg-[#f0f7f3] border border-emerald-200/80 space-y-3 text-xs leading-relaxed">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -1359,7 +1435,7 @@ function ReportsContent() {
               </div>
 
               {/* Edge Node Table */}
-              <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+              <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[9px] font-mono font-bold">
                     <tr>
@@ -1406,7 +1482,7 @@ function ReportsContent() {
                 <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-900 flex items-center justify-center font-mono text-xs">4</span>
                 <span>Real-Time Edge Processing Pipeline</span>
               </h2>
-              <div className="p-4 rounded-2xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed text-[#5a635d]">
+              <div className="p-4 rounded-xl bg-[#fafbfa] border border-[#dde1dc] space-y-2 text-xs leading-relaxed text-[#5a635d]">
                 <p>
                   <strong>Streaming Flow:</strong> Edge USB microphone continuous 48 kHz buffer &rarr; 3-second sliding window &rarr; BirdNET TFLite ONNX inference engine &rarr; Confidence filtering &rarr; Telemetry + call packet payload dispatch &rarr; Supabase <code>live_detections</code> table &rarr; Live dashboard waterfall view.
                 </p>
@@ -1427,7 +1503,7 @@ function ReportsContent() {
                 <span>Bioacoustic Watchdog Alerts &amp; Critical Events Log</span>
               </h2>
 
-              <div className="border border-[#dde1dc] rounded-2xl overflow-hidden shadow-2xs">
+              <div className="border border-[#dde1dc] rounded-xl overflow-hidden shadow-2xs">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#f0f7f3] border-b border-[#dde1dc] text-[#5a635d] uppercase text-[9px] font-mono font-bold">
                     <tr>
@@ -1480,8 +1556,8 @@ function ReportsContent() {
         )}
 
         {/* ─── 10. APPENDICES & CITATION ───────────────────────────────────────── */}
-        <footer className="border-t-2 border-[#dde1dc] pt-8 space-y-5 text-xs text-[#5a635d]">
-          <div className="flex items-center justify-between border-b border-[#dde1dc] pb-3">
+        <footer className="border-t-2 border-[#dde1dc] pt-6 space-y-4 text-xs text-[#5a635d]">
+          <div className="flex items-center justify-between border-b border-[#dde1dc] pb-2">
             <h3 className="font-serif font-bold text-sm text-[#1a1f1c] uppercase tracking-wider">
               10. Appendices, Open Data &amp; Suggested Citation
             </h3>
@@ -1504,7 +1580,7 @@ function ReportsContent() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-[11px] pt-4 border-t border-dashed border-[#dde1dc] font-mono text-[#5a635d]">
+          <div className="flex items-center justify-between text-[11px] pt-3 border-t border-dashed border-[#dde1dc] font-mono text-[#5a635d]">
             <div>IISER Tirupati Birdsong Observatory Platform v2.4</div>
             <div>Generated by {currentUser?.name || authorName} ({currentRole}) • {new Date().toLocaleDateString('en-GB')}</div>
           </div>
