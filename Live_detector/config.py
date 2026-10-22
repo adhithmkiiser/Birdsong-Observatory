@@ -8,13 +8,27 @@ Values can be overridden using environment variables or a local .env file.
 
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load local .env file if present
-load_dotenv(BASE_DIR / ".env")
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    # Lightweight fallback parser if python-dotenv is not installed
+    env_file = BASE_DIR / ".env"
+    if env_file.exists():
+        try:
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        except Exception:
+            pass
 
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 MODELS_DIR = DATA_DIR / "models"
