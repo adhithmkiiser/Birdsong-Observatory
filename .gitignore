@@ -32,3 +32,7 @@ build_error*
 # system files
 .DS_Store
 Thumbs.db
+
+# Live Detector runtime data & clips
+Live_detector/data/
+

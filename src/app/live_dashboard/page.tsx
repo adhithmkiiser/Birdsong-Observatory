@@ -121,9 +121,9 @@ export default function LiveDashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
 
-  // Search & Filter (Default 30% confidence standard for bioacoustic field detection)
+  // Search & Filter (Default 25% confidence standard for bioacoustic field detection)
   const [searchQuery, setSearchQuery] = useState('');
-  const [minConfidence, setMinConfidence] = useState(0.30);
+  const [minConfidence, setMinConfidence] = useState(0.25);
 
   // Species Accumulation Filter States
   const [accumulationInterval, setAccumulationInterval] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
@@ -462,17 +462,11 @@ export default function LiveDashboardPage() {
     setSelectedStationId('ALL');
   };
 
-  // Filter detections by 3-level scope & search/confidence (excluding non-avian noise)
+  // Filter detections by 3-level scope & search/confidence (including non-avian bioacoustic calls)
   const filteredDetections = useMemo(() => {
-    const NON_AVIAN = new Set(['human non-vocal', 'human vocal', 'human voice', 'noise', 'engine', 'silence', 'environmental noise']);
     return detections.filter((det) => {
       const common = det.common_name || '';
       const sci = det.scientific_name || '';
-      
-      // Exclude non-avian noise events
-      if (NON_AVIAN.has(common.toLowerCase().trim()) || NON_AVIAN.has(sci.toLowerCase().trim())) {
-        return false;
-      }
 
       const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             sci.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1034,8 +1028,8 @@ export default function LiveDashboardPage() {
               <div className="slider-wrapper">
                 <input
                   type="range"
-                  min="0.2"
-                  max="0.99"
+                  min="0.10"
+                  max="0.95"
                   step="0.05"
                   value={minConfidence}
                   onChange={e => setMinConfidence(parseFloat(e.target.value))}

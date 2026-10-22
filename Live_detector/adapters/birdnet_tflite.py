@@ -16,7 +16,7 @@ from config import NODE_LATITUDE, NODE_LONGITUDE, BIRDNET_USE_LAT_LON_FILTER
 logger = logging.getLogger("BirdNetAdapter")
 
 class BirdNetTFLiteAdapter(ModelAdapter):
-    def __init__(self, model_id: str = "birdnet_default", threshold: float = 0.30,
+    def __init__(self, model_id: str = "birdnet_default", threshold: float = 0.25,
                  lat: float = None, lon: float = None, use_geo_filter: bool = None):
         super().__init__(model_id, threshold)
         self.interpreter = None
@@ -29,6 +29,14 @@ class BirdNetTFLiteAdapter(ModelAdapter):
 
     def load(self, model_path: str, labels_path: str, manifest: Dict[str, Any] = None):
         self.manifest = manifest or {}
+        if "use_geo_filter" in self.manifest:
+            self.use_geo_filter = bool(self.manifest["use_geo_filter"])
+        if "threshold" in self.manifest:
+            try:
+                self.threshold = float(self.manifest["threshold"])
+            except (ValueError, TypeError):
+                pass
+
         self.target_sample_rate = 48000
         self.labels = self.parse_labels(labels_path)
         
@@ -56,11 +64,17 @@ class BirdNetTFLiteAdapter(ModelAdapter):
 
     def _load_geo_species_filter(self, model_path: str):
         """Loads localized species checklist for the station's latitude & longitude."""
+        from config import BASE_DIR
         model_dir = os.path.dirname(model_path)
         candidates = [
             os.path.join(model_dir, "species_list.txt"),
             os.path.join(model_dir, f"species_list_{self.lat:.2f}_{self.lon:.2f}.txt"),
-            os.path.join(os.path.dirname(model_dir), "species_list.txt"),
+            os.path.join(BASE_DIR, "species_list.txt"),
+            os.path.join(BASE_DIR, "data", "models", "species_list.txt"),
+            os.path.join(BASE_DIR, "data", "models", "birdnet_default", "species_list.txt"),
+            "/home/pi/Live_detector/species_list.txt",
+            "/home/pi/BirdNET-Pi/model/species_list.txt",
+            "/home/pi/birdnet-analyzer/species_list.txt",
         ]
 
         found_path = None
@@ -110,10 +124,15 @@ class BirdNetTFLiteAdapter(ModelAdapter):
         else:
             probabilities = raw_output
 
-        # Non-avian background noise classes to exclude from avian species detections
-        NON_AVIAN_NOISE_CLASSES = {
-            "human non-vocal", "human vocal", "human voice", "human",
-            "noise", "environmental noise", "engine", "silence", "dog", "cat", "siren"
+        # Non-avian classes (human vocal/speech, dogs, cats, commensals)
+        # These are explicitly preserved as bioacoustic anthropogenic/mammal calls
+        # and are exempt from the regional avian geographic checklist.
+        NON_AVIAN_CLASSES = {
+            "human non-vocal", "human vocal", "human voice", "human", "homo sapiens",
+            "dog", "canis lupus familiaris", "domestic dog",
+            "cat", "felis catus", "domestic cat",
+            "noise", "environmental noise", "engine", "silence", "siren",
+            "cattle", "bos taurus", "sheep", "goat", "horse", "pig"
         }
 
         results: List[Tuple[str, float]] = []
@@ -128,19 +147,20 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                 common_name = parts[-1].strip() if len(parts) > 1 else label_str.strip()
                 scientific_name = parts[0].strip() if len(parts) > 1 else label_str.strip()
 
-                # Filter out non-avian background noise classes
-                if common_name.lower() in NON_AVIAN_NOISE_CLASSES or scientific_name.lower() in NON_AVIAN_NOISE_CLASSES:
-                    continue
+                is_non_avian = (
+                    common_name.lower() in NON_AVIAN_CLASSES or
+                    scientific_name.lower() in NON_AVIAN_CLASSES
+                )
 
-                # Apply Lat/Long species occurrence filter if active
-                if self.use_geo_filter and self.allowed_species:
+                # Apply Lat/Long species occurrence filter to avian species
+                if self.use_geo_filter and self.allowed_species and not is_non_avian:
                     is_in_region = (
                         common_name.lower() in self.allowed_species or 
                         scientific_name.lower() in self.allowed_species or
                         label_str.lower() in self.allowed_species
                     )
-                    # Out-of-region birds in testing require nominal 0.35 confidence instead of prohibitive 0.85
-                    if not is_in_region and conf < 0.35:
+                    # Out-of-region bird taxa require high confidence (0.70)
+                    if not is_in_region and conf < 0.70:
                         continue
 
                 results.append((common_name, round(conf, 4)))
