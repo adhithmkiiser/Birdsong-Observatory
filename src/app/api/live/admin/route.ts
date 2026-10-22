@@ -5,6 +5,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const limitParam = parseInt(url.searchParams.get('limit') || '1000', 10);
+    const detsLimit = isNaN(limitParam) ? 1000 : Math.min(Math.max(limitParam, 50), 5000);
+
     const [
       { data: projs, error: projsErr },
       { data: recorders, error: recErr },
@@ -18,7 +22,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('station_telemetry').select('*').order('ping_time', { ascending: false }).limit(100),
       supabaseAdmin.from('models').select('*').order('created_at', { ascending: false }),
       supabaseAdmin.from('node_models').select('*, models(*)'),
-      supabaseAdmin.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100)
+      supabaseAdmin.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(detsLimit)
     ]);
 
     return NextResponse.json({
@@ -116,6 +120,104 @@ export async function POST(req: NextRequest) {
 
       if (error) throw error;
       return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'delete_detection') {
+      const { id } = body;
+      if (!id) return NextResponse.json({ success: false, error: 'id required' }, { status: 400 });
+      
+      // Attempt to clean associated audio file if present
+      try {
+        const { data: rec } = await supabaseAdmin
+          .from('live_detections')
+          .select('audio_url')
+          .eq('id', id)
+          .single();
+        if (rec?.audio_url) {
+          const filePath = new URL(rec.audio_url).pathname.replace('/storage/v1/object/public/bird-audio/', '');
+          if (filePath) await supabaseAdmin.storage.from('bird-audio').remove([filePath]).catch(() => {});
+        }
+      } catch (e) {
+        // audio cleanup failure is non-fatal
+      }
+
+      const { error } = await supabaseAdmin
+        .from('live_detections')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, deletedId: id });
+    }
+
+    if (action === 'delete_detections_bulk') {
+      const { ids } = body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return NextResponse.json({ success: false, error: 'ids array required' }, { status: 400 });
+      }
+
+      // Attempt to clean associated audio files
+      try {
+        const { data: recs } = await supabaseAdmin
+          .from('live_detections')
+          .select('audio_url')
+          .in('id', ids);
+        const filePaths = (recs || [])
+          .map(r => r.audio_url)
+          .filter(Boolean)
+          .map(url => {
+            try {
+              return new URL(url).pathname.replace('/storage/v1/object/public/bird-audio/', '');
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean);
+        if (filePaths.length > 0) {
+          await supabaseAdmin.storage.from('bird-audio').remove(filePaths).catch(() => {});
+        }
+      } catch (e) {
+        // non-fatal
+      }
+
+      const { error } = await supabaseAdmin
+        .from('live_detections')
+        .delete()
+        .in('id', ids);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, count: ids.length });
+    }
+
+    if (action === 'purge_detections') {
+      const { nodeId, statusFilter, projectId, projectName } = body;
+      let q = supabaseAdmin.from('live_detections').delete();
+
+      if (nodeId && nodeId !== 'All' && nodeId !== 'ALL_SITES') {
+        q = q.or(`recorder_id.eq.${nodeId},station_id.eq.${nodeId}`);
+      }
+
+      if (projectId && projectId !== 'All' && projectId !== 'ALL_PROJECTS') {
+        q = q.eq('project_id', projectId);
+      } else if (projectName && projectName !== 'All') {
+        q = q.eq('project_name', projectName);
+      }
+
+      if (statusFilter && statusFilter !== 'all') {
+        if (statusFilter === 'approved') {
+          q = q.or('verification_status.eq.YES,verified.eq.true');
+        } else if (statusFilter === 'rejected') {
+          q = q.or('verification_status.eq.NO,verification_status.eq.rejected');
+        } else if (statusFilter === 'pending') {
+          q = q.is('verification_status', null);
+        }
+      } else {
+        q = q.gt('id', 0);
+      }
+
+      const { error, count } = await q;
+      if (error) throw error;
+      return NextResponse.json({ success: true, count });
     }
 
     if (action === 'sync_now') {

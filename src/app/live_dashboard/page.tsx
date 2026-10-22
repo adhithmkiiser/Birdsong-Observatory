@@ -35,7 +35,8 @@ import {
   Pause,
   Headphones,
   Wifi,
-  Sliders
+  Sliders,
+  Trash2
 } from 'lucide-react';
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
@@ -138,6 +139,14 @@ export default function LiveDashboardPage() {
   const [reviewSort, setReviewSort] = useState<'newest' | 'confidence'>('newest');
   const [reviewStatusFilter, setReviewStatusFilter] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
   const [verifyingId, setVerifyingId] = useState<string | number | null>(null);
+  const [isDeletingId, setIsDeletingId] = useState<string | number | null>(null);
+
+  // Live Database Purge States
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgeScope, setPurgeScope] = useState<'station' | 'project'>('station');
+  const [purgeStatusScope, setPurgeStatusScope] = useState<'all' | 'pending' | 'rejected' | 'approved'>('all');
+  const [purgeConfirmed, setPurgeConfirmed] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
 
   // Acoustic Watchdog Triage States
   const [windowSummaries, setWindowSummaries] = useState<WindowSummaryItem[]>([]);
@@ -660,6 +669,86 @@ export default function LiveDashboardPage() {
     }
   };
 
+  // Single Detection Deletion (Admin only)
+  const handleDeleteDetection = async (id: string | number) => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can delete detections.');
+      return;
+    }
+    if (!window.confirm('Delete this detection record permanently from Supabase?')) return;
+    setIsDeletingId(id);
+
+    // Optimistic UI removal
+    setDetections(prev => prev.filter(d => String(d.id) !== String(id)));
+
+    try {
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_detection', id })
+      });
+      if (!res.ok) {
+        await fetch(`/api/db/detections?table=live_detections&id=${id}`, { method: 'DELETE' });
+      }
+    } catch (e) {
+      console.error('Delete detection error:', e);
+    } finally {
+      setIsDeletingId(null);
+    }
+  };
+
+  // Purge / Delete matching live detections (Admin only)
+  const handleExecuteLivePurge = async () => {
+    if (currentRole !== 'Admin') {
+      alert('Only administrators can purge detections.');
+      return;
+    }
+    if (!purgeConfirmed) return;
+    setIsPurging(true);
+
+    try {
+      const targetNode = purgeScope === 'station' && selectedStationId !== 'ALL' ? selectedStationId : 'All';
+      const targetProj = selectedProjectId !== 'ALL' ? selectedProjectId : 'All';
+
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'purge_detections',
+          nodeId: targetNode,
+          projectId: targetProj,
+          statusFilter: purgeStatusScope
+        })
+      });
+
+      // Filter local state
+      setDetections(prev => prev.filter(d => {
+        if (targetNode !== 'All') {
+          const nid = d.recorder_id || d.station_id;
+          if (nid === targetNode) return false;
+        }
+        if (purgeStatusScope !== 'all') {
+          const isApproved = d.verification_status === 'YES' || d.verified === true;
+          const isRejected = d.verification_status === 'NO' || d.verification_status === 'rejected';
+          const isPending = !isApproved && !isRejected;
+          if (purgeStatusScope === 'approved' && isApproved) return false;
+          if (purgeStatusScope === 'rejected' && isRejected) return false;
+          if (purgeStatusScope === 'pending' && isPending) return false;
+        }
+        if (targetNode === 'All' && purgeStatusScope === 'all') return false;
+        return true;
+      }));
+
+      setIsPurgeModalOpen(false);
+      setPurgeConfirmed(false);
+    } catch (e: any) {
+      console.error('Purge live detections error:', e);
+      alert('Failed to purge live detections: ' + (e.message || 'Error'));
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   // Role-based visibility flags
   const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings.allowPublicReports;
   const canAccessReview = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
@@ -1004,6 +1093,22 @@ export default function LiveDashboardPage() {
                   </>
                 )}
               </button>
+
+              {currentRole === 'Admin' && (
+                <button
+                  onClick={() => {
+                    setPurgeScope(selectedStationId !== 'ALL' ? 'station' : 'project');
+                    setPurgeStatusScope('all');
+                    setPurgeConfirmed(false);
+                    setIsPurgeModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-rose-200 hover:border-rose-400 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                  title="Purge / Delete live detections for active station or entire project"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Purge Detections</span>
+                </button>
+              )}
 
               {canAccessReports && (
                 <button
@@ -2411,7 +2516,7 @@ export default function LiveDashboardPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
                         <button
                           onClick={() => setSelectedDetection(det)}
                           className="px-2.5 py-1.5 rounded-lg border border-[#dde1dc] text-xs font-semibold text-[#1f4d3a] bg-[#f0f7f3] hover:bg-[#eaf2ed] flex items-center gap-1 cursor-pointer transition shadow-2xs"
@@ -2445,6 +2550,17 @@ export default function LiveDashboardPage() {
                           <X className="w-3.5 h-3.5" />
                           <span>{isRejected ? 'Rejected' : 'Reject'}</span>
                         </button>
+
+                        {currentRole === 'Admin' && (
+                          <button
+                            disabled={isDeletingId === det.id}
+                            onClick={() => handleDeleteDetection(det.id)}
+                            className="p-1.5 rounded-lg border border-[#dde1dc] hover:border-rose-300 hover:bg-rose-50 text-[#5a635d] hover:text-rose-600 transition shadow-2xs cursor-pointer"
+                            title="Delete this detection permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2513,6 +2629,138 @@ export default function LiveDashboardPage() {
           currentRole={currentRole}
           onVerify={(id, verified) => handleVerify(id, verified)}
         />
+      )}
+
+      {/* ─── PURGE LIVE DETECTIONS MODAL ───────────────────────────────────────── */}
+      {isPurgeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl p-6 space-y-5 text-xs text-[#1a1f1c]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-serif font-bold text-slate-900">Purge Live Detections</h3>
+                  <p className="text-[11px] text-slate-500">Permanently delete matching acoustic calls from Supabase</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scope Selection */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  1. Deletion Scope
+                </label>
+                <div className="space-y-1.5">
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="purgeLiveScope"
+                      checked={purgeScope === 'station'}
+                      onChange={() => setPurgeScope('station')}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-900 block">
+                        Delete active node only ({selectedStationId !== 'ALL' ? selectedStationId : 'Selected Station'})
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Only detections recorded by this specific hardware node will be purged.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="purgeLiveScope"
+                      checked={purgeScope === 'project'}
+                      onChange={() => setPurgeScope('project')}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-900 block">
+                        Delete ALL nodes observatory-wide
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Purges detections across all live hardware stations from Supabase.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  2. Verification Status Scope
+                </label>
+                <select
+                  value={purgeStatusScope}
+                  onChange={e => setPurgeStatusScope(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-400"
+                >
+                  <option value="all">Delete All Calls in Scope</option>
+                  <option value="rejected">Delete ONLY Rejected Calls</option>
+                  <option value="pending">Delete ONLY Pending Calls</option>
+                  <option value="approved">Delete ONLY Approved Calls</option>
+                </select>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Permanent Database Deletion</span>
+                </div>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  This action cannot be undone. Matching bioacoustic calls in <code className="font-mono font-bold bg-white/70 px-1 rounded">live_detections</code> will be permanently removed.
+                </p>
+              </div>
+
+              {/* Confirmation Checkbox */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={purgeConfirmed}
+                  onChange={e => setPurgeConfirmed(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                />
+                <span className="text-xs font-semibold text-slate-700">
+                  I confirm that I want to delete all matching detections from Supabase.
+                </span>
+              </label>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteLivePurge}
+                disabled={!purgeConfirmed || isPurging}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md disabled:opacity-40 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isPurging ? 'Purging Supabase...' : 'Confirm & Purge Detections'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

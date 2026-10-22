@@ -48,7 +48,8 @@ import {
   Power,
   RotateCcw,
   Mic,
-  Globe
+  Globe,
+  X
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
@@ -219,9 +220,174 @@ export default function LiveAdminPage() {
   const [liveFilterRecorder, setLiveFilterRecorder] = useState('All');
   const [liveSortDateDesc, setLiveSortDateDesc] = useState(true);
 
+  // ----------------------------------------------------------------------------
+  // State: Detections Database Filter & Deletion
+  // ----------------------------------------------------------------------------
+  const [detStatusFilter, setDetStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [detSearchQuery, setDetSearchQuery] = useState('');
+  const [detNodeFilter, setDetNodeFilter] = useState('All');
+  const [selectedDetIds, setSelectedDetIds] = useState<Set<string | number>>(new Set());
+  const [isDeletingDet, setIsDeletingDet] = useState<string | number | null>(null);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgeNodeScope, setPurgeNodeScope] = useState('All');
+  const [purgeStatusScope, setPurgeStatusScope] = useState<'all' | 'pending' | 'rejected' | 'approved'>('all');
+  const [purgeConfirmed, setPurgeConfirmed] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const liveAdminAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const showNotification = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4500);
+  };
+
+  // Delete a single detection
+  const handleDeleteSingleDetection = async (id: string | number) => {
+    if (!window.confirm('Delete this detection record permanently from Supabase?')) return;
+    setIsDeletingDet(id);
+    setLiveDetections(prev => prev.filter(d => String(d.id) !== String(id)));
+    setSelectedDetIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      next.delete(String(id));
+      next.delete(Number(id));
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_detection', id })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        await fetch(`/api/db/detections?table=live_detections&id=${id}`, { method: 'DELETE' });
+      }
+      showNotification('Detection permanently deleted from database.');
+    } catch (e: any) {
+      console.error('Delete detection error:', e);
+      showNotification('Note: Deletion dispatched.');
+    } finally {
+      setIsDeletingDet(null);
+    }
+  };
+
+  // Bulk delete selected detections
+  const handleDeleteBulkDetections = async () => {
+    const count = selectedDetIds.size;
+    if (count === 0) return;
+    if (!window.confirm(`Permanently delete ${count} selected detection(s) from Supabase?`)) return;
+
+    setIsDeletingBulk(true);
+    const idsToDelete = Array.from(selectedDetIds);
+    const idsSet = new Set(idsToDelete.map(String));
+
+    setLiveDetections(prev => prev.filter(d => !idsSet.has(String(d.id))));
+    setSelectedDetIds(new Set());
+
+    try {
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_detections_bulk', ids: idsToDelete })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        await fetch('/api/db/detections?table=live_detections', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: idsToDelete })
+        });
+      }
+      showNotification(`Successfully deleted ${count} detections.`);
+    } catch (e: any) {
+      console.error('Bulk delete error:', e);
+      showNotification('Batch deletion dispatched.');
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
+  // Purge detections by scope
+  const handleExecutePurge = async () => {
+    if (!purgeConfirmed) return;
+    setIsPurging(true);
+
+    try {
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'purge_detections',
+          nodeId: purgeNodeScope,
+          statusFilter: purgeStatusScope
+        })
+      });
+      const data = await res.json();
+
+      setLiveDetections(prev => prev.filter(d => {
+        if (purgeNodeScope !== 'All') {
+          const nid = d.recorder_id || d.station_id || d.node_id;
+          if (nid === purgeNodeScope) return false;
+        }
+        if (purgeStatusScope !== 'all') {
+          const isApproved = d.verification_status === 'YES' || d.verified === true;
+          const isRejected = d.verification_status === 'NO' || d.verification_status === 'rejected';
+          const isPending = !isApproved && !isRejected;
+          if (purgeStatusScope === 'approved' && isApproved) return false;
+          if (purgeStatusScope === 'rejected' && isRejected) return false;
+          if (purgeStatusScope === 'pending' && isPending) return false;
+        }
+        if (purgeNodeScope === 'All' && purgeStatusScope === 'all') return false;
+        return true;
+      }));
+
+      setIsPurgeModalOpen(false);
+      setPurgeConfirmed(false);
+      showNotification('Live Detections purged successfully.');
+      loadAllLiveAdminData();
+    } catch (e: any) {
+      console.error('Purge error:', e);
+      alert('Failed to purge detections: ' + (e.message || 'Error'));
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
+  // Inline verify toggle
+  const handleVerifyInline = async (id: string | number, status: 'YES' | 'NO') => {
+    setLiveDetections(prev => prev.map(d => {
+      if (String(d.id) === String(id)) {
+        return { ...d, verification_status: status, reviewed: true, verified: status === 'YES' };
+      }
+      return d;
+    }));
+
+    try {
+      await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify_detection', id, status })
+      });
+      showNotification(status === 'YES' ? 'Detection Approved' : 'Detection Rejected');
+    } catch (e) {
+      console.error('Inline verify error:', e);
+    }
+  };
+
+  // Audio playback handler
+  const handlePlayDetectionAudio = (audioUrl: string) => {
+    if (!liveAdminAudioRef.current) return;
+    if (playingAudioUrl === audioUrl) {
+      liveAdminAudioRef.current.pause();
+      setPlayingAudioUrl(null);
+    } else {
+      liveAdminAudioRef.current.src = audioUrl;
+      liveAdminAudioRef.current.play().catch(e => console.warn('Audio play error:', e));
+      setPlayingAudioUrl(audioUrl);
+    }
   };
 
   // ==============================================================================
@@ -604,6 +770,72 @@ SupplementaryGroups=audio video
 
 [Install]
 WantedBy=multi-user.target`;
+
+  // ----------------------------------------------------------------------------
+  // Detections Database: Derived Data & Memos
+  // ----------------------------------------------------------------------------
+  const filteredLiveDetections = useMemo(() => {
+    return liveDetections.filter(det => {
+      // 1. Status Filter
+      if (detStatusFilter !== 'all') {
+        const isApproved = det.verification_status === 'YES' || det.verified === true;
+        const isRejected = det.verification_status === 'NO' || det.verification_status === 'rejected';
+        const isPending = !isApproved && !isRejected;
+
+        if (detStatusFilter === 'approved' && !isApproved) return false;
+        if (detStatusFilter === 'rejected' && !isRejected) return false;
+        if (detStatusFilter === 'pending' && !isPending) return false;
+      }
+
+      // 2. Node Filter
+      if (detNodeFilter !== 'All') {
+        const nid = det.recorder_id || det.station_id || det.node_id;
+        if (nid !== detNodeFilter) return false;
+      }
+
+      // 3. Search query
+      if (detSearchQuery.trim()) {
+        const q = detSearchQuery.toLowerCase().trim();
+        const cName = (det.common_name || '').toLowerCase();
+        const sName = (det.scientific_name || '').toLowerCase();
+        const rId = (det.recorder_id || det.station_id || '').toLowerCase();
+        if (!cName.includes(q) && !sName.includes(q) && !rId.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [liveDetections, detStatusFilter, detNodeFilter, detSearchQuery]);
+
+  const detStatusCounts = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    for (const d of liveDetections) {
+      if (d.verification_status === 'YES' || d.verified === true) {
+        approved++;
+      } else if (d.verification_status === 'NO' || d.verification_status === 'rejected') {
+        rejected++;
+      } else {
+        pending++;
+      }
+    }
+    return {
+      all: liveDetections.length,
+      pending,
+      approved,
+      rejected
+    };
+  }, [liveDetections]);
+
+  const availableNodeIds = useMemo(() => {
+    const set = new Set<string>();
+    recorders.forEach(r => { if (r.recorder_id) set.add(r.recorder_id); });
+    liveDetections.forEach(d => {
+      const nid = d.recorder_id || d.station_id || d.node_id;
+      if (nid) set.add(nid);
+    });
+    return Array.from(set);
+  }, [recorders, liveDetections]);
 
   return (
     <div className="space-y-6 pb-16 font-sans">
@@ -2208,65 +2440,483 @@ WantedBy=multi-user.target`;
       {/* ============================================================================== */}
       {activeTab === 'detections' && (
         <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-[#ffffff] border border-[#dde1dc] space-y-4 shadow-xs text-xs">
-            <div className="flex flex-col gap-3 pb-3 border-b border-[#f0f2ef]">
-              <h3 className="text-sm font-serif font-bold text-[#1a1f1c] flex items-center justify-between">
-                <span className="flex items-center gap-2">
+          <audio ref={liveAdminAudioRef} onEnded={() => setPlayingAudioUrl(null)} />
+
+          <div className="p-6 rounded-2xl bg-[#ffffff] border border-[#dde1dc] space-y-5 shadow-xs text-xs">
+            {/* 1. Header & Primary Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#f0f2ef]">
+              <div>
+                <h3 className="text-base font-serif font-bold text-[#1a1f1c] flex items-center gap-2">
                   <Database className="w-4 h-4 text-[#1f4d3a]" /> Live Detections Database
+                </h3>
+                <p className="text-[11px] text-[#5a635d] mt-0.5">
+                  Auditory verification, flag management, and database purging for real-time edge predictions.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <span className="font-mono text-[11px] text-[#5a635d] bg-[#f5f6f4] px-2.5 py-1 rounded-lg border border-[#dde1dc]">
+                  {filteredLiveDetections.length} of {liveDetections.length} records
                 </span>
-                <span className="font-mono text-[11px] text-[#5a635d]">{liveDetections.length} recorded calls</span>
-              </h3>
+
+                <button
+                  type="button"
+                  onClick={() => loadAllLiveAdminData()}
+                  disabled={isLiveRefreshing}
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#f5f6f4] border border-[#dde1dc] text-[#1f4d3a] font-semibold text-xs flex items-center gap-1.5 transition shadow-2xs"
+                  title="Reload Detections from Supabase"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLiveRefreshing ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+
+                {currentRole === 'Admin' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPurgeNodeScope('All');
+                      setPurgeStatusScope('all');
+                      setPurgeConfirmed(false);
+                      setIsPurgeModalOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    title="Purge / Delete detections from Supabase"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Purge Detections</span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* 2. Filter Pills & Search Toolbar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Status Filter Pills */}
+              <div className="flex items-center gap-1.5 bg-[#f5f6f4] p-1 rounded-xl border border-[#dde1dc] overflow-x-auto">
+                <button
+                  onClick={() => setDetStatusFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    detStatusFilter === 'all'
+                      ? 'bg-[#1f4d3a] text-white shadow-xs'
+                      : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                  }`}
+                >
+                  <span>All</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    detStatusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#e8eae6] text-[#5a635d]'
+                  }`}>
+                    {detStatusCounts.all}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setDetStatusFilter('pending')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    detStatusFilter === 'pending'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                  }`}
+                >
+                  <span>Pending</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    detStatusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {detStatusCounts.pending}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setDetStatusFilter('approved')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    detStatusFilter === 'approved'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                  }`}
+                >
+                  <span>Approved</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    detStatusFilter === 'approved' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {detStatusCounts.approved}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setDetStatusFilter('rejected')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    detStatusFilter === 'rejected'
+                      ? 'bg-rose-700 text-white shadow-xs'
+                      : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                  }`}
+                >
+                  <span>Rejected</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    detStatusFilter === 'rejected' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
+                  }`}>
+                    {detStatusCounts.rejected}
+                  </span>
+                </button>
+              </div>
+
+              {/* Node Dropdown & Search */}
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={detNodeFilter}
+                  onChange={e => setDetNodeFilter(e.target.value)}
+                  className="bg-[#f5f6f4] border border-[#dde1dc] rounded-xl px-3 py-1.5 font-bold text-xs text-[#1a1f1c] shadow-2xs focus:outline-none"
+                >
+                  <option value="All">All Hardware Nodes ({availableNodeIds.length})</option>
+                  {availableNodeIds.map(nid => (
+                    <option key={nid} value={nid}>{nid}</option>
+                  ))}
+                </select>
+
+                <div className="relative min-w-[200px]">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#5a635d]" />
+                  <input
+                    type="text"
+                    value={detSearchQuery}
+                    onChange={e => setDetSearchQuery(e.target.value)}
+                    placeholder="Search species or node..."
+                    className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#1a1f1c] placeholder:text-[#5a635d] shadow-2xs focus:outline-none focus:bg-white"
+                  />
+                  {detSearchQuery && (
+                    <button
+                      onClick={() => setDetSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#5a635d] hover:text-[#1a1f1c] p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Bulk Selection Actions Banner */}
+            {currentRole === 'Admin' && selectedDetIds.size > 0 && (
+              <div className="flex items-center justify-between p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span className="font-bold text-xs">
+                    {selectedDetIds.size} detection{selectedDetIds.size > 1 ? 's' : ''} selected
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedDetIds(new Set())}
+                    className="px-2.5 py-1 text-xs text-rose-700 hover:text-rose-900 font-semibold"
+                  >
+                    Deselect All
+                  </button>
+                  <button
+                    onClick={handleDeleteBulkDetections}
+                    disabled={isDeletingBulk}
+                    className="px-3.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeletingBulk ? 'Deleting...' : `Delete Selected (${selectedDetIds.size})`}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Detections Table */}
+            <div className="overflow-x-auto border border-[#dde1dc] rounded-xl">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[#dde1dc] text-[#5a635d] text-[10px] uppercase font-mono tracking-wider">
-                    <th className="py-3 px-3">Date &amp; Time</th>
-                    <th className="py-3 px-3">Station / Node</th>
-                    <th className="py-3 px-3">Common / Scientific Name</th>
-                    <th className="py-3 px-3 text-center">Confidence</th>
-                    <th className="py-3 px-3 text-center">Model Link</th>
+                  <tr className="border-b border-[#dde1dc] bg-[#f5f6f4] text-[#5a635d] text-[10px] uppercase font-mono tracking-wider">
+                    {currentRole === 'Admin' && (
+                      <th className="py-2.5 px-3 w-8 text-center">
+                        <input
+                          type="checkbox"
+                          className="rounded border-[#dde1dc] text-[#1f4d3a] focus:ring-[#1f4d3a] cursor-pointer"
+                          checked={filteredLiveDetections.length > 0 && selectedDetIds.size === filteredLiveDetections.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDetIds(new Set(filteredLiveDetections.map(d => d.id)));
+                            } else {
+                              setSelectedDetIds(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
+                    <th className="py-2.5 px-3">Date &amp; Time</th>
+                    <th className="py-2.5 px-3">Station / Node</th>
+                    <th className="py-2.5 px-3">Common / Scientific Name</th>
+                    <th className="py-2.5 px-3 text-center">Confidence</th>
+                    <th className="py-2.5 px-3 text-center">Verification Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#f0f2ef] font-medium">
-                  {liveDetections.length === 0 ? (
+                <tbody className="divide-y divide-[#f0f2ef] font-medium bg-white">
+                  {filteredLiveDetections.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-[#5a635d]">
-                        No detections currently logged in live_detections table.
+                      <td colSpan={currentRole === 'Admin' ? 7 : 6} className="py-12 text-center text-[#5a635d]">
+                        <Database className="w-8 h-8 text-[#dde1dc] mx-auto mb-2" />
+                        <p className="font-semibold text-sm text-[#1a1f1c]">No detections match criteria</p>
+                        <p className="text-[11px] text-[#5a635d] mt-1">
+                          Try adjusting your status filter ({detStatusFilter}), hardware node ({detNodeFilter}), or search query.
+                        </p>
                       </td>
                     </tr>
                   ) : (
-                    liveDetections.slice(0, 50).map(det => (
-                      <tr key={det.id} className="hover:bg-[#f9faf8] transition">
-                        <td className="py-2.5 px-3 font-mono text-[11px] text-[#5a635d]">
-                          {new Date(det.timestamp).toLocaleString()}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <strong className="text-[#1a1f1c]">{det.site_name || det.station_name || 'Station'}</strong>
-                          <div className="font-mono text-[10px] text-[#5a635d]">{det.recorder_id || det.station_id}</div>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <strong className="text-[#1a1f1c]">{det.common_name}</strong>
-                          <div className="text-[10px] text-[#5a635d] italic">{det.scientific_name}</div>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                            det.confidence > 0.8 ? 'bg-emerald-100 text-emerald-800' :
-                            det.confidence > 0.5 ? 'bg-amber-100 text-amber-800' :
-                            'bg-rose-100 text-rose-800'
-                          }`}>
-                            {(det.confidence * 100).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-mono text-[10px] text-[#5a635d]">
-                          {det.model_id ? String(det.model_id).slice(0, 8) : 'BirdNET'}
-                        </td>
-                      </tr>
-                    ))
+                    filteredLiveDetections.map(det => {
+                      const isApproved = det.verification_status === 'YES' || det.verified === true;
+                      const isRejected = det.verification_status === 'NO' || det.verification_status === 'rejected';
+                      const isPending = !isApproved && !isRejected;
+                      const isSelected = selectedDetIds.has(det.id) || selectedDetIds.has(String(det.id)) || selectedDetIds.has(Number(det.id));
+
+                      return (
+                        <tr 
+                          key={det.id} 
+                          className={`hover:bg-[#f9faf8] transition ${isSelected ? 'bg-rose-50/40' : ''}`}
+                        >
+                          {currentRole === 'Admin' && (
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                className="rounded border-[#dde1dc] text-[#1f4d3a] focus:ring-[#1f4d3a] cursor-pointer"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  setSelectedDetIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) {
+                                      next.add(det.id);
+                                    } else {
+                                      next.delete(det.id);
+                                      next.delete(String(det.id));
+                                      next.delete(Number(det.id));
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              />
+                            </td>
+                          )}
+
+                          <td className="py-2.5 px-3 font-mono text-[11px] text-[#5a635d] whitespace-nowrap">
+                            {new Date(det.timestamp).toLocaleString()}
+                          </td>
+
+                          <td className="py-2.5 px-3">
+                            <strong className="text-[#1a1f1c] block">{det.site_name || det.station_name || 'Tirupati'}</strong>
+                            <span className="font-mono text-[10px] text-[#5a635d] bg-[#f5f6f4] px-1.5 py-0.5 rounded border border-[#dde1dc]">
+                              {det.recorder_id || det.station_id || 'Test_01'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3">
+                            <strong className="text-[#1a1f1c] block text-xs">{det.common_name}</strong>
+                            <span className="text-[10px] text-[#5a635d] italic">{det.scientific_name}</span>
+                          </td>
+
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                              det.confidence >= 0.7 ? 'bg-emerald-100 text-emerald-800' :
+                              det.confidence >= 0.4 ? 'bg-amber-100 text-amber-800' :
+                              'bg-rose-100 text-rose-800'
+                            }`}>
+                              {(det.confidence * 100).toFixed(1)}%
+                            </span>
+                          </td>
+
+                          {/* Status Flag */}
+                          <td className="py-2.5 px-3 text-center">
+                            {isApproved && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <Check className="w-3 h-3 text-emerald-600" /> Approved
+                              </span>
+                            )}
+                            {isRejected && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                <X className="w-3 h-3 text-rose-600" /> Rejected
+                              </span>
+                            )}
+                            {isPending && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                Pending
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Action Buttons */}
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Audio Clip Playback */}
+                              {det.audio_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePlayDetectionAudio(det.audio_url)}
+                                  className={`p-1.5 rounded-lg border transition ${
+                                    playingAudioUrl === det.audio_url
+                                      ? 'bg-emerald-600 text-white border-emerald-700'
+                                      : 'bg-white text-[#1f4d3a] border-[#dde1dc] hover:bg-[#f0f7f3]'
+                                  }`}
+                                  title="Play Detection Clip"
+                                >
+                                  {playingAudioUrl === det.audio_url ? (
+                                    <Square className="w-3 h-3 fill-current" />
+                                  ) : (
+                                    <Play className="w-3 h-3 fill-current" />
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Quick Approve / Reject Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyInline(det.id, isApproved ? 'NO' : 'YES')}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+                                  isApproved 
+                                    ? 'bg-emerald-600 text-white border-emerald-700'
+                                    : 'bg-white hover:bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}
+                                title="Approve Detection"
+                              >
+                                ✓
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyInline(det.id, isRejected ? 'YES' : 'NO')}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+                                  isRejected
+                                    ? 'bg-rose-600 text-white border-rose-700'
+                                    : 'bg-white hover:bg-rose-50 text-rose-700 border-rose-200'
+                                }`}
+                                title="Reject Detection"
+                              >
+                                ✕
+                              </button>
+
+                              {/* Single Delete */}
+                              {currentRole === 'Admin' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSingleDetection(det.id)}
+                                  disabled={isDeletingDet === det.id}
+                                  className="p-1.5 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-600 transition shadow-2xs"
+                                  title="Delete this detection permanently"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================== */}
+      {/* PURGE LIVE DETECTIONS CONFIRMATION MODAL                                       */}
+      {/* ============================================================================== */}
+      {isPurgeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl p-6 space-y-5 text-xs text-[#1a1f1c]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-serif font-bold text-slate-900">Purge Live Detections Database</h3>
+                  <p className="text-[11px] text-slate-500">Permanently delete matching acoustic calls from Supabase</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Scope Settings */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  1. Hardware Node Scope
+                </label>
+                <select
+                  value={purgeNodeScope}
+                  onChange={e => setPurgeNodeScope(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-400"
+                >
+                  <option value="All">All Hardware Nodes (Observatory-wide)</option>
+                  {availableNodeIds.map(nid => (
+                    <option key={nid} value={nid}>{nid}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  2. Verification Status Scope
+                </label>
+                <select
+                  value={purgeStatusScope}
+                  onChange={e => setPurgeStatusScope(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-400"
+                >
+                  <option value="all">Delete All Calls in Scope ({detStatusCounts.all} records)</option>
+                  <option value="rejected">Delete ONLY Rejected Calls ({detStatusCounts.rejected} records)</option>
+                  <option value="pending">Delete ONLY Pending Calls ({detStatusCounts.pending} records)</option>
+                  <option value="approved">Delete ONLY Approved Calls ({detStatusCounts.approved} records)</option>
+                </select>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Permanent Database Deletion</span>
+                </div>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  This action cannot be undone. Matching bioacoustic calls in <code className="font-mono font-bold bg-white/70 px-1 rounded">live_detections</code> and any saved audio clips will be permanently removed.
+                </p>
+              </div>
+
+              {/* Confirmation Checkbox */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={purgeConfirmed}
+                  onChange={e => setPurgeConfirmed(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                />
+                <span className="text-xs font-semibold text-slate-700">
+                  I confirm that I want to delete all matching detections from Supabase.
+                </span>
+              </label>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecutePurge}
+                disabled={!purgeConfirmed || isPurging}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md disabled:opacity-40 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isPurging ? 'Purging Supabase...' : 'Confirm & Purge Detections'}</span>
+              </button>
             </div>
           </div>
         </div>
