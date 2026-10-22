@@ -1820,6 +1820,31 @@ WantedBy=multi-user.target`;
                 </pre>
               </div>
 
+              {/* Step 6b: USB Microphone Clarity & Voice Capture Test */}
+              <div className="space-y-2 p-4 rounded-xl bg-gradient-to-r from-emerald-950/30 to-teal-950/30 border border-emerald-900/40">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-emerald-300 flex items-center gap-2">
+                    <Mic className="w-4 h-4 text-emerald-400" />
+                    <span>Step 6b: USB Microphone Clarity &amp; Voice Capture Test</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`cd /home/${genPiUser}/Live_detector && source venv/bin/activate && python3 test_mic.py`);
+                      showNotification('Mic test command copied!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Mic Test
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                  Tests your USB microphone in real time. It un-mutes the hardware ALSA capture mixer, records 3 seconds while you talk near the mic, and calculates peak &amp; RMS volume in dBFS to guarantee voices and bird songs are captured loud and clear:
+                </p>
+                <pre className="p-3 rounded-lg bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
+                  python3 test_mic.py
+                </pre>
+              </div>
+
               {/* Step 7: Create .env File */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -2032,14 +2057,14 @@ WantedBy=multi-user.target`;
                     </code>
                   </div>
 
-                  {/* Issue 7: Distorted, Slow-Motion, or Robotic Audio */}
+                  {/* Issue 7: Inaudible Voices, Slow-Motion, or Distorted Audio */}
                   <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
                     <div className="flex items-center justify-between">
-                      <strong className="text-white">Slow-Motion, Robotic, or Distorted Audio</strong>
+                      <strong className="text-white">Cannot Hear Mic Voices / Slow-Motion or Distorted Audio</strong>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText('amixer set Capture 75% && cd ~/Live_detector && git pull');
-                          showNotification('Gain & audio fix command copied!');
+                          navigator.clipboard.writeText('python3 test_mic.py');
+                          showNotification('Mic diagnostic command copied!');
                         }}
                         className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
                         title="Copy fix command"
@@ -2048,11 +2073,11 @@ WantedBy=multi-user.target`;
                       </button>
                     </div>
                     <p className="text-[#a0aba3] text-[11px] leading-relaxed">
-                      1. <strong>Slow-motion sound</strong> is caused when stereo USB mics are read without 48 kHz output resampling. Run <code className="text-emerald-400">git pull</code> in <code className="text-emerald-400">~/Live_detector</code> to use our lowdelay zero-buffer real-time engine.<br/>
-                      2. <strong>Distortion / Clipping</strong>: If capture gain is at 100% (+30 dB), sound square-clips. Run <code className="text-emerald-400">amixer set Capture 75%</code> or use <code className="text-emerald-400">alsamixer</code> to calibrate input level.
+                      1. <strong>Cannot hear people talking / Muted mic</strong>: USB microphones in Linux frequently default to 0% volume or muted. Run <code className="text-emerald-400">python3 test_mic.py</code> on the Pi to un-mute ALSA capture mixers, record a 3-second test, and verify room voices in dBFS.<br/>
+                      2. <strong>Slow-motion / Robotic sound</strong>: Occurs when hardware mic rates (16 kHz) are captured without ALSA plug resampling. Use <code className="text-emerald-400">AUDIO_INPUT_DEVICE=auto</code> in <code className="text-emerald-400">.env</code> to enable automatic 48 kHz resampling.
                     </p>
                     <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
-                      amixer set Capture 75% &amp;&amp; cd ~/Live_detector &amp;&amp; git pull
+                      python3 test_mic.py
                     </code>
                   </div>
 

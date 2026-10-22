@@ -59,8 +59,8 @@ WINDOW_SAMPLES = int(SAMPLE_RATE * WINDOW_SECONDS)           # 144,000 samples
 HOP_SECONDS = float(os.getenv("HOP_SECONDS", "1.5"))         # 50% overlap by default
 HOP_SAMPLES = int(SAMPLE_RATE * HOP_SECONDS)
 
-# Mic Device Specification (ALSA hardware string or device index, e.g. "default", "hw:1,0")
-AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "default")
+# Mic Device Specification (ALSA hardware string or 'auto' to auto-detect USB mic)
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "auto")
 
 # DSP Activity Analysis Frequency Bands (in Hz)
 BAND_LOW_FREQ = (150, 1200)      # Low band: mammals (deer, elephants, primates), anurans

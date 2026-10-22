@@ -347,19 +347,22 @@ git --version
 
 ---
 
-### Issue 6: Setting the ALSA audio device for your microphone
-**Cause**: The USB microphone might be enumerated on `card 1`, `card 2`, or `card 3`.  
+### Issue 6: Cannot Hear Room Voices / Microphone Capturing Silence
+**Cause**: USB microphones in Linux frequently default to 0% capture gain or are muted (`[MM]`), or the capture device is listening to an HDMI audio loopback instead of the physical USB microphone.  
 **Fix**:
-1. Run `arecord -l` and note the card number (e.g. `card 3: Audio [AB13X USB Audio]`).
-2. Add the hardware string (`plughw:X,0`) to your `.env` file:
+1. Run the built-in microphone diagnostic tool on the Pi:
    ```bash
-   echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> ~/Live_detector/.env
+   python3 test_mic.py
    ```
-3. Test recording 5 seconds with that specific device:
+   This script:
+   - Scans all ALSA input cards (`arecord -l`).
+   - Un-mutes the hardware capture mixer (`amixer set Capture 100% cap`).
+   - Records 3 seconds while you talk near the mic.
+   - Calculates Peak and RMS dBFS volume to verify human voice capture.
+   - Prints the exact `AUDIO_INPUT_DEVICE=plughw:X,0` string to set in your `.env`.
+2. Add the hardware string (`plughw:X,0` or `auto`) to your `.env` file:
    ```bash
-   arecord -D plughw:3,0 -d 5 -f S16_LE -r 48000 test.wav
-   ls -lh test.wav
-   rm test.wav
+   echo "AUDIO_INPUT_DEVICE=auto" >> ~/Live_detector/.env
    ```
 
 ---

@@ -3,9 +3,12 @@ BirdSong Observatory - Audio Capture Engine
 ===========================================
 Spawns continuous ALSA audio capture stream via FFmpeg subprocess or sounddevice.
 Streams 48 kHz mono float32 samples directly into the thread-safe circular ring buffer.
-Automatically detects microphone disconnection and restarts capture with exponential backoff.
+Automatically detects USB microphones, un-mutes hardware ALSA capture mixer,
+and handles reconnection with exponential backoff.
 """
 
+import os
+import re
 import time
 import subprocess
 import threading
@@ -15,6 +18,99 @@ from ring_buffer import CircularRingBuffer
 from config import SAMPLE_RATE, CHANNELS, AUDIO_INPUT_DEVICE
 
 logger = logging.getLogger("CaptureEngine")
+
+def unmute_alsa_card(card_id: str | int):
+    """Attempt to un-mute and set 95-100% gain on ALSA capture mixer controls."""
+    commands = [
+        ["amixer", "-c", str(card_id), "sset", "Capture", "cap"],
+        ["amixer", "-c", str(card_id), "sset", "Capture", "95%"],
+        ["amixer", "-c", str(card_id), "sset", "Mic", "cap"],
+        ["amixer", "-c", str(card_id), "sset", "Mic", "95%"],
+        ["amixer", "-c", str(card_id), "sset", "Internal Mic", "cap"],
+        ["amixer", "-c", str(card_id), "sset", "Internal Mic", "95%"],
+        ["amixer", "sset", "Capture", "cap"],
+        ["amixer", "sset", "Capture", "95%"],
+    ]
+    for cmd in commands:
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            pass
+
+def auto_detect_audio_input(preferred: str = AUDIO_INPUT_DEVICE) -> tuple[str, str]:
+    """
+    Scans for ALSA audio capture devices.
+    Returns (alsa_device_string, friendly_description).
+    """
+    # 1. If user explicitly provided a specific hardware string (e.g. "plughw:2,0" or "hw:1,0")
+    if preferred and preferred.lower() not in ("auto", "default", ""):
+        m = re.search(r"card\s*(\d+)|hw:(\d+)|plughw:(\d+)", preferred)
+        if m:
+            card_num = m.group(1) or m.group(2) or m.group(3)
+            unmute_alsa_card(card_num)
+        return preferred, f"Configured device: {preferred}"
+
+    # 2. Query arecord -l to list all capture hardware
+    usb_candidates = []
+    other_candidates = []
+
+    try:
+        proc = subprocess.run(["arecord", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                # Format: card 2: Device [USB Audio Device], device 0: USB Audio [USB Audio]
+                m = re.search(r"card\s*(\d+):\s*([^,\[]+)(?:\[([^\]]+)\])?,\s*device\s*(\d+):", line)
+                if m:
+                    card_idx = m.group(1)
+                    card_name = (m.group(3) or m.group(2)).strip()
+                    dev_idx = m.group(4)
+                    
+                    # Ignore HDMI outputs or non-input controllers
+                    if any(x in card_name.lower() for x in ["hdmi", "bcm2835", "dummy", "loopback"]):
+                        continue
+
+                    cand = (f"plughw:{card_idx},{dev_idx}", f"Card {card_idx} ({card_name})", card_idx)
+                    if any(x in card_name.lower() for x in ["usb", "mic", "audio", "headset", "samson", "rode", "blue"]):
+                        usb_candidates.append(cand)
+                    else:
+                        other_candidates.append(cand)
+    except Exception as e:
+        logger.debug(f"arecord -l query notice: {e}")
+
+    # 3. Check /proc/asound/cards as fallback
+    if not usb_candidates and not other_candidates and os.path.exists("/proc/asound/cards"):
+        try:
+            with open("/proc/asound/cards", "r") as f:
+                content = f.read()
+            for m in re.finditer(r"^\s*(\d+)\s*\[([^\]]+)\]:\s*(.+)$", content, re.MULTILINE):
+                card_idx = m.group(1)
+                desc = m.group(3)
+                if any(x in desc.lower() for x in ["hdmi", "bcm2835", "dummy", "loopback"]):
+                    continue
+                cand = (f"plughw:{card_idx},0", f"Card {card_idx} ({desc.strip()})", card_idx)
+                if any(x in desc.lower() for x in ["usb", "audio", "mic"]):
+                    usb_candidates.append(cand)
+                else:
+                    other_candidates.append(cand)
+        except Exception as e:
+            logger.debug(f"/proc/asound/cards parsing notice: {e}")
+
+    # Pick the best device (USB microphone preferred)
+    chosen = None
+    if usb_candidates:
+        chosen = usb_candidates[0]
+    elif other_candidates:
+        chosen = other_candidates[0]
+
+    if chosen:
+        dev_str, dev_desc, card_num = chosen
+        unmute_alsa_card(card_num)
+        return dev_str, f"Auto-detected {dev_desc}"
+
+    # Default fallback
+    unmute_alsa_card(0)
+    unmute_alsa_card(1)
+    return "default", "Default ALSA capture device"
 
 class AudioCaptureWorker(threading.Thread):
     def __init__(self, ring_buffer: CircularRingBuffer, device: str = AUDIO_INPUT_DEVICE):
@@ -40,12 +136,17 @@ class AudioCaptureWorker(threading.Thread):
 
     def run(self):
         self.running = True
-        logger.info(f"Starting Audio Capture Worker on device: '{self.device}' @ {SAMPLE_RATE} Hz")
+
+        # Resolve active audio device and unmute hardware mixer
+        active_device, dev_desc = auto_detect_audio_input(self.device)
+        self.device = active_device
+        logger.info(f"🎤 Starting Audio Capture Worker using: '{self.device}' ({dev_desc}) @ {SAMPLE_RATE} Hz")
 
         while self.running:
             try:
                 # Launch FFmpeg to capture raw uncompressed float32 audio from ALSA
-                # Format: float 32-bit little-endian (f32le)
+                # Using plughw ensures ALSA automatically performs hardware rate conversion
+                # to exactly 48,000 Hz, preventing slow-motion or fast-motion distortion!
                 cmd = [
                     "ffmpeg",
                     "-loglevel", "error",

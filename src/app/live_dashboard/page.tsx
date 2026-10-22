@@ -161,13 +161,11 @@ export default function LiveDashboardPage() {
   // Live Audio & Detection Streaming States
   const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
   const [isLiveAudioPlaying, setIsLiveAudioPlaying] = useState(false);
-  const [liveAudioSource, setLiveAudioSource] = useState<'cloud' | 'direct'>('direct');
   const [directStreamUrl, setDirectStreamUrl] = useState('http://livedetector.local:8888/stream.opus');
   const [selectedStreamNode, setSelectedStreamNode] = useState('Test_01');
   const [liveAudioVolume, setLiveAudioVolume] = useState(0.85);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [autoPlayOnDetection, setAutoPlayOnDetection] = useState(false);
-  const [currentCloudClipIndex, setCurrentCloudClipIndex] = useState(0);
   const [lastLiveDetectionId, setLastLiveDetectionId] = useState<any>(null);
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
@@ -722,11 +720,7 @@ export default function LiveDashboardPage() {
     setIsLiveStreamActive(true);
     setTimeout(() => {
       if (!liveAudioElementRef.current) return;
-      const targetUrl = liveAudioSource === 'direct' 
-        ? directStreamUrl 
-        : (nodeClips.length > 0 ? nodeClips[0].clip_path : directStreamUrl);
-      
-      liveAudioElementRef.current.src = targetUrl;
+      liveAudioElementRef.current.src = directStreamUrl;
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
       }).catch(err => {
@@ -755,9 +749,7 @@ export default function LiveDashboardPage() {
       setIsLiveAudioPlaying(false);
     } else {
       if (!liveAudioElementRef.current.src || liveAudioElementRef.current.src === window.location.href) {
-        liveAudioElementRef.current.src = liveAudioSource === 'direct'
-          ? directStreamUrl
-          : (nodeClips.length > 0 ? nodeClips[currentCloudClipIndex % nodeClips.length].clip_path : directStreamUrl);
+        liveAudioElementRef.current.src = directStreamUrl;
       }
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
@@ -769,7 +761,7 @@ export default function LiveDashboardPage() {
 
   const handleStreamUrlChange = (newUrl: string) => {
     setDirectStreamUrl(newUrl);
-    if (liveAudioElementRef.current && liveAudioSource === 'direct') {
+    if (liveAudioElementRef.current) {
       const wasPlaying = isLiveAudioPlaying;
       liveAudioElementRef.current.src = newUrl;
       if (wasPlaying) {
@@ -778,27 +770,13 @@ export default function LiveDashboardPage() {
     }
   };
 
-  const handleAudioSourceChange = (newSource: 'direct' | 'cloud') => {
-    setLiveAudioSource(newSource);
-    if (liveAudioElementRef.current) {
-      const targetUrl = newSource === 'direct' 
-        ? directStreamUrl 
-        : (nodeClips.length > 0 ? nodeClips[0].clip_path : directStreamUrl);
-      liveAudioElementRef.current.src = targetUrl;
-      if (isLiveAudioPlaying) {
-        liveAudioElementRef.current.play().catch(console.warn);
-      }
-    }
-  };
-
   const handlePlayDetectionClipFromSpectrogram = (clipUrl: string) => {
-    if (liveAudioElementRef.current) {
-      setIsLiveStreamActive(true);
-      setLiveAudioSource('cloud');
-      liveAudioElementRef.current.src = clipUrl;
-      liveAudioElementRef.current.play().then(() => {
-        setIsLiveAudioPlaying(true);
-      }).catch(console.warn);
+    const match = detections.find(d => d.audio_url === clipUrl);
+    if (match) {
+      setSelectedDetection(match);
+    } else {
+      const a = new Audio(clipUrl);
+      a.play().catch(console.warn);
     }
   };
 
@@ -815,17 +793,6 @@ export default function LiveDashboardPage() {
       liveAudioElementRef.current.volume = isAudioMuted ? 0 : liveAudioVolume;
     }
   }, [liveAudioVolume, isAudioMuted]);
-
-  // Advance clip when current finishes in cloud mode
-  useEffect(() => {
-    if (isLiveAudioPlaying && liveAudioSource === 'cloud' && liveAudioElementRef.current && nodeClips.length > 0) {
-      const clipToPlay = nodeClips[currentCloudClipIndex % nodeClips.length];
-      if (clipToPlay?.clip_path) {
-        liveAudioElementRef.current.src = clipToPlay.clip_path;
-        liveAudioElementRef.current.play().catch(() => {});
-      }
-    }
-  }, [currentCloudClipIndex, isLiveAudioPlaying, liveAudioSource, nodeClips]);
 
   // Auto-play new detection audio alert
   useEffect(() => {
@@ -1479,11 +1446,6 @@ export default function LiveDashboardPage() {
             <audio
               ref={liveAudioElementRef}
               crossOrigin="anonymous"
-              onEnded={() => {
-                if (liveAudioSource === 'cloud' && nodeClips.length > 0) {
-                  setCurrentCloudClipIndex((prev) => (prev + 1) % nodeClips.length);
-                }
-              }}
               onError={() => {
                 console.warn('Live audio playback error. Checking direct stream URL...');
               }}
@@ -1553,8 +1515,6 @@ export default function LiveDashboardPage() {
                   onStreamUrlChange={handleStreamUrlChange}
                   stationName={selectedStreamNode}
                   stationIp={telemetryMap[selectedStreamNode]?.ip_address || telemetryMap['Test_01']?.ip_address}
-                  audioSource={liveAudioSource}
-                  onAudioSourceChange={handleAudioSourceChange}
                   detections={filteredDetections.map((d: any) => ({
                     id: d.id,
                     common_name: d.common_name,
@@ -1624,65 +1584,13 @@ export default function LiveDashboardPage() {
               {/* Detections / Live Audio Streams List Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[650px] overflow-y-auto pr-1">
                 {filteredDetections.length === 0 ? (
-                  nodeClips.length > 0 ? (
-                    nodeClips.slice(0, 30).map((clip, idx) => (
-                      <div
-                        key={clip.window_id}
-                        className="p-4 bg-white border border-[#dde1dc] rounded-xl flex items-center justify-between transition-all shadow-2xs hover:border-[#1f4d3a]"
-                      >
-                        <div className="space-y-1.5 min-w-0 pr-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-[#1a1f1c]">Live Pi Field Audio Recording</span>
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                              SNR: {clip.snr_db ? `${clip.snr_db.toFixed(1)} dB` : 'Active'}
-                            </span>
-                            {idx < 3 && (
-                              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white animate-pulse">
-                                LATEST
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs font-mono text-[#5a635d] truncate">
-                            {clip.window_id}
-                          </div>
-                          <div className="text-[10px] font-mono text-[#5a635d] flex items-center gap-2 flex-wrap">
-                            <span className="text-[#1f4d3a] font-semibold">{selectedStreamNode || 'Test_01'}</span>
-                            <span>&bull;</span>
-                            <span>{clip.timestamp ? new Date(clip.timestamp).toLocaleTimeString() : 'Just now'}</span>
-                            <span>&bull;</span>
-                            <span className="text-emerald-700">3.0s Opus Stream</span>
-                          </div>
-                        </div>
-
-                        {/* Play Live Pi Audio Clip Button */}
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => {
-                              if (liveAudioElementRef.current) {
-                                liveAudioElementRef.current.src = clip.clip_path;
-                                liveAudioElementRef.current.play().then(() => {
-                                  setIsLiveAudioPlaying(true);
-                                }).catch(console.warn);
-                              }
-                            }}
-                            className="p-2.5 rounded-xl bg-[#f0f7f3] hover:bg-[#1f4d3a] text-[#1f4d3a] hover:text-white transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-                            title="Play live 3.0s audio clip recorded by this edge station"
-                          >
-                            <Play className="w-4 h-4 fill-current" />
-                            <span className="hidden sm:inline">Play Pi Audio</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
-                      <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
-                      <p className="font-semibold">Awaiting incoming species detections...</p>
-                      <p className="text-[11px] text-[#5a635d]/70">
-                        The edge AI is actively monitoring the audio spectrum. Detections will appear here live.
-                      </p>
-                    </div>
-                  )
+                  <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
+                    <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
+                    <p className="font-semibold text-sm text-[#1a1f1c]">Awaiting incoming species detections...</p>
+                    <p className="text-xs text-[#5a635d]/80 max-w-md mx-auto">
+                      The edge AI is actively monitoring the live acoustic stream on {selectedStreamNode}. Avian classifications will appear here live.
+                    </p>
+                  </div>
                 ) : (
                   filteredDetections.map((det) => {
                     const isHigh = (det.confidence || 0) >= 0.8;

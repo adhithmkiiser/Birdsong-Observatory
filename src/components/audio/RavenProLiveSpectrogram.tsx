@@ -7,23 +7,13 @@ import {
   RotateCcw, 
   Volume2, 
   VolumeX,
-  Maximize2, 
-  Sliders, 
-  Layers, 
-  Eye, 
   Radio, 
-  ShieldCheck, 
-  CheckCircle2, 
-  AlertCircle,
   Activity,
   Bird,
   Wifi,
-  ExternalLink,
-  ChevronDown,
   X,
-  AlertTriangle,
-  Cloud,
-  Globe
+  Globe,
+  Layers
 } from 'lucide-react';
 
 interface DetectionAnnotation {
@@ -46,12 +36,20 @@ interface RavenProLiveSpectrogramProps {
   onStreamUrlChange: (url: string) => void;
   stationName: string;
   stationIp?: string;
-  audioSource: 'direct' | 'cloud';
-  onAudioSourceChange: (source: 'direct' | 'cloud') => void;
   detections: DetectionAnnotation[];
   onPlayDetectionClip?: (clipUrl: string) => void;
   onCloseStream?: () => void;
 }
+
+// Module-level persistent cache for Web Audio nodes attached to an HTMLAudioElement.
+// This prevents the browser DOMException "HTMLMediaElement already connected to an AudioContext"
+// when React components unmount and remount during tab switching or stream toggling.
+interface BioAudioNodes {
+  ctx: AudioContext;
+  analyser: AnalyserNode;
+  source: MediaElementAudioSourceNode;
+}
+const audioNodesCache = new WeakMap<HTMLAudioElement, BioAudioNodes>();
 
 // Scientific Colormaps
 function getColormapPixel(val: number, scheme: 'raven-fire' | 'raven-gray' | 'viridis'): [number, number, number] {
@@ -98,8 +96,6 @@ export function RavenProLiveSpectrogram({
   onStreamUrlChange,
   stationName,
   stationIp,
-  audioSource,
-  onAudioSourceChange,
   detections,
   onPlayDetectionClip,
   onCloseStream
@@ -112,6 +108,7 @@ export function RavenProLiveSpectrogram({
   const [showAvianBand, setShowAvianBand] = useState(true);
   const [cursorReadout, setCursorReadout] = useState<{ freqHz: number; timeSec: number; db: number } | null>(null);
   const [currentLevelDb, setCurrentLevelDb] = useState(-90);
+  const [isContextSuspended, setIsContextSuspended] = useState(false);
 
   // Canvas and Web Audio Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -125,45 +122,66 @@ export function RavenProLiveSpectrogram({
   const SPECTRUM_WIDTH = 800;
   const SPECTRUM_HEIGHT = 280;
 
-  // 1. Initialize Web Audio API Analyser on Audio Element
+  // 1. Initialize Web Audio API Analyser on Audio Element safely
   useEffect(() => {
     if (!audioElement || typeof window === 'undefined') return;
 
-    if (!audioCtxRef.current) {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtxClass) {
-        audioCtxRef.current = new AudioCtxClass();
-      }
-    }
-
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
-
-    // Connect MediaElementSource safely (only once per audio element)
-    if (!sourceNodeRef.current && audioElement) {
+    let cached = audioNodesCache.get(audioElement);
+    if (!cached) {
       try {
-        const source = ctx.createMediaElementSource(audioElement);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048; // 1024 bins
-        analyser.smoothingTimeConstant = 0.15;
-        analyser.minDecibels = -95;
-        analyser.maxDecibels = -10;
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtxClass) {
+          const ctx = new AudioCtxClass();
+          const source = ctx.createMediaElementSource(audioElement);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 2048; // 1024 frequency bins
+          analyser.smoothingTimeConstant = 0.15;
+          analyser.minDecibels = -95;
+          analyser.maxDecibels = -10;
 
-        source.connect(analyser);
-        analyser.connect(ctx.destination);
+          source.connect(analyser);
+          analyser.connect(ctx.destination);
 
-        sourceNodeRef.current = source;
-        analyserRef.current = analyser;
+          cached = { ctx, analyser, source };
+          audioNodesCache.set(audioElement, cached);
+        }
       } catch (err) {
         console.warn('Web Audio source connection notice:', err);
       }
     }
 
-    // Resume AudioContext if suspended (browser autoplay policy)
-    if (isPlaying && ctx.state === 'suspended') {
-      ctx.resume().catch(console.warn);
+    if (cached) {
+      audioCtxRef.current = cached.ctx;
+      analyserRef.current = cached.analyser;
+      sourceNodeRef.current = cached.source;
+
+      if (cached.ctx.state === 'suspended') {
+        setIsContextSuspended(true);
+      }
     }
-  }, [audioElement, isPlaying]);
+
+    const handlePlay = () => {
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().then(() => {
+          setIsContextSuspended(false);
+        }).catch(console.warn);
+      }
+    };
+
+    audioElement.addEventListener('play', handlePlay);
+    return () => {
+      audioElement.removeEventListener('play', handlePlay);
+    };
+  }, [audioElement]);
+
+  // Direct resume handler
+  const resumeAudioContext = useCallback(() => {
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().then(() => {
+        setIsContextSuspended(false);
+      }).catch(console.warn);
+    }
+  }, []);
 
   // 2. Offscreen buffer for continuous waterfall scrolling
   useEffect(() => {
@@ -197,6 +215,15 @@ export function RavenProLiveSpectrogram({
 
     const width = canvas.width;
     const height = canvas.height;
+
+    // Check context state
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended' && !isContextSuspended) {
+        setIsContextSuspended(true);
+      } else if (audioCtx.state === 'running' && isContextSuspended) {
+        setIsContextSuspended(false);
+      }
+    }
 
     // Shift offscreen buffer left by 2 pixels (waterfall time progression)
     if (isPlaying && analyser) {
@@ -297,7 +324,7 @@ export function RavenProLiveSpectrogram({
     }
 
     animFrameIdRef.current = requestAnimationFrame(renderFrame);
-  }, [isPlaying, colorScheme, contrast, brightness, maxDisplayFreq, showAvianBand]);
+  }, [isPlaying, colorScheme, contrast, brightness, maxDisplayFreq, showAvianBand, isContextSuspended]);
 
   useEffect(() => {
     animFrameIdRef.current = requestAnimationFrame(renderFrame);
@@ -351,6 +378,19 @@ export function RavenProLiveSpectrogram({
               }`}>
                 {isPlaying ? '● REAL-TIME FFT' : '○ STANDBY'}
               </span>
+
+              {/* Real-Time Acoustic VU Decibel Pill */}
+              {isPlaying && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold transition-all ${
+                  currentLevelDb > -30 
+                    ? 'bg-amber-950 text-amber-300 border border-amber-600 animate-pulse' 
+                    : currentLevelDb > -65 
+                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' 
+                      : 'bg-black/60 text-white/40 border border-white/10'
+                }`}>
+                  {currentLevelDb > -90 ? `${Math.round(currentLevelDb)} dBFS` : 'Quiet'}
+                </span>
+              )}
             </div>
             <p className="text-xs text-[#a0aba3]">
               Real-time 48 kHz continuous bioacoustic monitoring on <strong className="text-white">{stationName}</strong> &bull; Multi-label Avian Species Annotations
@@ -358,38 +398,12 @@ export function RavenProLiveSpectrogram({
           </div>
         </div>
 
-        {/* Source Switcher & Master Play Button */}
+        {/* Master Play Button & Disconnect Controls */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Source Toggle */}
-          <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/10 text-xs font-mono">
-            <button
-              onClick={() => onAudioSourceChange('direct')}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                audioSource === 'direct'
-                  ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              📻 Direct Mic (8888)
-            </button>
-            <button
-              onClick={() => onAudioSourceChange('cloud')}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                audioSource === 'cloud'
-                  ? 'bg-emerald-500 text-[#0a1e16] font-bold shadow-xs'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              ☁️ Cloud Call Clips
-            </button>
-          </div>
-
           {/* Master Play / Pause Button */}
           <button
             onClick={() => {
-              if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-                audioCtxRef.current.resume().catch(console.warn);
-              }
+              resumeAudioContext();
               onTogglePlay();
             }}
             className={`px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer ${
@@ -425,58 +439,40 @@ export function RavenProLiveSpectrogram({
         </div>
       </div>
 
-      {/* 2. CLOUD CALL CLIPS MODE BANNER (Global HTTPS, No Local Wi-Fi Needed) */}
-      {audioSource === 'cloud' && (
-        <div className="border-b border-[#1f3a2b] px-4 py-2 bg-emerald-950/40 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>
-              <strong className="text-white">Global Cloud Audio Active:</strong> Streaming 3.0s Opus recordings directly via Supabase Cloud CDN. Works worldwide on cellular data or any remote Wi-Fi network.
-            </span>
-          </div>
-          <div className="text-[11px] text-emerald-300/80 font-mono flex items-center gap-1.5 self-start sm:self-auto">
-            <span>Click ▶️ Play Clip on any row below</span>
-          </div>
-        </div>
-      )}
-
       {/* 2. DIRECT STREAM URL / IP SWITCHER BAR (LAN or Cloudflare Tunnel) */}
-      {audioSource === 'direct' && (
-        <div className="border-b border-[#1f3a2b]">
-          <div className="px-4 py-2.5 bg-[#090d0b] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
-            <div className="flex items-center gap-2 text-[#a0aba3] w-full sm:w-auto">
-              <span className="text-emerald-400 font-bold shrink-0">Stream Target:</span>
-              <input
-                type="text"
-                value={streamUrl}
-                onChange={(e) => onStreamUrlChange(e.target.value)}
-                className="bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full sm:w-96 focus:outline-none focus:border-emerald-500 font-mono"
-                placeholder="http://192.168.1.xxx:8888/stream.opus or https://...trycloudflare.com/stream.opus"
-              />
-            </div>
-
-            {stationIp && stationIp !== 'livedetector.local' && (
-              <button
-                onClick={() => onStreamUrlChange(`http://${stationIp}:8888/stream.opus`)}
-                className="px-2.5 py-1 rounded-md bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 text-[11px] text-emerald-300 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-                title="Click to use the Raspberry Pi local IP address discovered via telemetry"
-              >
-                <Wifi className="w-3 h-3 text-emerald-400" />
-                <span>Use Pi LAN IP: {stationIp}</span>
-              </button>
-            )}
+      <div className="border-b border-[#1f3a2b]">
+        <div className="px-4 py-2.5 bg-[#090d0b] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
+          <div className="flex items-center gap-2 text-[#a0aba3] w-full sm:w-auto">
+            <span className="text-emerald-400 font-bold shrink-0">Stream Target:</span>
+            <input
+              type="text"
+              value={streamUrl}
+              onChange={(e) => onStreamUrlChange(e.target.value)}
+              className="bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full sm:w-96 focus:outline-none focus:border-emerald-500 font-mono"
+              placeholder="http://192.168.1.xxx:8888/stream.opus or https://...trycloudflare.com/stream.opus"
+            />
           </div>
 
-          {/* Remote / Outside Wi-Fi Guide Notice */}
-          <div className="px-4 py-2.5 bg-blue-950/30 border-t border-blue-900/30 text-blue-200 text-[11px] flex items-start sm:items-center gap-2.5">
-            <Globe className="w-4 h-4 text-blue-400 shrink-0 mt-0.5 sm:mt-0" />
-            <div className="leading-relaxed">
-              <strong className="text-blue-300">Listening outside local Wi-Fi?</strong> Local numeric IPs (<code className="bg-black/40 px-1 py-0.5 rounded text-blue-200">192.168.x.x</code>) only work when your device is on the <em>same local Wi-Fi router</em>. When away on cellular data:
-              <span className="ml-1 text-white font-medium">Switch to <strong className="text-emerald-400">☁️ Cloud Call Clips</strong> above (zero setup, plays everywhere)</span>, or run <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300">cloudflared tunnel --url http://localhost:8888</code> on the Pi to get a free public HTTPS live stream link!
-            </div>
+          {stationIp && stationIp !== 'livedetector.local' && (
+            <button
+              onClick={() => onStreamUrlChange(`http://${stationIp}:8888/stream.opus`)}
+              className="px-2.5 py-1 rounded-md bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 text-[11px] text-emerald-300 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              title="Click to use the Raspberry Pi local IP address discovered via telemetry"
+            >
+              <Wifi className="w-3 h-3 text-emerald-400" />
+              <span>Use Pi LAN IP: {stationIp}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Remote / Outside Wi-Fi Guide Notice */}
+        <div className="px-4 py-2 bg-blue-950/30 border-t border-blue-900/30 text-blue-200 text-[11px] flex items-start sm:items-center gap-2.5">
+          <Globe className="w-4 h-4 text-blue-400 shrink-0 mt-0.5 sm:mt-0" />
+          <div className="leading-relaxed">
+            <strong className="text-blue-300">Listening outside local Wi-Fi?</strong> Local numeric IPs (<code className="bg-black/40 px-1 py-0.5 rounded text-blue-200">192.168.x.x</code>) only work on your local Wi-Fi router. When away on cellular data, use the free public HTTPS tunnel link automatically generated by the Pi (e.g. <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300">https://...trycloudflare.com/stream.opus</code>)!
           </div>
         </div>
-      )}
+      </div>
 
       {/* 3. SPECTROGRAM CONTROL BAR: COLORMAP, CONTRAST, FREQ RANGE, READOUT */}
       <div className="px-4 py-2.5 bg-[#0e1713] border-b border-[#1f3a2b] flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -570,7 +566,10 @@ export function RavenProLiveSpectrogram({
       </div>
 
       {/* 4. MAIN SPECTROGRAM CANVAS STAGE (RAVEN WATERFALL) */}
-      <div className="relative bg-[#050a07] select-none">
+      <div 
+        className="relative bg-[#050a07] select-none"
+        onClick={resumeAudioContext}
+      >
         <canvas
           ref={canvasRef}
           width={SPECTRUM_WIDTH}
@@ -579,6 +578,19 @@ export function RavenProLiveSpectrogram({
           onMouseLeave={handleMouseLeave}
           className="w-full h-[280px] block cursor-crosshair"
         />
+
+        {/* AudioContext Autoplay Suspension Alert Overlay */}
+        {isContextSuspended && isPlaying && (
+          <div 
+            onClick={resumeAudioContext}
+            className="absolute inset-0 bg-black/60 flex items-center justify-center cursor-pointer backdrop-blur-[2px] transition-all z-10"
+          >
+            <div className="bg-emerald-950/95 border border-emerald-500/60 rounded-xl px-5 py-3 text-xs font-mono text-emerald-200 flex items-center gap-3 shadow-2xl hover:bg-emerald-900/90 hover:scale-105 transition-all">
+              <Volume2 className="w-5 h-5 text-emerald-400 animate-bounce" />
+              <span>Audio analysis waiting for user gesture &bull; <strong>Click anywhere to activate live spectrogram</strong></span>
+            </div>
+          </div>
+        )}
 
         {/* Time Axis Legend along bottom */}
         <div className="absolute bottom-1 left-0 right-0 px-3 flex justify-between text-[9px] font-mono text-white/50 pointer-events-none bg-gradient-to-t from-black/80 to-transparent py-1">
