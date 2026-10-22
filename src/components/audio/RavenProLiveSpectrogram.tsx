@@ -20,7 +20,10 @@ import {
   Wifi,
   ExternalLink,
   ChevronDown,
-  X
+  X,
+  AlertTriangle,
+  Cloud,
+  Globe
 } from 'lucide-react';
 
 interface DetectionAnnotation {
@@ -54,7 +57,7 @@ interface RavenProLiveSpectrogramProps {
 function getColormapPixel(val: number, scheme: 'raven-fire' | 'raven-gray' | 'viridis'): [number, number, number] {
   // val is 0.0 to 1.0 (normalized dB)
   if (scheme === 'raven-fire') {
-    // Cornell Raven Pro Inferno / Fire colormap
+    // Professional High-contrast Inferno / Fire colormap
     if (val < 0.15) {
       const t = val / 0.15;
       return [Math.floor(10 + t * 45), 0, Math.floor(25 + t * 45)];
@@ -374,7 +377,7 @@ export function RavenProLiveSpectrogram({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-serif font-bold text-base text-white flex items-center gap-1.5">
-                Cornell Raven Pro Bioacoustic Waterfall Spectrogram
+                Live Acoustic Waterfall Spectrogram
               </h3>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
                 isPlaying 
@@ -385,7 +388,7 @@ export function RavenProLiveSpectrogram({
               </span>
             </div>
             <p className="text-xs text-[#a0aba3]">
-              Live 48 kHz continuous acoustic analysis on <strong className="text-white">{stationName}</strong> &bull; Multi-label Avian Species Annotations
+              Real-time 48 kHz continuous bioacoustic monitoring on <strong className="text-white">{stationName}</strong> &bull; Multi-label Avian Species Annotations
             </p>
           </div>
         </div>
@@ -418,7 +421,12 @@ export function RavenProLiveSpectrogram({
 
           {/* Master Play / Pause Button */}
           <button
-            onClick={onTogglePlay}
+            onClick={() => {
+              if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+                audioCtxRef.current.resume().catch(console.warn);
+              }
+              onTogglePlay();
+            }}
             className={`px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer ${
               isPlaying
                 ? 'bg-amber-500 hover:bg-amber-600 text-white'
@@ -428,12 +436,12 @@ export function RavenProLiveSpectrogram({
             {isPlaying ? (
               <>
                 <Pause className="w-4 h-4 fill-current" />
-                <span>Pause Spectrogram</span>
+                <span>Pause Live Stream</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-current ml-0.5" />
-                <span>Start Raven Stream</span>
+                <span>Start Live Stream</span>
               </>
             )}
           </button>
@@ -452,34 +460,60 @@ export function RavenProLiveSpectrogram({
         </div>
       </div>
 
-      {/* 2. DIRECT STREAM URL / IP SWITCHER BAR (Guarantees Connection!) */}
-      {audioSource === 'direct' && (
-        <div className="px-4 py-2 bg-[#090d0b] border-b border-[#1f3a2b] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
-          <div className="flex items-center gap-2 text-[#a0aba3] w-full sm:w-auto">
-            <span className="text-emerald-400 font-bold shrink-0">Stream Target:</span>
-            <input
-              type="text"
-              value={streamUrl}
-              onChange={(e) => onStreamUrlChange(e.target.value)}
-              className="bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full sm:w-80 focus:outline-none focus:border-emerald-500 font-mono"
-              placeholder="http://livedetector.local:8888/stream.opus"
-            />
+      {/* 2. CLOUD CALL CLIPS MODE BANNER (Global HTTPS, No Local Wi-Fi Needed) */}
+      {audioSource === 'cloud' && (
+        <div className="border-b border-[#1f3a2b] px-4 py-2 bg-emerald-950/40 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              <strong className="text-white">Global Cloud Audio Active:</strong> Streaming 3.0s Opus recordings directly via Supabase Cloud CDN. Works worldwide on cellular data or any remote Wi-Fi network.
+            </span>
           </div>
-
-          {stationIp && stationIp !== 'livedetector.local' && (
-            <button
-              onClick={() => onStreamUrlChange(`http://${stationIp}:8888/stream.opus`)}
-              className="px-2.5 py-1 rounded-md bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 text-[11px] text-emerald-300 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-              title="Click to use the Raspberry Pi local IP address discovered via telemetry"
-            >
-              <Wifi className="w-3 h-3 text-emerald-400" />
-              <span>Use Pi LAN IP: {stationIp}</span>
-            </button>
-          )}
+          <div className="text-[11px] text-emerald-300/80 font-mono flex items-center gap-1.5 self-start sm:self-auto">
+            <span>Click ▶️ Play Clip on any row below</span>
+          </div>
         </div>
       )}
 
-      {/* 3. RAVEN PRO CONTROL BAR: COLORMAP, CONTRAST, FREQ RANGE, READOUT */}
+      {/* 2. DIRECT STREAM URL / IP SWITCHER BAR (LAN or Cloudflare Tunnel) */}
+      {audioSource === 'direct' && (
+        <div className="border-b border-[#1f3a2b]">
+          <div className="px-4 py-2.5 bg-[#090d0b] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
+            <div className="flex items-center gap-2 text-[#a0aba3] w-full sm:w-auto">
+              <span className="text-emerald-400 font-bold shrink-0">Stream Target:</span>
+              <input
+                type="text"
+                value={streamUrl}
+                onChange={(e) => onStreamUrlChange(e.target.value)}
+                className="bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-emerald-300 w-full sm:w-96 focus:outline-none focus:border-emerald-500 font-mono"
+                placeholder="http://192.168.1.xxx:8888/stream.opus or https://...trycloudflare.com/stream.opus"
+              />
+            </div>
+
+            {stationIp && stationIp !== 'livedetector.local' && (
+              <button
+                onClick={() => onStreamUrlChange(`http://${stationIp}:8888/stream.opus`)}
+                className="px-2.5 py-1 rounded-md bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 text-[11px] text-emerald-300 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                title="Click to use the Raspberry Pi local IP address discovered via telemetry"
+              >
+                <Wifi className="w-3 h-3 text-emerald-400" />
+                <span>Use Pi LAN IP: {stationIp}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Remote / Outside Wi-Fi Guide Notice */}
+          <div className="px-4 py-2.5 bg-blue-950/30 border-t border-blue-900/30 text-blue-200 text-[11px] flex items-start sm:items-center gap-2.5">
+            <Globe className="w-4 h-4 text-blue-400 shrink-0 mt-0.5 sm:mt-0" />
+            <div className="leading-relaxed">
+              <strong className="text-blue-300">Listening outside local Wi-Fi?</strong> Local numeric IPs (<code className="bg-black/40 px-1 py-0.5 rounded text-blue-200">192.168.x.x</code>) only work when your device is on the <em>same local Wi-Fi router</em>. When away on cellular data:
+              <span className="ml-1 text-white font-medium">Switch to <strong className="text-emerald-400">☁️ Cloud Call Clips</strong> above (zero setup, plays everywhere)</span>, or run <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300">cloudflared tunnel --url http://localhost:8888</code> on the Pi to get a free public HTTPS live stream link!
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. SPECTROGRAM CONTROL BAR: COLORMAP, CONTRAST, FREQ RANGE, READOUT */}
       <div className="px-4 py-2.5 bg-[#0e1713] border-b border-[#1f3a2b] flex flex-wrap items-center justify-between gap-4 text-xs">
         {/* Colormap Selectors */}
         <div className="flex items-center gap-3">
@@ -491,7 +525,7 @@ export function RavenProLiveSpectrogram({
                 colorScheme === 'raven-fire' ? 'bg-amber-600 text-white font-bold' : 'text-white/60 hover:text-white'
               }`}
             >
-              Raven Fire
+              Inferno (Fire)
             </button>
             <button
               onClick={() => setColorScheme('viridis')}
@@ -507,7 +541,7 @@ export function RavenProLiveSpectrogram({
                 colorScheme === 'raven-gray' ? 'bg-gray-300 text-black font-bold' : 'text-white/60 hover:text-white'
               }`}
             >
-              Greyscale
+              Greyscale (Paper)
             </button>
           </div>
         </div>
@@ -626,7 +660,7 @@ export function RavenProLiveSpectrogram({
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-400" />
             <h4 className="text-xs font-serif font-bold uppercase tracking-wider text-white">
-              Raven Selection Table &bull; Live Avian Call Annotations
+              Sound Selection Table &bull; Live Avian Call Annotations
             </h4>
           </div>
           <span className="text-[11px] font-mono text-[#a0aba3]">

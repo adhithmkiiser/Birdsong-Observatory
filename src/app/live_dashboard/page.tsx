@@ -1518,7 +1518,7 @@ export default function LiveDashboardPage() {
                 </div>
               </div>
             ) : (
-              /* Active Stream View with Cornell Raven Pro Live Waterfall Spectrogram */
+              /* Active Stream View with Live Acoustic Waterfall Spectrogram */
               <div className="space-y-4">
                 <RavenProLiveSpectrogram
                   audioElement={liveAudioElementRef.current}

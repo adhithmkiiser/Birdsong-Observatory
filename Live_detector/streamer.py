@@ -24,6 +24,13 @@ class StreamHandler(BaseHTTPRequestHandler):
     active_listeners: int = 0
     listener_lock = threading.Lock()
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+
     def do_GET(self):
         if self.path not in ["/live", "/stream.opus", "/stream"]:
             self.send_response(404)
@@ -39,6 +46,8 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store")
         self.send_header("Connection", "close")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "*")
         self.end_headers()
 
         ffmpeg_proc = None
@@ -126,6 +135,7 @@ class LiveAudioStreamServer(threading.Thread):
         try:
             self.server = ThreadingHTTPServer(("0.0.0.0", self.port), StreamHandler)
             logger.info(f"📻 Live Audio HTTP Streamer listening on port {self.port} (URL: http://<pi_ip>:{self.port}/stream.opus)")
+            logger.info(f"🌐 Remote listening tip: To listen outside local Wi-Fi, run: cloudflared tunnel --url http://localhost:{self.port}")
             self.server.serve_forever()
         except Exception as e:
             logger.warning(f"Could not bind streaming port {self.port}: {e}")

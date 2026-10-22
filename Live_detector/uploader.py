@@ -24,7 +24,7 @@ from supabase import create_client, Client
 from outbox import OutboxDatabase
 from config import (
     SUPABASE_URL, SUPABASE_KEY, CLIPS_DIR,
-    STATION_NAME, PROJECT_NAME, SAMPLE_RATE, SYNC_INTERVAL_SECONDS
+    STATION_NAME, PROJECT_NAME, SITE_NAME, SAMPLE_RATE, SYNC_INTERVAL_SECONDS
 )
 
 logger = logging.getLogger("CloudUploader")
@@ -61,11 +61,23 @@ class CloudUploaderWorker(threading.Thread):
                 "-vbr", "on",
                 output_path
             ]
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-            proc.communicate(input=audio_data.astype(np.float32).tobytes())
-            return proc.returncode == 0
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = proc.communicate(input=audio_data.astype(np.float32).tobytes(), timeout=5)
+            if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return True
+
+            # Fallback 1: Try built-in opus encoder without libopus
+            cmd[8] = "opus"
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = proc.communicate(input=audio_data.astype(np.float32).tobytes(), timeout=5)
+            if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return True
+
+            err_text = stderr.decode('utf-8', errors='ignore') if stderr else "unknown"
+            logger.warning(f"FFmpeg Opus encoding returned code {proc.returncode}: {err_text}")
+            return False
         except Exception as e:
-            logger.debug(f"Opus encoding via FFmpeg failed ({e}). Saving as raw uncompressed float.")
+            logger.warning(f"Audio Opus encoding failed: {e}")
             return False
 
     def upload_clip_to_storage(self, local_clip_path: str, remote_filename: str) -> Optional[str]:
@@ -86,7 +98,22 @@ class CloudUploaderWorker(threading.Thread):
             res = self.supabase.storage.from_("clips").get_public_url(storage_path)
             return res
         except Exception as e:
-            logger.debug(f"Storage clip upload note ({storage_path}): {e}")
+            err_str = str(e).lower()
+            if "already exists" in err_str or "duplicate" in err_str:
+                return self.supabase.storage.from_("clips").get_public_url(storage_path)
+            if "not found" in err_str or "bucket" in err_str:
+                try:
+                    self.supabase.storage.create_bucket("clips", options={"public": True})
+                    with open(local_clip_path, "rb") as f:
+                        self.supabase.storage.from_("clips").upload(
+                            path=storage_path,
+                            file=f,
+                            file_options={"content-type": "audio/ogg; codecs=opus", "upsert": "true"}
+                        )
+                    return self.supabase.storage.from_("clips").get_public_url(storage_path)
+                except Exception as b_err:
+                    logger.warning(f"Failed to auto-create 'clips' bucket: {b_err}")
+            logger.warning(f"Storage clip upload note ({storage_path}): {e}")
             return None
 
     def sync_cycle(self):
@@ -134,8 +161,8 @@ class CloudUploaderWorker(threading.Thread):
                 self.supabase.table("window_summaries").upsert(record, on_conflict="window_id").execute()
                 uploaded_window_ids.append(window_id)
 
-                # Clean up local temporary clip file once uploaded to conserve SD space
-                if clip_local and os.path.exists(clip_local):
+                # Clean up local temporary clip file once confirmed uploaded to cloud
+                if remote_clip_url and clip_local and os.path.exists(clip_local):
                     try:
                         os.remove(clip_local)
                     except Exception:
@@ -148,8 +175,7 @@ class CloudUploaderWorker(threading.Thread):
                         "To enable Acoustic Watchdog Triage, run Live_detector/schema.sql in Supabase SQL Editor. "
                         "Skipping window summaries sync for this cycle."
                     )
-                    # Clean up local clip if it was uploaded to storage to save SD space
-                    if clip_local and os.path.exists(clip_local):
+                    if remote_clip_url and clip_local and os.path.exists(clip_local):
                         try:
                             os.remove(clip_local)
                         except Exception:
@@ -157,7 +183,7 @@ class CloudUploaderWorker(threading.Thread):
                     uploaded_window_ids.append(window_id)
                 else:
                     logger.error(f"Error inserting window_summary {window_id}: {e}")
-                break
+                continue
 
         if uploaded_window_ids:
             self.outbox.mark_windows_uploaded(uploaded_window_ids)
@@ -173,10 +199,20 @@ class CloudUploaderWorker(threading.Thread):
                 ts_str = str(d["timestamp"])
                 date_part = ts_str[:10] if len(ts_str) >= 10 else ""
                 time_part = ts_str[11:19] if len(ts_str) >= 19 else ""
+                window_id = d.get('window_id', '')
+
+                # Ensure corresponding 3.0s audio clip is uploaded to Supabase Storage
+                audio_url = ""
+                if window_id:
+                    local_clip = CLIPS_DIR / f"{window_id}.opus"
+                    remote_name = f"{window_id}.opus"
+                    if local_clip.exists():
+                        self.upload_clip_to_storage(str(local_clip), remote_name)
+                    audio_url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/clips/{PROJECT_NAME.replace(' ', '%20')}/{d['node_id']}/{window_id}.opus"
 
                 live_records.append({
                     "project_name": PROJECT_NAME,
-                    "site_name": "Western Ghats Canopy",
+                    "site_name": SITE_NAME,
                     "recorder_id": d["node_id"],
                     "station_id": d["node_id"],
                     "station_name": d["node_id"],
@@ -187,7 +223,7 @@ class CloudUploaderWorker(threading.Thread):
                     "date_str": date_part,
                     "time_str": time_part,
                     "duration": 3.0,
-                    "audio_url": f"https://ktihcjfxxxazohimtiav.supabase.co/storage/v1/object/public/clips/{PROJECT_NAME.replace(' ', '%20')}/{d['node_id']}/{d.get('window_id', '')}.opus" if d.get('window_id') else "",
+                    "audio_url": audio_url,
                     "verification_status": "PENDING",
                     "reviewed": False,
                     "verified": False

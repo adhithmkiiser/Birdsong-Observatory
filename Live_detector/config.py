@@ -26,10 +26,11 @@ for p in [DATA_DIR, MODELS_DIR, CLIPS_DIR]:
     p.mkdir(parents=True, exist_ok=True)
 
 # Station & Node Identity & GPS Coordinates (used for BirdNET species filtering and Observatory maps)
-STATION_NAME = os.getenv("STATION_NAME", "WesternGhats_Node_01")
-PROJECT_NAME = os.getenv("PROJECT_NAME", "Western Ghats Biodiversity Monitoring")
-NODE_LATITUDE = float(os.getenv("NODE_LATITUDE", os.getenv("LATITUDE", "11.3419")))
-NODE_LONGITUDE = float(os.getenv("NODE_LONGITUDE", os.getenv("LONGITUDE", "76.6437")))
+STATION_NAME = os.getenv("STATION_NAME", "Test_01")
+PROJECT_NAME = os.getenv("PROJECT_NAME", "Test_custom")
+SITE_NAME = os.getenv("SITE_NAME", "Tirupati")
+NODE_LATITUDE = float(os.getenv("NODE_LATITUDE", os.getenv("LATITUDE", "13.6288")))
+NODE_LONGITUDE = float(os.getenv("NODE_LONGITUDE", os.getenv("LONGITUDE", "79.4192")))
 BIRDNET_USE_LAT_LON_FILTER = os.getenv("BIRDNET_USE_LAT_LON_FILTER", "true").lower() in ("true", "1", "yes")
 
 # Supabase Credentials
