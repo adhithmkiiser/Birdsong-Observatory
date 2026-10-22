@@ -80,3 +80,5 @@ HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"))
 
 # Live Audio Stream Server Port (for on-demand streaming to web dashboard)
 STREAM_PORT = int(os.getenv("STREAM_PORT", "8888"))
+PUBLIC_STREAM_URL = os.getenv("PUBLIC_STREAM_URL", "")
+AUTO_CLOUDFLARE_TUNNEL = os.getenv("AUTO_CLOUDFLARE_TUNNEL", "true").lower() in ("true", "1", "yes")

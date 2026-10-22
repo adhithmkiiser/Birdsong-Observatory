@@ -6,6 +6,9 @@ Enables real-time listening directly through web browser without Icecast setup.
 Automatically shuts down encoding when no web listeners are connected to conserve solar power!
 """
 
+import os
+import re
+import shutil
 import time
 import socket
 import logging
@@ -15,7 +18,10 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import queue
 import numpy as np
 
-from config import STREAM_PORT, SAMPLE_RATE
+from config import (
+    STREAM_PORT, SAMPLE_RATE, DATA_DIR,
+    PUBLIC_STREAM_URL, AUTO_CLOUDFLARE_TUNNEL
+)
 
 logger = logging.getLogger("LiveAudioStreamer")
 
@@ -134,17 +140,79 @@ class LiveAudioStreamServer(threading.Thread):
         self.capture_worker = capture_worker
         self.port = port
         self.server = None
+        self.tunnel_process = None
+        self.public_stream_url = None
+
+    def start_cloudflare_tunnel(self):
+        """Spawns Cloudflare Tunnel or detects configured URL to auto-link stream target."""
+        # Check if statically configured in environment
+        if PUBLIC_STREAM_URL:
+            self.public_stream_url = PUBLIC_STREAM_URL
+            self._save_stream_url(self.public_stream_url)
+            logger.info(f"🌐 [AutoTunnel] Configured stream target: {self.public_stream_url}")
+            return
+
+        cloudflared_bin = shutil.which("cloudflared")
+        if not cloudflared_bin:
+            logger.info("ℹ️ cloudflared binary not found on PATH. Remote auto-tunnel skipped.")
+            return
+
+        try:
+            logger.info(f"🚀 Spawning Cloudflare Tunnel for port {self.port}...")
+            cmd = [cloudflared_bin, "tunnel", "--url", f"http://localhost:{self.port}"]
+            self.tunnel_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+
+            url_pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+
+            def parse_tunnel_output():
+                while self.tunnel_process and self.tunnel_process.poll() is None:
+                    line = self.tunnel_process.stderr.readline()
+                    if not line:
+                        break
+                    match = url_pattern.search(line)
+                    if match and not self.public_stream_url:
+                        base_url = match.group(0)
+                        self.public_stream_url = f"{base_url}/stream.opus"
+                        self._save_stream_url(self.public_stream_url)
+                        logger.info("=" * 65)
+                        logger.info("✨ CLOUDFLARE PUBLIC LIVE STREAM TUNNEL CONNECTED!")
+                        logger.info(f"🔗 Stream Target: {self.public_stream_url}")
+                        logger.info("📡 Automatically linking to your BirdSong Observatory Dashboard...")
+                        logger.info("=" * 65)
+
+            t = threading.Thread(target=parse_tunnel_output, daemon=True)
+            t.start()
+        except Exception as e:
+            logger.warning(f"Could not spawn cloudflared tunnel: {e}")
+
+    def _save_stream_url(self, url: str):
+        try:
+            (DATA_DIR / "stream_url.txt").write_text(url.strip())
+        except Exception:
+            pass
 
     def run(self):
         StreamHandler.capture_worker = self.capture_worker
+        if AUTO_CLOUDFLARE_TUNNEL:
+            self.start_cloudflare_tunnel()
         try:
             self.server = ThreadingHTTPServer(("0.0.0.0", self.port), StreamHandler)
-            logger.info(f"📻 Live Audio HTTP Streamer listening on port {self.port} (URL: http://<pi_ip>:{self.port}/stream.opus)")
-            logger.info(f"🌐 Remote listening tip: To listen outside local Wi-Fi, run: cloudflared tunnel --url http://localhost:{self.port}")
+            logger.info(f"📻 Live Audio HTTP Streamer listening on port {self.port} (Local: http://<pi_ip>:{self.port}/stream.opus)")
             self.server.serve_forever()
         except Exception as e:
             logger.warning(f"Could not bind streaming port {self.port}: {e}")
 
     def stop(self):
+        if self.tunnel_process:
+            try:
+                self.tunnel_process.terminate()
+            except Exception:
+                pass
         if self.server:
             self.server.shutdown()

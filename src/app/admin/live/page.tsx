@@ -47,7 +47,8 @@ import {
   HelpCircle,
   Power,
   RotateCcw,
-  Mic
+  Mic,
+  Globe
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
@@ -1772,6 +1773,31 @@ WantedBy=multi-user.target`;
                 </pre>
               </div>
 
+              {/* Step 5c: Cloudflare Tunnel for Remote Listening Outside Local Wi-Fi */}
+              <div className="space-y-2 p-4 rounded-xl bg-gradient-to-r from-blue-950/30 to-emerald-950/30 border border-blue-900/40">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-cyan-300 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-cyan-400" />
+                    <span>Step 5c: Global Remote Live Stream (Cloudflare Tunnel)</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb && sudo dpkg -i cloudflared.deb`);
+                      showNotification('cloudflared install command copied!');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Cloudflare Install
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                  Enables continuous live listening from outside your local Wi-Fi router (e.g. on mobile 4G/5G data or remote lab) with zero router port-forwarding. When installed, <code className="text-emerald-300">main.py</code> automatically spawns the outbound tunnel and links the <strong>Stream Target</strong> directly to the dashboard!
+                </p>
+                <pre className="p-3 rounded-lg bg-[#121614] border border-[#2d3630] font-mono text-xs text-cyan-300 select-all overflow-x-auto">
+                  curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb &amp;&amp; sudo dpkg -i cloudflared.deb
+                </pre>
+              </div>
+
               {/* Step 6: Test Solar & Hardware Telemetry Tool */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -2006,14 +2032,14 @@ WantedBy=multi-user.target`;
                     </code>
                   </div>
 
-                  {/* Issue 7: Distorted or Stuttering Audio */}
+                  {/* Issue 7: Distorted, Slow-Motion, or Robotic Audio */}
                   <div className="p-3.5 rounded-xl bg-[#181d1a] border border-[#2d3630] space-y-2">
                     <div className="flex items-center justify-between">
-                      <strong className="text-white">Distorted, Scratchy, or Repeating Audio</strong>
+                      <strong className="text-white">Slow-Motion, Robotic, or Distorted Audio</strong>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText('alsamixer && sudo alsactl store');
-                          showNotification('Alsamixer command copied!');
+                          navigator.clipboard.writeText('amixer set Capture 75% && cd ~/Live_detector && git pull');
+                          showNotification('Gain & audio fix command copied!');
                         }}
                         className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
                         title="Copy fix command"
@@ -2022,11 +2048,11 @@ WantedBy=multi-user.target`;
                       </button>
                     </div>
                     <p className="text-[#a0aba3] text-[11px] leading-relaxed">
-                      1. <strong>Input Gain Clipping</strong>: If ALSA gain is at 100%, audio square-wave clips. Run <code className="text-emerald-400">alsamixer</code> &rarr; F6 &rarr; F4 &rarr; lower Capture volume to <strong>65%&ndash;75%</strong> &rarr; ESC &rarr; <code className="text-emerald-400">sudo alsactl store</code>.<br/>
-                      2. <strong>Buffer Stutter</strong>: Run <code className="text-emerald-400">git pull</code> in <code className="text-emerald-400">~/Live_detector</code> to use dedicated non-overlapping streaming queues.
+                      1. <strong>Slow-motion sound</strong> is caused when stereo USB mics are read without 48 kHz output resampling. Run <code className="text-emerald-400">git pull</code> in <code className="text-emerald-400">~/Live_detector</code> to use our lowdelay zero-buffer real-time engine.<br/>
+                      2. <strong>Distortion / Clipping</strong>: If capture gain is at 100% (+30 dB), sound square-clips. Run <code className="text-emerald-400">amixer set Capture 75%</code> or use <code className="text-emerald-400">alsamixer</code> to calibrate input level.
                     </p>
                     <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
-                      alsamixer &amp;&amp; sudo alsactl store
+                      amixer set Capture 75% &amp;&amp; cd ~/Live_detector &amp;&amp; git pull
                     </code>
                   </div>
 

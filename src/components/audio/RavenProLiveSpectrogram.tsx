@@ -110,7 +110,6 @@ export function RavenProLiveSpectrogram({
   const [brightness, setBrightness] = useState(12); // dB offset (-20 to +40)
   const [maxDisplayFreq, setMaxDisplayFreq] = useState<16000 | 24000 | 12000>(16000);
   const [showAvianBand, setShowAvianBand] = useState(true);
-  const [showAnnotations, setShowAnnotations] = useState(true);
   const [cursorReadout, setCursorReadout] = useState<{ freqHz: number; timeSec: number; db: number } | null>(null);
   const [currentLevelDb, setCurrentLevelDb] = useState(-90);
 
@@ -297,42 +296,8 @@ export function RavenProLiveSpectrogram({
       ctx.fillText(`${f / 1000} kHz`, 8, yPos - 6);
     }
 
-    // 5. Draw Overlaid Raven Annotations for Live Detections
-    if (showAnnotations && detections.length > 0) {
-      const recentDets = detections.slice(0, 4); // Show top recent calls
-      const boxWidth = 110;
-      
-      recentDets.forEach((det, idx) => {
-        const xPos = width - 130 - (idx * 140);
-        if (xPos < 40) return;
-
-        const lowF = det.low_freq || 1800;
-        const highF = det.high_freq || 7200;
-        const yTop = Math.max(10, height * (1 - (highF / maxDisplayFreq)));
-        const yBottom = Math.min(height - 10, height * (1 - (lowF / maxDisplayFreq)));
-        const boxHeight = Math.max(35, yBottom - yTop);
-
-        // Bounding Box
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
-        ctx.fillRect(xPos, yTop, boxWidth, boxHeight);
-
-        ctx.strokeStyle = '#10b981';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(xPos, yTop, boxWidth, boxHeight);
-
-        // Header Tag Badge
-        ctx.fillStyle = '#064e3b';
-        ctx.fillRect(xPos, Math.max(0, yTop - 18), boxWidth, 18);
-
-        ctx.fillStyle = '#6ee7b7';
-        ctx.font = 'bold 9px sans-serif';
-        const label = `${det.common_name} (${Math.round(det.confidence * 100)}%)`;
-        ctx.fillText(label.length > 17 ? label.slice(0, 16) + '…' : label, xPos + 4, Math.max(9, yTop - 6));
-      });
-    }
-
     animFrameIdRef.current = requestAnimationFrame(renderFrame);
-  }, [isPlaying, colorScheme, contrast, brightness, maxDisplayFreq, showAvianBand, showAnnotations, detections]);
+  }, [isPlaying, colorScheme, contrast, brightness, maxDisplayFreq, showAvianBand]);
 
   useEffect(() => {
     animFrameIdRef.current = requestAnimationFrame(renderFrame);
@@ -600,16 +565,6 @@ export function RavenProLiveSpectrogram({
               className="accent-emerald-400 rounded"
             />
             <span>Avian Band (1.5-8 kHz)</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 text-[11px] text-[#a0aba3] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showAnnotations}
-              onChange={(e) => setShowAnnotations(e.target.checked)}
-              className="accent-emerald-400 rounded"
-            />
-            <span>Show Call Boxes</span>
           </label>
         </div>
       </div>

@@ -460,18 +460,29 @@ The observatory provides two distinct acoustic pipelines designed for different 
    • Purpose: Real-time live listening  • Purpose: Click-to-play past calls
 ```
 
-### 1. Direct Live Stream (Port 8888) — *Recommended for Live Field Monitoring*
+### 1. Direct Live Stream (Port 8888 & Cloudflare Public Tunnel) — *Recommended for Live Monitoring*
 - **What it is**: Direct real-time Opus stream transmitted directly from your Raspberry Pi's local HTTP streamer on port 8888:
   ```
   http://<raspberry_pi_ip>:8888/stream.opus
   ```
-- **How it works**: Uses a dedicated, non-overlapping linear audio queue connected directly to ALSA capture. Provides crystal-clear, low-latency live acoustic monitoring without disturbing AI sliding window inference.
+- **🌐 Listening Outside Local Wi-Fi (Worldwide Access via Cloudflare Tunnel)**:
+  Private IP addresses (`192.168.x.x`, `.local`) only work when your computer is connected to the exact same Wi-Fi router as the Pi. To listen remotely from mobile cellular data (4G/5G) or outside Wi-Fi:
+  1. Install `cloudflared` on your Raspberry Pi:
+     ```bash
+     curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
+     sudo dpkg -i cloudflared.deb
+     ```
+  2. When you run `python3 main.py`, the agent **automatically detects `cloudflared`**, launches an outbound HTTPS tunnel, and grabs a free public URL (e.g. `https://<tunnel-id>.trycloudflare.com/stream.opus`).
+  3. **Automatic Dashboard Linking**: The agent immediately syncs this URL to your Supabase `recorders_registry`. When you open the Live Dashboard, the **Stream Target is linked automatically**—no typing or manual URL copying required!
+- **Low-Latency Zero-Buffering Audio Engine**:
+  Uses strict 48,000 Hz resampling with `-application lowdelay -frame_duration 20 -flush_packets 1`. Audio packets are flushed to the web browser in 20 ms frames without buffering delay, eliminating pitch drop and slow-motion distortion.
 - **Power Efficiency**: The live encoder only runs when an active web browser is connected; when disconnected, it shuts down to conserve solar battery power.
 
 ### 2. Cloud Call Clips — *Stored Historical Recordings*
 - **What it is**: High-fidelity 3.0-second `.opus` clips saved when a bird species is detected or when an anomalous acoustic event triggers the DSP triage watchdog.
-- **Where it is stored**: Uploaded to Supabase Storage in the `clips/` bucket.
-- **How it works**: These clips are linked to individual detection cards in the Live Dashboard and review queue, allowing researchers to click "Play" on any historical bird detection card to inspect the spectrogram and listen to the call.
+- **Where it is stored**: Uploaded to Supabase Storage in the `clips/` bucket via global HTTPS CDN.
+- **How it works**: These clips are linked to individual detection cards in the Live Dashboard and review queue, allowing researchers anywhere on earth to click "Play" on any historical bird detection card to inspect the spectrogram and listen to the call.
+- **Auto-Play Alert**: Turn on "Auto-play on new detection" in the dashboard to automatically play audio whenever a bird is identified in the field!
 
 ---
 

@@ -401,13 +401,38 @@ export default function LiveDashboardPage() {
           setWindowSummaries((prev) => prev.map(w => w.id === payload.new.id ? payload.new as any : w));
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'recorders_registry' },
+        (payload) => {
+          if (payload.new) {
+            const updated = payload.new as any;
+            setStationsList((prev) => prev.map(s => (s.recorder_id === updated.recorder_id || s.id === updated.id) ? { ...s, ...updated } : s));
+            const newStreamUrl = updated.stream_url || (updated.elevation?.startsWith('http') ? updated.elevation : null);
+            if (newStreamUrl && (!selectedStreamNode || updated.recorder_id === selectedStreamNode)) {
+              setDirectStreamUrl(newStreamUrl);
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       isCurrent = false;
       supabase.removeChannel(channel);
     };
-  }, [currentRole, currentUser]);
+  }, [currentRole, currentUser, selectedStreamNode]);
+
+  // Automatically link the Stream Target URL right when the station runs or connects
+  useEffect(() => {
+    const activeStation = stationsList.find(s => (s.recorder_id || s.id) === selectedStreamNode) || stationsList[0];
+    if (activeStation) {
+      const autoUrl = activeStation.stream_url || (activeStation.elevation?.startsWith('http') ? activeStation.elevation : null);
+      if (autoUrl && autoUrl !== directStreamUrl) {
+        setDirectStreamUrl(autoUrl);
+      }
+    }
+  }, [stationsList, selectedStreamNode]);
 
   // Filter live sites strictly by selected Live project
   const availableSites = selectedProjectId === 'ALL'

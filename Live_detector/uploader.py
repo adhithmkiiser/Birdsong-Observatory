@@ -275,14 +275,32 @@ class CloudUploaderWorker(threading.Thread):
                 self.outbox.mark_telemetry_uploaded(telem_ids)
                 logger.info(f"Synced {len(telem_records)} solar/battery telemetry records to cloud.")
 
-                # Also touch recorders_registry so heartbeat pulse stays green
+                # Also touch recorders_registry so heartbeat pulse stays green and auto-link stream URL
                 try:
-                    self.supabase.table("recorders_registry").update({
+                    stream_url = None
+                    url_file = DATA_DIR / "stream_url.txt"
+                    if url_file.exists():
+                        try:
+                            stream_url = url_file.read_text().strip()
+                        except Exception:
+                            pass
+
+                    reg_update = {
                         "last_ping": telem_records[-1]["ping_time"],
                         "status": "online",
                         "battery_level": telem_records[-1]["battery_level"],
                         "cpu_temperature": telem_records[-1]["cpu_temperature"]
-                    }).eq("recorder_id", STATION_NAME).execute()
+                    }
+                    if stream_url and stream_url.startswith("http"):
+                        reg_update["elevation"] = stream_url  # Instant compatibility with existing schema
+                        try:
+                            reg_update["stream_url"] = stream_url
+                            self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
+                        except Exception:
+                            reg_update.pop("stream_url", None)
+                            self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
+                    else:
+                        self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
                 except Exception:
                     pass
             except Exception as e:
