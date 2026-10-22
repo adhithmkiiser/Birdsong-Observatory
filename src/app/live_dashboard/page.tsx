@@ -597,11 +597,12 @@ export default function LiveDashboardPage() {
     return Object.entries(groupedBuckets).map(([day, species]) => ({ day, species }));
   }, [filteredDetections, accumulationInterval, accumulationYear, accumulationMonth]);
 
-  // Active Nodes calculation (status === 'online' AND ping < 5 mins ago)
+  // Active Nodes calculation (status === 'online' or pinged recently within 30 mins)
   const activeNodesCount = availableStations.filter((s: any) => {
-    if (s.status !== 'online' || !s.last_ping) return false;
+    if (s.status === 'online') return true;
+    if (!s.last_ping) return false;
     const diffMins = (Date.now() - new Date(s.last_ping).getTime()) / 60000;
-    return diffMins <= 5;
+    return diffMins <= 30;
   }).length;
 
   // Copy share URL

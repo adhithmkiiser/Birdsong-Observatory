@@ -92,13 +92,27 @@ export default function HomePage() {
       for (const p of projData) {
         if (p.project_type === 'Live') {
            const activeCount = liveRecorders.filter((r: any) => {
-             if (r.project_name !== p.name || r.status !== 'online' || !r.last_ping) return false;
-             const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
-             return diffMins <= 5;
+             const projMatches = (r.project_name && (
+               r.project_name.toLowerCase() === (p.name || '').toLowerCase() ||
+               r.project_name.toLowerCase() === (p.id || '').toLowerCase()
+             )) || (r.project_id && (
+               r.project_id.toLowerCase() === (p.id || '').toLowerCase() ||
+               r.project_id.toLowerCase() === (p.name || '').toLowerCase()
+             ));
+             if (!projMatches) return false;
+
+             // Online if marked 'online' in recorders_registry
+             if (r.status === 'online') return true;
+             // Or if pinged recently within 30 minutes
+             if (r.last_ping) {
+               const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
+               return diffMins <= 30;
+             }
+             return false;
            }).length;
            p.active_nodes_count = activeCount;
            statsMap[p.id] = {
-             recorders: 1,
+             recorders: Math.max(activeCount, 1),
              species: liveDetections > 0 ? 12 : 0,
              detections: liveDetections
            };
@@ -138,7 +152,41 @@ export default function HomePage() {
 
   useEffect(() => {
     loadStats();
+
+    // 1. Realtime subscription to automatically reflect online nodes, pings, and telemetry changes
+    const channel = supabase
+      .channel('homepage_live_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'recorders_registry' },
+        () => {
+          loadStats();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        () => {
+          loadStats();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'live_detections' },
+        () => {
+          loadStats();
+        }
+      )
+      .subscribe();
+
+    // 2. Automated background polling every 20 seconds so telemetry stays fresh without manual reload
+    const pollInterval = setInterval(() => {
+      loadStats();
+    }, 20000);
+
     return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [loadStats]);
