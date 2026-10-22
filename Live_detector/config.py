@@ -45,7 +45,7 @@ PROJECT_NAME = os.getenv("PROJECT_NAME", "Test_custom")
 SITE_NAME = os.getenv("SITE_NAME", "Tirupati")
 NODE_LATITUDE = float(os.getenv("NODE_LATITUDE", os.getenv("LATITUDE", "13.6288")))
 NODE_LONGITUDE = float(os.getenv("NODE_LONGITUDE", os.getenv("LONGITUDE", "79.4192")))
-BIRDNET_USE_LAT_LON_FILTER = os.getenv("BIRDNET_USE_LAT_LON_FILTER", "true").lower() in ("true", "1", "yes")
+BIRDNET_USE_LAT_LON_FILTER = os.getenv("BIRDNET_USE_LAT_LON_FILTER", "false").lower() in ("true", "1", "yes")
 
 # Supabase Credentials
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ktihcjfxxxazohimtiav.supabase.co")

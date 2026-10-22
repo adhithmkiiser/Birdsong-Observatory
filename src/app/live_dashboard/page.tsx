@@ -121,9 +121,9 @@ export default function LiveDashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
 
-  // Search & Filter
+  // Search & Filter (Default 30% confidence standard for bioacoustic field detection)
   const [searchQuery, setSearchQuery] = useState('');
-  const [minConfidence, setMinConfidence] = useState(0.5);
+  const [minConfidence, setMinConfidence] = useState(0.30);
 
   // Species Accumulation Filter States
   const [accumulationInterval, setAccumulationInterval] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
@@ -462,11 +462,18 @@ export default function LiveDashboardPage() {
     setSelectedStationId('ALL');
   };
 
-  // Filter detections by 3-level scope & search/confidence
+  // Filter detections by 3-level scope & search/confidence (excluding non-avian noise)
   const filteredDetections = useMemo(() => {
+    const NON_AVIAN = new Set(['human non-vocal', 'human vocal', 'human voice', 'noise', 'engine', 'silence', 'environmental noise']);
     return detections.filter((det) => {
       const common = det.common_name || '';
       const sci = det.scientific_name || '';
+      
+      // Exclude non-avian noise events
+      if (NON_AVIAN.has(common.toLowerCase().trim()) || NON_AVIAN.has(sci.toLowerCase().trim())) {
+        return false;
+      }
+
       const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             sci.toLowerCase().includes(searchQuery.toLowerCase());
 

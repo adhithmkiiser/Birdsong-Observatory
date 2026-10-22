@@ -16,7 +16,7 @@ from config import NODE_LATITUDE, NODE_LONGITUDE, BIRDNET_USE_LAT_LON_FILTER
 logger = logging.getLogger("BirdNetAdapter")
 
 class BirdNetTFLiteAdapter(ModelAdapter):
-    def __init__(self, model_id: str = "birdnet_default", threshold: float = 0.5,
+    def __init__(self, model_id: str = "birdnet_default", threshold: float = 0.30,
                  lat: float = None, lon: float = None, use_geo_filter: bool = None):
         super().__init__(model_id, threshold)
         self.interpreter = None
@@ -110,6 +110,12 @@ class BirdNetTFLiteAdapter(ModelAdapter):
         else:
             probabilities = raw_output
 
+        # Non-avian background noise classes to exclude from avian species detections
+        NON_AVIAN_NOISE_CLASSES = {
+            "human non-vocal", "human vocal", "human voice", "human",
+            "noise", "environmental noise", "engine", "silence", "dog", "cat", "siren"
+        }
+
         results: List[Tuple[str, float]] = []
         indices = np.where(probabilities >= self.threshold)[0]
 
@@ -122,6 +128,10 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                 common_name = parts[-1].strip() if len(parts) > 1 else label_str.strip()
                 scientific_name = parts[0].strip() if len(parts) > 1 else label_str.strip()
 
+                # Filter out non-avian background noise classes
+                if common_name.lower() in NON_AVIAN_NOISE_CLASSES or scientific_name.lower() in NON_AVIAN_NOISE_CLASSES:
+                    continue
+
                 # Apply Lat/Long species occurrence filter if active
                 if self.use_geo_filter and self.allowed_species:
                     is_in_region = (
@@ -129,8 +139,8 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                         scientific_name.lower() in self.allowed_species or
                         label_str.lower() in self.allowed_species
                     )
-                    # Out-of-region birds require high confidence (0.85) to avoid false positives
-                    if not is_in_region and conf < 0.85:
+                    # Out-of-region birds in testing require nominal 0.35 confidence instead of prohibitive 0.85
+                    if not is_in_region and conf < 0.35:
                         continue
 
                 results.append((common_name, round(conf, 4)))
