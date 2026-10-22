@@ -136,6 +136,8 @@ export default function LiveDashboardPage() {
   // Review Queue States
   const [reviewSearch, setReviewSearch] = useState('');
   const [reviewSort, setReviewSort] = useState<'newest' | 'confidence'>('newest');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
+  const [verifyingId, setVerifyingId] = useState<string | number | null>(null);
 
   // Acoustic Watchdog Triage States
   const [windowSummaries, setWindowSummaries] = useState<WindowSummaryItem[]>([]);
@@ -621,16 +623,40 @@ export default function LiveDashboardPage() {
     document.body.removeChild(a);
   };
 
-  // Review status update handler
-  const handleVerify = async (id: string, verified: boolean) => {
+  // Review status update handler with optimistic state and admin API persistence
+  const handleVerify = async (id: string | number, verified: boolean) => {
     const status = verified ? 'YES' : 'NO';
-    const { error } = await supabase
-      .from('live_detections')
-      .update({ verification_status: status })
-      .eq('id', id);
+    setVerifyingId(id);
 
-    if (!error) {
-      setDetections(prev => prev.map(d => d.id === id ? { ...d, verification_status: status } : d));
+    // 1. Optimistic state update so UI responds INSTANTLY
+    setDetections(prev => prev.map(d => 
+      String(d.id) === String(id) 
+        ? { ...d, verification_status: status, reviewed: true, verified: verified } 
+        : d
+    ));
+
+    // 2. Persist to backend via admin endpoint (bypasses RLS)
+    try {
+      const res = await fetch('/api/live/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify_detection', id, status })
+      });
+      if (!res.ok) {
+        // Fallback to client supabase call
+        await supabase
+          .from('live_detections')
+          .update({ verification_status: status, reviewed: true, verified })
+          .eq('id', id);
+      }
+    } catch (e) {
+      console.warn('API verify fallback:', e);
+      await supabase
+        .from('live_detections')
+        .update({ verification_status: status, reviewed: true, verified })
+        .eq('id', id);
+    } finally {
+      setVerifyingId(null);
     }
   };
 
@@ -819,12 +845,12 @@ export default function LiveDashboardPage() {
     { id: 'accumulation', label: 'Species Accumulation Curve', icon: LineChart },
     { id: 'diurnal', label: 'Diurnal Activity Pattern', icon: Clock },
     { id: 'live', label: 'Live Audio & Detections', icon: Radio, badge: 'LIVE' },
-    { 
+    ...(currentRole === 'Admin' ? [{ 
       id: 'triage', 
       label: 'Acoustic Watchdog & Triage', 
       icon: Activity, 
       badge: unreviewedTriageCount > 0 ? `${unreviewedTriageCount} REVIEW` : undefined 
-    },
+    }] : []),
     { id: 'stations', label: 'Stations & Nodes', icon: Cpu, count: activeNodesCount },
     { id: 'species', label: 'Species Catalog', icon: Bird },
     ...(canAccessReview ? [{ id: 'review', label: 'Review Queue', icon: CheckSquare }] : []),
@@ -844,7 +870,9 @@ export default function LiveDashboardPage() {
         setActiveTab(navMenuItems[0].id as any);
       }
     } else {
-      if (activeTab === 'review' && !canAccessReview) {
+      if (activeTab === 'triage' && currentRole !== 'Admin') {
+        setActiveTab('summary');
+      } else if (activeTab === 'review' && !canAccessReview) {
         setActiveTab('summary');
       } else if (activeTab === 'reports' && !canAccessReports) {
         setActiveTab('summary');
@@ -1568,7 +1596,7 @@ export default function LiveDashboardPage() {
                     <span>Min Confidence:</span>
                     <input
                       type="range"
-                      min="0.3"
+                      min="0.10"
                       max="0.95"
                       step="0.05"
                       value={minConfidence}
@@ -2225,7 +2253,7 @@ export default function LiveDashboardPage() {
 
         {/* ─── TAB 8: REVIEW QUEUE ────────────────────────────────────────────── */}
         {activeTab === 'review' && (
-          <div className="dashboard-section">
+          <div className="dashboard-section space-y-4">
             <div className="section-header">
               <div>
                 <h2 className="flex items-center gap-2">
@@ -2236,54 +2264,192 @@ export default function LiveDashboardPage() {
               </div>
             </div>
 
-            <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-              {filteredDetections.slice(0, 30).map((det) => (
-                <div
-                  key={det.id}
-                  className="p-3.5 bg-white border border-[#dde1dc] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <strong className="text-sm text-[#1a1f1c]">{det.common_name}</strong>
-                      <span className="text-xs font-mono font-bold text-[#1f4d3a] bg-[#eaf2ed] px-1.5 py-0.2 rounded">
-                        {formatPercent(det.confidence || 0)}
-                      </span>
-                      {det.verification_status === 'YES' && (
-                        <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">Verified</span>
+            {/* Filter Pills and Search Bar */}
+            {(() => {
+              const pendingCount = filteredDetections.filter(d => d.verification_status !== 'YES' && d.verification_status !== 'NO').length;
+              const approvedCount = filteredDetections.filter(d => d.verification_status === 'YES').length;
+              const rejectedCount = filteredDetections.filter(d => d.verification_status === 'NO').length;
+
+              return (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[#fafbfa] border border-[#dde1dc] rounded-xl">
+                  {/* Status Pills */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setReviewStatusFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        reviewStatusFilter === 'all'
+                          ? 'bg-[#1f4d3a] text-white shadow-xs'
+                          : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
+                      }`}
+                    >
+                      All ({filteredDetections.length})
+                    </button>
+                    <button
+                      onClick={() => setReviewStatusFilter('pending')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                        reviewStatusFilter === 'pending'
+                          ? 'bg-[#1f4d3a] text-white shadow-xs'
+                          : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
+                      }`}
+                    >
+                      <span>Pending</span>
+                      {pendingCount > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                          reviewStatusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {pendingCount}
+                        </span>
                       )}
-                    </div>
-                    <div className="text-xs text-[#5a635d]">
-                      {det.scientific_name} • Node: {det.recorder_id || det.station_name || 'Node'} • {det.timestamp ? new Date(det.timestamp).toLocaleString() : 'Recent'}
-                    </div>
+                    </button>
+                    <button
+                      onClick={() => setReviewStatusFilter('verified')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        reviewStatusFilter === 'verified'
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
+                      }`}
+                    >
+                      Approved ({approvedCount})
+                    </button>
+                    <button
+                      onClick={() => setReviewStatusFilter('rejected')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        reviewStatusFilter === 'rejected'
+                          ? 'bg-rose-700 text-white shadow-xs'
+                          : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
+                      }`}
+                    >
+                      Rejected ({rejectedCount})
+                    </button>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => setSelectedDetection(det)}
-                      className="px-2.5 py-1.5 rounded-lg border border-[#dde1dc] text-xs font-semibold text-[#1f4d3a] bg-[#f0f7f3] hover:bg-[#eaf2ed] flex items-center gap-1 cursor-pointer"
-                    >
-                      <Play className="w-3 h-3 fill-[#1f4d3a]" />
-                      <span>Audio</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleVerify(det.id, true)}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Check className="w-3 h-3" />
-                      <span>Approve</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleVerify(det.id, false)}
-                      className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 flex items-center gap-1 cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                      <span>Reject</span>
-                    </button>
+                  {/* Search Query */}
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 text-[#5a635d] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={reviewSearch}
+                      onChange={(e) => setReviewSearch(e.target.value)}
+                      placeholder="Filter by species name..."
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-[#dde1dc] rounded-lg focus:outline-none focus:border-[#1f4d3a]"
+                    />
                   </div>
                 </div>
-              ))}
+              );
+            })()}
+
+            {/* Detections List */}
+            <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+              {(() => {
+                let list = filteredDetections;
+
+                if (reviewStatusFilter === 'pending') {
+                  list = list.filter(d => d.verification_status !== 'YES' && d.verification_status !== 'NO');
+                } else if (reviewStatusFilter === 'verified') {
+                  list = list.filter(d => d.verification_status === 'YES');
+                } else if (reviewStatusFilter === 'rejected') {
+                  list = list.filter(d => d.verification_status === 'NO');
+                }
+
+                if (reviewSearch.trim()) {
+                  const q = reviewSearch.toLowerCase().trim();
+                  list = list.filter(d => 
+                    (d.common_name && d.common_name.toLowerCase().includes(q)) ||
+                    (d.scientific_name && d.scientific_name.toLowerCase().includes(q))
+                  );
+                }
+
+                if (list.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-xs text-[#5a635d] bg-white border border-[#dde1dc] rounded-xl">
+                      {reviewStatusFilter === 'pending'
+                        ? '🎉 All detections in this view have been reviewed!'
+                        : 'No detections match the selected review filter.'}
+                    </div>
+                  );
+                }
+
+                return list.slice(0, 50).map((det) => {
+                  const isPending = det.verification_status !== 'YES' && det.verification_status !== 'NO';
+                  const isApproved = det.verification_status === 'YES';
+                  const isRejected = det.verification_status === 'NO';
+                  const isUpdating = verifyingId === det.id || String(verifyingId) === String(det.id);
+
+                  return (
+                    <div
+                      key={det.id}
+                      className={`p-3.5 bg-white border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs transition-all ${
+                        isApproved ? 'border-emerald-300 bg-emerald-50/20' : isRejected ? 'border-rose-300 bg-rose-50/20' : 'border-[#dde1dc]'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <strong className="text-sm text-[#1a1f1c]">{det.common_name}</strong>
+                          <span className="text-xs font-mono font-bold text-[#1f4d3a] bg-[#eaf2ed] px-1.5 py-0.2 rounded">
+                            {formatPercent(det.confidence || 0)}
+                          </span>
+                          {isApproved && (
+                            <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded flex items-center gap-1 border border-emerald-300">
+                              <Check className="w-3 h-3 text-emerald-700" />
+                              Approved
+                            </span>
+                          )}
+                          {isRejected && (
+                            <span className="text-[10px] font-mono font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded flex items-center gap-1 border border-rose-300">
+                              <X className="w-3 h-3 text-rose-700" />
+                              Rejected
+                            </span>
+                          )}
+                          {isPending && (
+                            <span className="text-[10px] font-mono font-bold bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#5a635d]">
+                          {det.scientific_name} • Node: {det.recorder_id || det.station_name || 'Node'} • {det.timestamp ? new Date(det.timestamp).toLocaleString() : 'Recent'}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setSelectedDetection(det)}
+                          className="px-2.5 py-1.5 rounded-lg border border-[#dde1dc] text-xs font-semibold text-[#1f4d3a] bg-[#f0f7f3] hover:bg-[#eaf2ed] flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                        >
+                          <Play className="w-3 h-3 fill-[#1f4d3a]" />
+                          <span>Audio</span>
+                        </button>
+
+                        <button
+                          disabled={isUpdating}
+                          onClick={() => handleVerify(det.id, true)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${
+                            isApproved
+                              ? 'bg-emerald-800 text-white ring-2 ring-emerald-500'
+                              : 'bg-emerald-700 text-white hover:bg-emerald-800'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{isApproved ? 'Approved' : 'Approve'}</span>
+                        </button>
+
+                        <button
+                          disabled={isUpdating}
+                          onClick={() => handleVerify(det.id, false)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${
+                            isRejected
+                              ? 'bg-rose-800 text-white ring-2 ring-rose-500'
+                              : 'bg-rose-600 text-white hover:bg-rose-700'
+                          }`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>{isRejected ? 'Rejected' : 'Reject'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         )}

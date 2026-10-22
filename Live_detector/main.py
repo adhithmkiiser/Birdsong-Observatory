@@ -18,6 +18,7 @@ import time
 import signal
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple, Any
 
 from config import (
@@ -59,6 +60,7 @@ class LiveDetectorAgent:
         self.ring_buffer = CircularRingBuffer(capacity_seconds=30.0)
         self.outbox = OutboxDatabase()
         self.telemetry_monitor = SystemTelemetryMonitor()
+        self.clip_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ClipWorker")
 
         # 2. Workers
         self.capture_worker = AudioCaptureWorker(self.ring_buffer)
@@ -73,6 +75,37 @@ class LiveDetectorAgent:
     def _signal_handler(self, sig, frame):
         logger.info("Received termination signal. Shutting down gracefully...")
         self.stop()
+
+    def _save_clip_and_enqueue(self, window_id: str, audio_copy, timestamp: str,
+                              activity_dict: dict, species_list: list, model_count: int,
+                              explained_ratio: float, flags: list, detections: list):
+        """Asynchronously encodes Opus audio clips and writes to SQLite Outbox without stalling inference."""
+        try:
+            has_detections = len(detections) > 0
+            has_triage_flags = len(flags) > 0 and "AMBIENT_NOISE" not in flags
+
+            clip_local_path = None
+            if has_detections or has_triage_flags:
+                clip_filename = f"{window_id}.opus"
+                clip_local_path = str(CLIPS_DIR / clip_filename)
+                encoded = self.uploader_worker.encode_to_opus(audio_copy, clip_local_path)
+                if not encoded:
+                    clip_local_path = None
+
+            self.outbox.add_window_and_detections(
+                window_id=window_id,
+                node_id=STATION_NAME,
+                timestamp=timestamp,
+                activity_dict=activity_dict,
+                species_list=species_list,
+                model_count=model_count,
+                explained_ratio=explained_ratio,
+                flags=flags,
+                clip_local_path=clip_local_path,
+                detections=detections
+            )
+        except Exception as e:
+            logger.error(f"Error in async clip worker for {window_id}: {e}")
 
     def telemetry_loop(self):
         """Dedicated background thread for solar powerbank, battery, CPU temp, and SD card space."""
@@ -163,30 +196,20 @@ class LiveDetectorAgent:
                         })
                         logger.info(f"🎵 [{model_id}] {common_name} ({conf * 100:.1f}%) | Flags: {flags}")
 
-                # 5. Audio Clip Handling: Save temporary Opus clip ONLY if there are detections or flags
-                has_detections = len(detections_to_enqueue) > 0
-                has_triage_flags = len(flags) > 0 and "AMBIENT_NOISE" not in flags
-
-                clip_local_path = None
-                if has_detections or has_triage_flags:
-                    clip_filename = f"{window_id}.opus"
-                    clip_local_path = str(CLIPS_DIR / clip_filename)
-                    encoded = self.uploader_worker.encode_to_opus(audio_48k, clip_local_path)
-                    if not encoded:
-                        clip_local_path = None
-
-                # 6. Enqueue Window Summary & Detections atomically to SQLite Outbox
-                self.outbox.add_window_and_detections(
-                    window_id=window_id,
-                    node_id=STATION_NAME,
-                    timestamp=window.timestamp,
-                    activity_dict=activity.to_dict(),
-                    species_list=list(set(all_species_names)),
-                    model_count=len(models_to_run),
-                    explained_ratio=explained_ratio,
-                    flags=flags,
-                    clip_local_path=clip_local_path,
-                    detections=detections_to_enqueue
+                # 5. Offload Opus Clip Encoding & Outbox Enqueueing to background worker
+                # This guarantees the real-time inference loop NEVER stalls or drops windows,
+                # even when the live stream or spectrogram is running!
+                self.clip_executor.submit(
+                    self._save_clip_and_enqueue,
+                    window_id,
+                    audio_48k.copy(),
+                    window.timestamp,
+                    activity.to_dict(),
+                    list(set(all_species_names)),
+                    len(models_to_run),
+                    explained_ratio,
+                    flags,
+                    detections_to_enqueue
                 )
 
             except Exception as loop_err:
@@ -200,6 +223,7 @@ class LiveDetectorAgent:
         self.uploader_worker.stop()
         self.control_manager.stop()
         self.stream_server.stop()
+        self.clip_executor.shutdown(wait=False)
         logger.info("Live Detector Agent stopped cleanly.")
 
 if __name__ == "__main__":

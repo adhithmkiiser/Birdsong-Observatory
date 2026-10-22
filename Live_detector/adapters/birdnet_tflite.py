@@ -56,7 +56,9 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                 except ImportError:
                     raise ImportError("Please install 'tflite-runtime', 'ai-edge-litert', or 'tensorflow' to use BirdNET TFLite models.")
 
-        self.interpreter = Interpreter(model_path=model_path, num_threads=4)
+        # Leave 1 core free for ALSA audio capture and live streaming
+        threads = min(3, max(1, (os.cpu_count() or 4) - 1))
+        self.interpreter = Interpreter(model_path=model_path, num_threads=threads)
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()

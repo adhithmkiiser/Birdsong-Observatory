@@ -102,6 +102,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'verify_detection') {
+      const { id, status } = body;
+      const { data, error } = await supabaseAdmin
+        .from('live_detections')
+        .update({
+          verification_status: status,
+          reviewed: true,
+          verified: status === 'YES'
+        })
+        .eq('id', id)
+        .select();
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, data });
+    }
+
     if (action === 'sync_now') {
       const { nodeId } = body;
       const { data, error } = await supabaseAdmin

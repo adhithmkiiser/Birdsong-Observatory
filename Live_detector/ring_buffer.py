@@ -50,7 +50,15 @@ class CircularRingBuffer:
                 self.buffer[0:second_chunk] = samples[first_chunk:]
 
             self.write_idx = (self.write_idx + num_samples) % self.capacity_samples
-            self.samples_available = min(self.capacity_samples, self.samples_available + num_samples)
+
+            # Handle buffer overflow: advance read_idx to discard oldest samples and keep in real-time sync
+            if self.samples_available + num_samples > self.capacity_samples:
+                overflow = (self.samples_available + num_samples) - self.capacity_samples
+                self.read_idx = (self.read_idx + overflow) % self.capacity_samples
+                self.samples_available = self.capacity_samples
+            else:
+                self.samples_available += num_samples
+
             self.data_ready.notify_all()
 
     def get_window(self, timeout: float = 1.0) -> Optional[AudioWindow]:
