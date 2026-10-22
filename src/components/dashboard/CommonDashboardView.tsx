@@ -20,7 +20,8 @@ import {
   Check,
   Trash2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 import { useRole } from '@/components/layout/RoleContext';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +30,7 @@ import DashboardLoader from '@/components/ui/DashboardLoader';
 import { useDashboardStore } from '@/lib/store/useDashboardStore';
 import CommonSpeciesHourMatrix from '@/components/charts/CommonSpeciesHourMatrix';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 
 import { getSpeciesGradientColor } from '@/lib/colorUtils';
 const LantanaMap = dynamic(() => import('@/components/map/LantanaMap'), { ssr: false });
@@ -70,6 +72,7 @@ export default function CommonDashboardView({
   const [purgeConfirmed, setPurgeConfirmed] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
   const [purgeToast, setPurgeToast] = useState<string | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   
   const { 
     selectedProjectId, 
@@ -883,6 +886,15 @@ export default function CommonDashboardView({
                 )}
               </button>
 
+              <button
+                onClick={() => setIsReportModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                title="Create and customize a formatted bioacoustic research report"
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Create Report</span>
+              </button>
+
               {canManageDetections && (
                 <button
                   onClick={() => {
@@ -1474,6 +1486,15 @@ export default function CommonDashboardView({
           </div>
         );
       })()}
+
+      {/* ─── CREATE RESEARCH REPORT MODAL ────────────────────────────────────── */}
+      <ReportGeneratorModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        defaultFormat={selectedProjectId?.toLowerCase().includes('lantana') ? 'lantana' : 'pam'}
+        defaultProjectId={selectedProjectId !== 'ALL_PROJECTS' ? selectedProjectId : undefined}
+        defaultSiteId={selectedStationId !== 'ALL_SITES' ? selectedStationId : undefined}
+      />
 
     </div>
   );

@@ -48,6 +48,7 @@ import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
 import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 import DashboardLoader from '@/components/ui/DashboardLoader';
 
 export interface WindowSummaryItem {
@@ -143,6 +144,7 @@ export default function LiveDashboardPage() {
 
   // Live Database Purge States
   const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [purgeScope, setPurgeScope] = useState<'station' | 'project'>('station');
   const [purgeStatusScope, setPurgeStatusScope] = useState<'all' | 'pending' | 'rejected' | 'approved'>('all');
   const [purgeConfirmed, setPurgeConfirmed] = useState(false);
@@ -1107,6 +1109,17 @@ export default function LiveDashboardPage() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Purge Detections</span>
+                </button>
+              )}
+
+              {canAccessReports && (
+                <button
+                  onClick={() => setIsReportModalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg border border-emerald-300 hover:border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Create and customize a formatted bioacoustic research report"
+                >
+                  <FileText className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Create Report</span>
                 </button>
               )}
 
@@ -2583,6 +2596,30 @@ export default function LiveDashboardPage() {
               </div>
             </div>
 
+            <div className="p-6 rounded-2xl bg-linear-to-r from-[#f0f7f3] via-white to-white border border-[#dde1dc] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-[#1f4d3a] text-white">
+                    <Sparkles className="w-4 h-4 text-emerald-300" />
+                  </span>
+                  <h3 className="font-serif font-bold text-sm text-[#1a1f1c]">
+                    Automated Technical Dossier &amp; Research Reports
+                  </h3>
+                </div>
+                <p className="text-xs text-[#5a635d] max-w-xl">
+                  Synthesize real-time edge telemetry, species richness, diurnal patterns, and watchdog alerts into a publication-grade PDF report.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setIsReportModalOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-[#1f4d3a] hover:bg-[#173b2c] text-white font-semibold text-xs transition flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Create Report</span>
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-5 bg-white border border-[#dde1dc] rounded-xl space-y-3 shadow-xs">
                 <h3 className="font-bold text-sm text-[#1a1f1c]">Full Live Ingestion Log (CSV)</h3>
@@ -2762,6 +2799,15 @@ export default function LiveDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ─── CREATE RESEARCH REPORT MODAL ────────────────────────────────────── */}
+      <ReportGeneratorModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        defaultFormat="live"
+        defaultProjectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
+        defaultSiteId={selectedSiteId !== 'ALL' ? selectedSiteId : undefined}
+      />
 
     </div>
   );
