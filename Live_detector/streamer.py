@@ -51,12 +51,13 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         ffmpeg_proc = None
-        audio_queue = queue.Queue(maxsize=300)
+        audio_queue = queue.Queue(maxsize=30)
         if StreamHandler.capture_worker:
             StreamHandler.capture_worker.add_stream_listener(audio_queue)
 
         try:
             # Spawn FFmpeg encoder streaming to HTTP response socket
+            # -application lowdelay + -frame_duration 20 + -flush_packets 1 guarantee zero buffering
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
@@ -67,6 +68,9 @@ class StreamHandler(BaseHTTPRequestHandler):
                 "-c:a", "libopus",
                 "-b:a", "64k",
                 "-vbr", "on",
+                "-application", "lowdelay",
+                "-frame_duration", "20",
+                "-flush_packets", "1",
                 "-f", "ogg",
                 "pipe:1"
             ]
@@ -75,7 +79,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                bufsize=2048
+                bufsize=0
             )
 
             # Thread to pipe linear capture audio directly into FFmpeg stdin
@@ -83,7 +87,7 @@ class StreamHandler(BaseHTTPRequestHandler):
             def pipe_audio():
                 while streaming and ffmpeg_proc.poll() is None:
                     try:
-                        raw_bytes = audio_queue.get(timeout=1.0)
+                        raw_bytes = audio_queue.get(timeout=0.5)
                         ffmpeg_proc.stdin.write(raw_bytes)
                         ffmpeg_proc.stdin.flush()
                     except queue.Empty:
@@ -94,9 +98,10 @@ class StreamHandler(BaseHTTPRequestHandler):
             pipe_thread = threading.Thread(target=pipe_audio, daemon=True)
             pipe_thread.start()
 
-            # Read Opus chunks from FFmpeg and stream out over HTTP
+            # Read Opus chunks from FFmpeg and stream out over HTTP immediately
+            import os
             while True:
-                chunk = ffmpeg_proc.stdout.read(1024)
+                chunk = os.read(ffmpeg_proc.stdout.fileno(), 4096)
                 if not chunk:
                     break
                 self.wfile.write(chunk)

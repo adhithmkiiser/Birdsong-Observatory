@@ -49,10 +49,11 @@ class AudioCaptureWorker(threading.Thread):
                 cmd = [
                     "ffmpeg",
                     "-loglevel", "error",
+                    "-thread_queue_size", "2048",
                     "-f", "alsa",
-                    "-ac", str(CHANNELS),
-                    "-ar", str(SAMPLE_RATE),
                     "-i", self.device,
+                    "-ac", "1",
+                    "-ar", str(SAMPLE_RATE),
                     "-f", "f32le",
                     "pipe:1"
                 ]
