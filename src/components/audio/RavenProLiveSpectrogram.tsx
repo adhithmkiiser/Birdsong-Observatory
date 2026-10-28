@@ -6,14 +6,18 @@ import {
   Pause, 
   RotateCcw, 
   Volume2, 
-  VolumeX,
+  VolumeX, 
   Radio, 
   Activity,
   Bird,
   Wifi,
   X,
   Globe,
-  Layers
+  Layers,
+  Settings,
+  AlertTriangle,
+  Music,
+  Check
 } from 'lucide-react';
 
 interface DetectionAnnotation {
@@ -39,6 +43,8 @@ interface RavenProLiveSpectrogramProps {
   detections: DetectionAnnotation[];
   onPlayDetectionClip?: (clipUrl: string) => void;
   onCloseStream?: () => void;
+  onPlayLatestClip?: () => void;
+  errorMessage?: string | null;
 }
 
 // Module-level persistent cache for Web Audio nodes attached to an HTMLAudioElement.
@@ -98,7 +104,9 @@ export function RavenProLiveSpectrogram({
   stationIp,
   detections,
   onPlayDetectionClip,
-  onCloseStream
+  onCloseStream,
+  onPlayLatestClip,
+  errorMessage
 }: RavenProLiveSpectrogramProps) {
   // Visualizer Settings (Raven Controls)
   const [colorScheme, setColorScheme] = useState<'raven-fire' | 'raven-gray' | 'viridis'>('raven-fire');
@@ -109,6 +117,8 @@ export function RavenProLiveSpectrogram({
   const [cursorReadout, setCursorReadout] = useState<{ freqHz: number; timeSec: number; db: number } | null>(null);
   const [currentLevelDb, setCurrentLevelDb] = useState(-90);
   const [isContextSuspended, setIsContextSuspended] = useState(false);
+  const [showUrlEditor, setShowUrlEditor] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState(streamUrl);
 
   // Canvas and Web Audio Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -439,9 +449,79 @@ export function RavenProLiveSpectrogram({
         </div>
       </div>
 
+      {/* 2. STREAM DIAGNOSTICS & SOURCE CONFIGURATION BANNER */}
+      <div className="px-4 py-2 bg-[#08110c] border-b border-[#1f3a2b] flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono text-[#a0aba3]">
+          <span className="flex items-center gap-1.5 text-white/80">
+            <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <strong>Socket Source:</strong>
+          </span>
+          <span className="px-2 py-0.5 rounded bg-black/60 border border-white/10 text-emerald-300 font-mono text-[10px] truncate max-w-xs sm:max-w-md">
+            {streamUrl}
+          </span>
+          <button
+            onClick={() => setShowUrlEditor(!showUrlEditor)}
+            className="p-1 text-white/60 hover:text-emerald-300 rounded hover:bg-white/10 transition cursor-pointer"
+            title="Configure edge stream target URL"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
+        {/* Quick Action: Stream Latest Uploaded Field Audio */}
+        {onPlayLatestClip && (
+          <button
+            onClick={() => {
+              resumeAudioContext();
+              onPlayLatestClip();
+            }}
+            className="px-3 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer"
+            title="Stream and visualize the most recent verified bioacoustic detection recorded by this node"
+          >
+            <Music className="w-3 h-3 text-emerald-400" />
+            <span>Stream Latest Recorded Field Call</span>
+          </button>
+        )}
+      </div>
 
-      {/* 3. SPECTROGRAM CONTROL BAR: COLORMAP, CONTRAST, FREQ RANGE, READOUT */}
+      {/* Optional Stream Target URL Editor Drawer */}
+      {showUrlEditor && (
+        <div className="p-3 bg-[#0c1a12] border-b border-emerald-500/30 flex flex-col sm:flex-row items-center gap-3 text-xs">
+          <label className="text-[11px] font-mono text-emerald-200 shrink-0">
+            Custom Stream / Tunnel URL:
+          </label>
+          <input
+            type="text"
+            value={customUrlInput}
+            onChange={(e) => setCustomUrlInput(e.target.value)}
+            placeholder="http://<pi_ip>:8888/stream.opus or https://...trycloudflare.com/stream.opus"
+            className="flex-1 w-full bg-black/60 border border-emerald-500/40 rounded-lg px-3 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-emerald-400"
+          />
+          <button
+            onClick={() => {
+              onStreamUrlChange(customUrlInput.trim());
+              setShowUrlEditor(false);
+            }}
+            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Apply URL</span>
+          </button>
+        </div>
+      )}
+
+      {/* Connection Notice / Error Alert */}
+      {errorMessage && (
+        <div className="p-3 bg-amber-950/70 border-b border-amber-600/40 text-amber-200 text-xs flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">{errorMessage}</p>
+            <p className="text-[11px] text-amber-200/80">
+              Note: Continuous port 8888 live streaming requires your browser to be on the same local network as the Raspberry Pi, or routed through a Cloudflare Tunnel. To hear verified audio immediately, click <strong>Stream Latest Recorded Field Call</strong> above or click <strong>Play Clip</strong> on any detection card below.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="px-4 py-2.5 bg-[#0e1713] border-b border-[#1f3a2b] flex flex-wrap items-center justify-between gap-4 text-xs">
         {/* Colormap Selectors */}
         <div className="flex items-center gap-3">

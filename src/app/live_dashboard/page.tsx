@@ -36,7 +36,8 @@ import {
   Headphones,
   Wifi,
   Sliders,
-  Trash2
+  Trash2,
+  Music
 } from 'lucide-react';
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
@@ -180,6 +181,7 @@ export default function LiveDashboardPage() {
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [autoPlayOnDetection, setAutoPlayOnDetection] = useState(false);
   const [lastLiveDetectionId, setLastLiveDetectionId] = useState<any>(null);
+  const [liveStreamError, setLiveStreamError] = useState<string | null>(null);
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // RBAC Permission: Only managers and admins can monitor live edge audio & spectrogram
@@ -837,13 +839,16 @@ export default function LiveDashboardPage() {
   // Start and open live stream on demand
   const handleOpenAndStartLiveStream = () => {
     setIsLiveStreamActive(true);
+    setLiveStreamError(null);
     setTimeout(() => {
       if (!liveAudioElementRef.current) return;
       liveAudioElementRef.current.src = directStreamUrl;
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
+        setLiveStreamError(null);
       }).catch(err => {
         console.warn('Live audio play request interrupted:', err);
+        setLiveStreamError(`Cannot reach continuous edge stream at "${directStreamUrl}". When viewing from cloud (Render), browsers cannot connect directly to local edge devices unless connected via a Cloudflare Tunnel or local LAN.`);
       });
     }, 100);
   };
@@ -857,6 +862,7 @@ export default function LiveDashboardPage() {
     }
     setIsLiveAudioPlaying(false);
     setIsLiveStreamActive(false);
+    setLiveStreamError(null);
   };
 
   // Handle Play / Pause for Live Audio
@@ -867,26 +873,52 @@ export default function LiveDashboardPage() {
       liveAudioElementRef.current.pause();
       setIsLiveAudioPlaying(false);
     } else {
+      setLiveStreamError(null);
       if (!liveAudioElementRef.current.src || liveAudioElementRef.current.src === window.location.href) {
         liveAudioElementRef.current.src = directStreamUrl;
       }
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
+        setLiveStreamError(null);
       }).catch(err => {
         console.warn('Audio play request interrupted:', err);
+        setLiveStreamError(`Cannot connect to "${directStreamUrl}". Continuous port 8888 streaming requires the field station to be active on your local network or routed via a tunnel.`);
       });
     }
   };
 
   const handleStreamUrlChange = (newUrl: string) => {
     setDirectStreamUrl(newUrl);
+    setLiveStreamError(null);
     if (liveAudioElementRef.current) {
       const wasPlaying = isLiveAudioPlaying;
       liveAudioElementRef.current.src = newUrl;
       if (wasPlaying) {
-        liveAudioElementRef.current.play().catch(console.warn);
+        liveAudioElementRef.current.play().then(() => {
+          setIsLiveAudioPlaying(true);
+        }).catch(err => {
+          console.warn('Audio stream error with new URL:', err);
+          setLiveStreamError(`Failed to stream from updated URL: ${newUrl}`);
+        });
       }
     }
+  };
+
+  const handlePlayLatestDetectionInSpectrogram = () => {
+    const latestWithAudio = filteredDetections.find((d: any) => d.audio_url);
+    if (!latestWithAudio || !liveAudioElementRef.current) {
+      setLiveStreamError('No recorded audio clips available yet for this station.');
+      return;
+    }
+    setIsLiveStreamActive(true);
+    setLiveStreamError(null);
+    liveAudioElementRef.current.src = latestWithAudio.audio_url;
+    liveAudioElementRef.current.play().then(() => {
+      setIsLiveAudioPlaying(true);
+    }).catch(err => {
+      console.warn('Failed to stream latest detection clip:', err);
+      setLiveStreamError('Failed to play the latest recorded audio clip.');
+    });
   };
 
   const handlePlayDetectionClipFromSpectrogram = (clipUrl: string) => {
@@ -1596,6 +1628,7 @@ export default function LiveDashboardPage() {
               crossOrigin="anonymous"
               onError={() => {
                 console.warn('Live audio playback error. Checking direct stream URL...');
+                setLiveStreamError(`Cannot reach audio stream at "${directStreamUrl}". If accessing from cloud (Render), browsers cannot connect directly to local edge devices without a tunnel or local LAN.`);
               }}
             />
 
@@ -1644,6 +1677,14 @@ export default function LiveDashboardPage() {
                 </div>
                 <div className="shrink-0 flex items-center gap-3">
                   <button
+                    onClick={handlePlayLatestDetectionInSpectrogram}
+                    className="px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer border border-white/20"
+                    title="Play and visualize the latest verified bioacoustic audio clip recorded by this node"
+                  >
+                    <Music className="w-4 h-4 text-emerald-400" />
+                    <span>Stream Latest Clip</span>
+                  </button>
+                  <button
                     onClick={handleOpenAndStartLiveStream}
                     className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16] font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer hover:shadow-lg"
                   >
@@ -1676,6 +1717,8 @@ export default function LiveDashboardPage() {
                   }))}
                   onPlayDetectionClip={handlePlayDetectionClipFromSpectrogram}
                   onCloseStream={handleCloseLiveStream}
+                  onPlayLatestClip={handlePlayLatestDetectionInSpectrogram}
+                  errorMessage={liveStreamError}
                 />
               </div>
             )}
