@@ -469,27 +469,56 @@ export function RavenProLiveSpectrogram({
 
       {/* Optional Stream Target URL Editor Drawer */}
       {showUrlEditor && (
-        <div className="p-3 bg-[#0c1a12] border-b border-emerald-500/30 flex flex-col sm:flex-row items-center gap-3 text-xs">
-          <label className="text-[11px] font-mono text-emerald-200 shrink-0">
-            Custom Stream / Tunnel URL:
-          </label>
-          <input
-            type="text"
-            value={customUrlInput}
-            onChange={(e) => setCustomUrlInput(e.target.value)}
-            placeholder="http://<pi_ip>:8888/stream.opus or https://...trycloudflare.com/stream.opus"
-            className="flex-1 w-full bg-black/60 border border-emerald-500/40 rounded-lg px-3 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-emerald-400"
-          />
-          <button
-            onClick={() => {
-              onStreamUrlChange(customUrlInput.trim());
-              setShowUrlEditor(false);
-            }}
-            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>Apply URL</span>
-          </button>
+        <div className="p-3 bg-[#0c1a12] border-b border-emerald-500/30 flex flex-col gap-2 text-xs">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <label className="text-[11px] font-mono text-emerald-200 shrink-0">
+              Custom Stream / Tunnel URL:
+            </label>
+            <input
+              type="text"
+              value={customUrlInput}
+              onChange={(e) => setCustomUrlInput(e.target.value)}
+              placeholder="http://<pi_ip>:8888/stream.opus or https://...trycloudflare.com/stream.opus"
+              className="flex-1 w-full bg-black/60 border border-emerald-500/40 rounded-lg px-3 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-emerald-400"
+            />
+            <button
+              onClick={() => {
+                onStreamUrlChange(customUrlInput.trim());
+                setShowUrlEditor(false);
+              }}
+              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Apply URL</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2 pt-1 text-[11px] flex-wrap">
+            <span className="text-white/50 text-[10px]">Quick Presets:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const url = 'http://172.27.78.51:8888/stream.opus';
+                setCustomUrlInput(url);
+                onStreamUrlChange(url);
+                setShowUrlEditor(false);
+              }}
+              className="px-2.5 py-1 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-600/50 text-[10px] font-mono cursor-pointer transition"
+            >
+              ⚡ 172.27.78.51:8888 (Field Pi LAN)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const url = 'http://livedetector.local:8888/stream.opus';
+                setCustomUrlInput(url);
+                onStreamUrlChange(url);
+                setShowUrlEditor(false);
+              }}
+              className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white/70 border border-white/10 text-[10px] font-mono cursor-pointer transition"
+            >
+              livedetector.local:8888
+            </button>
+          </div>
         </div>
       )}
 

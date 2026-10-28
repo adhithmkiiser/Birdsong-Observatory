@@ -175,7 +175,7 @@ export default function LiveDashboardPage() {
   // Live Audio & Detection Streaming States
   const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
   const [isLiveAudioPlaying, setIsLiveAudioPlaying] = useState(false);
-  const [directStreamUrl, setDirectStreamUrl] = useState('http://livedetector.local:8888/stream.opus');
+  const [directStreamUrl, setDirectStreamUrl] = useState('http://172.27.78.51:8888/stream.opus');
   const [selectedStreamNode, setSelectedStreamNode] = useState('Test_01');
   const [liveAudioVolume, setLiveAudioVolume] = useState(0.85);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -848,7 +848,21 @@ export default function LiveDashboardPage() {
         setLiveStreamError(null);
       }).catch(err => {
         console.warn('Live audio play request interrupted:', err);
-        setLiveStreamError(`Cannot reach continuous edge stream at "${directStreamUrl}". When viewing from cloud (Render), browsers cannot connect directly to local edge devices unless connected via a Cloudflare Tunnel or local LAN.`);
+        if (directStreamUrl.includes('livedetector.local')) {
+          const ipUrl = directStreamUrl.replace('livedetector.local', '172.27.78.51');
+          setDirectStreamUrl(ipUrl);
+          if (liveAudioElementRef.current) {
+            liveAudioElementRef.current.src = ipUrl;
+            liveAudioElementRef.current.play().then(() => {
+              setIsLiveAudioPlaying(true);
+              setLiveStreamError(null);
+            }).catch(() => {
+              setLiveStreamError(`Cannot reach continuous edge stream at "${ipUrl}". Check network connection.`);
+            });
+            return;
+          }
+        }
+        setLiveStreamError(`Cannot reach continuous edge stream at "${directStreamUrl}".`);
       });
     }, 100);
   };
@@ -883,6 +897,20 @@ export default function LiveDashboardPage() {
         setLiveStreamError(null);
       }).catch(err => {
         console.warn('Audio play request interrupted:', err);
+        if (directStreamUrl.includes('livedetector.local')) {
+          const ipUrl = directStreamUrl.replace('livedetector.local', '172.27.78.51');
+          setDirectStreamUrl(ipUrl);
+          if (liveAudioElementRef.current) {
+            liveAudioElementRef.current.src = ipUrl;
+            liveAudioElementRef.current.play().then(() => {
+              setIsLiveAudioPlaying(true);
+              setLiveStreamError(null);
+            }).catch(() => {
+              setLiveStreamError(`Cannot connect to live stream at ${ipUrl}. Check network connectivity.`);
+            });
+            return;
+          }
+        }
         setLiveStreamError(`Cannot connect to "${directStreamUrl}". Continuous port 8888 streaming requires the field station to be active on your local network or routed via a tunnel.`);
       });
     }
