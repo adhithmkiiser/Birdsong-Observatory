@@ -43,7 +43,6 @@ interface RavenProLiveSpectrogramProps {
   detections: DetectionAnnotation[];
   onPlayDetectionClip?: (clipUrl: string) => void;
   onCloseStream?: () => void;
-  onPlayLatestClip?: () => void;
   errorMessage?: string | null;
 }
 
@@ -105,7 +104,6 @@ export function RavenProLiveSpectrogram({
   detections,
   onPlayDetectionClip,
   onCloseStream,
-  onPlayLatestClip,
   errorMessage
 }: RavenProLiveSpectrogramProps) {
   // Visualizer Settings (Raven Controls)
@@ -467,21 +465,6 @@ export function RavenProLiveSpectrogram({
             <Settings className="w-3.5 h-3.5" />
           </button>
         </div>
-
-        {/* Quick Action: Stream Latest Uploaded Field Audio */}
-        {onPlayLatestClip && (
-          <button
-            onClick={() => {
-              resumeAudioContext();
-              onPlayLatestClip();
-            }}
-            className="px-3 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer"
-            title="Stream and visualize the most recent verified bioacoustic detection recorded by this node"
-          >
-            <Music className="w-3 h-3 text-emerald-400" />
-            <span>Stream Latest Recorded Field Call</span>
-          </button>
-        )}
       </div>
 
       {/* Optional Stream Target URL Editor Drawer */}

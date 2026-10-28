@@ -853,11 +853,12 @@ export default function LiveDashboardPage() {
     }, 100);
   };
 
-  // Completely turn off and disconnect stream
+  // Completely turn off and disconnect stream - live audio is ephemeral and never saved
   const handleCloseLiveStream = () => {
     if (liveAudioElementRef.current) {
       liveAudioElementRef.current.pause();
       liveAudioElementRef.current.src = '';
+      liveAudioElementRef.current.removeAttribute('src');
       liveAudioElementRef.current.load();
     }
     setIsLiveAudioPlaying(false);
@@ -904,22 +905,7 @@ export default function LiveDashboardPage() {
     }
   };
 
-  const handlePlayLatestDetectionInSpectrogram = () => {
-    const latestWithAudio = filteredDetections.find((d: any) => d.audio_url);
-    if (!latestWithAudio || !liveAudioElementRef.current) {
-      setLiveStreamError('No recorded audio clips available yet for this station.');
-      return;
-    }
-    setIsLiveStreamActive(true);
-    setLiveStreamError(null);
-    liveAudioElementRef.current.src = latestWithAudio.audio_url;
-    liveAudioElementRef.current.play().then(() => {
-      setIsLiveAudioPlaying(true);
-    }).catch(err => {
-      console.warn('Failed to stream latest detection clip:', err);
-      setLiveStreamError('Failed to play the latest recorded audio clip.');
-    });
-  };
+
 
   const handlePlayDetectionClipFromSpectrogram = (clipUrl: string) => {
     const match = detections.find(d => d.audio_url === clipUrl);
@@ -1677,14 +1663,6 @@ export default function LiveDashboardPage() {
                 </div>
                 <div className="shrink-0 flex items-center gap-3">
                   <button
-                    onClick={handlePlayLatestDetectionInSpectrogram}
-                    className="px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer border border-white/20"
-                    title="Play and visualize the latest verified bioacoustic audio clip recorded by this node"
-                  >
-                    <Music className="w-4 h-4 text-emerald-400" />
-                    <span>Stream Latest Clip</span>
-                  </button>
-                  <button
                     onClick={handleOpenAndStartLiveStream}
                     className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#0a1e16] font-bold text-xs flex items-center gap-2.5 transition-all shadow-md cursor-pointer hover:shadow-lg"
                   >
@@ -1717,7 +1695,6 @@ export default function LiveDashboardPage() {
                   }))}
                   onPlayDetectionClip={handlePlayDetectionClipFromSpectrogram}
                   onCloseStream={handleCloseLiveStream}
-                  onPlayLatestClip={handlePlayLatestDetectionInSpectrogram}
                   errorMessage={liveStreamError}
                 />
               </div>
