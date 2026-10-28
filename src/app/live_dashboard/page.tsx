@@ -182,6 +182,8 @@ export default function LiveDashboardPage() {
   const [autoPlayOnDetection, setAutoPlayOnDetection] = useState(false);
   const [lastLiveDetectionId, setLastLiveDetectionId] = useState<any>(null);
   const [liveStreamError, setLiveStreamError] = useState<string | null>(null);
+  const [liveStreamSessionStart, setLiveStreamSessionStart] = useState<number | null>(null);
+  const [liveFeedFilter, setLiveFeedFilter] = useState<'session' | 'all'>('session');
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // RBAC Permission: Only managers and admins can monitor live edge audio & spectrogram
@@ -495,6 +497,22 @@ export default function LiveDashboardPage() {
       return matchesSearch && matchesStation && matchesConf;
     });
   }, [detections, searchQuery, selectedStationId, minConfidence]);
+
+  // Detections displayed specifically in the Live Stream tab (Tab 5):
+  // When in 'session' mode, it only shows detections detected during the active stream session.
+  // When disconnected, it resets to empty. All detections are permanently saved in the database.
+  const liveTabDetections = useMemo(() => {
+    if (liveFeedFilter === 'session') {
+      if (!isLiveStreamActive || !liveStreamSessionStart) {
+        return []; // Resets upon disconnect!
+      }
+      return filteredDetections.filter(d => {
+        if (!d.timestamp) return false;
+        return new Date(d.timestamp).getTime() >= liveStreamSessionStart;
+      });
+    }
+    return filteredDetections;
+  }, [filteredDetections, liveFeedFilter, isLiveStreamActive, liveStreamSessionStart]);
 
   // Realtime KPI metrics
   const totalDetections = filteredDetections.length;
@@ -839,6 +857,7 @@ export default function LiveDashboardPage() {
   // Start and open live stream on demand
   const handleOpenAndStartLiveStream = () => {
     setIsLiveStreamActive(true);
+    setLiveStreamSessionStart(Date.now());
     setLiveStreamError(null);
     setTimeout(() => {
       if (!liveAudioElementRef.current) return;
@@ -878,6 +897,7 @@ export default function LiveDashboardPage() {
     setIsLiveAudioPlaying(false);
     setIsLiveStreamActive(false);
     setLiveStreamError(null);
+    setLiveStreamSessionStart(null); // Resets the live stream session detections feed
   };
 
   // Handle Play / Pause for Live Audio
@@ -1710,7 +1730,7 @@ export default function LiveDashboardPage() {
                   onStreamUrlChange={handleStreamUrlChange}
                   stationName={selectedStreamNode}
                   stationIp={telemetryMap[selectedStreamNode]?.ip_address || telemetryMap['Test_01']?.ip_address}
-                  detections={filteredDetections.map((d: any) => ({
+                  detections={liveTabDetections.map((d: any) => ({
                     id: d.id,
                     common_name: d.common_name,
                     scientific_name: d.scientific_name,
@@ -1736,11 +1756,39 @@ export default function LiveDashboardPage() {
                     <Radio className="w-4 h-4 text-emerald-600 animate-pulse" />
                     Realtime Species Detections Stream
                   </h2>
-                  <p>Classification events ingested live from {selectedStreamNode}. Click play on any card to hear the call.</p>
+                  <p>
+                    {isLiveStreamActive
+                      ? `Classification events ingested live from ${selectedStreamNode}. Session resets on disconnect.`
+                      : `Live stream disconnected. Click "Connect Live Audio" above to start a live session.`}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-mono font-bold text-[#1f4d3a] bg-[#f0f7f3] px-3 py-1.5 rounded-lg border border-[#dde1dc]">
-                    {filteredDetections.length} Live Detections
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Session / History Feed Toggle */}
+                  <div className="inline-flex rounded-lg bg-[#f0f7f3] p-0.5 border border-[#dde1dc] text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setLiveFeedFilter('session')}
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                        liveFeedFilter === 'session'
+                          ? 'bg-[#1f4d3a] text-white shadow-2xs'
+                          : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreamActive ? 'bg-emerald-400 animate-pulse' : 'bg-gray-400'}`} />
+                      <span>Live Session ({liveTabDetections.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLiveFeedFilter('all')}
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                        liveFeedFilter === 'all'
+                          ? 'bg-[#1f4d3a] text-white shadow-2xs'
+                          : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                      }`}
+                      title="View all permanent detections saved in the database"
+                    >
+                      <span>All Saved History ({filteredDetections.length})</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1779,16 +1827,20 @@ export default function LiveDashboardPage() {
 
               {/* Detections / Live Audio Streams List Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[650px] overflow-y-auto pr-1">
-                {filteredDetections.length === 0 ? (
+                {liveTabDetections.length === 0 ? (
                   <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
                     <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
-                    <p className="font-semibold text-sm text-[#1a1f1c]">Awaiting incoming species detections...</p>
+                    <p className="font-semibold text-sm text-[#1a1f1c]">
+                      {isLiveStreamActive ? 'Listening for live avian calls...' : 'Stream Disconnected (Session Reset)'}
+                    </p>
                     <p className="text-xs text-[#5a635d]/80 max-w-md mx-auto">
-                      The edge AI is actively monitoring the live acoustic stream on {selectedStreamNode}. Avian classifications will appear here live.
+                      {isLiveStreamActive 
+                        ? `The edge AI is actively monitoring ${selectedStreamNode}. Avian classifications will appear here live as they vocalize.`
+                        : 'Connect to the live stream to monitor incoming species calls in real time. (All historical detections remain safely preserved in the database).'}
                     </p>
                   </div>
                 ) : (
-                  filteredDetections.map((det) => {
+                  liveTabDetections.map((det) => {
                     const isHigh = (det.confidence || 0) >= 0.8;
                     const isMed = (det.confidence || 0) >= 0.65;
                     const isRecent = det.timestamp && (Date.now() - new Date(det.timestamp).getTime()) < 60000;
