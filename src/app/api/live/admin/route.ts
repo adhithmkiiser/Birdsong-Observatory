@@ -134,8 +134,14 @@ export async function POST(req: NextRequest) {
           .eq('id', id)
           .single();
         if (rec?.audio_url) {
-          const filePath = new URL(rec.audio_url).pathname.replace('/storage/v1/object/public/bird-audio/', '');
-          if (filePath) await supabaseAdmin.storage.from('bird-audio').remove([filePath]).catch(() => {});
+          const urlPath = new URL(rec.audio_url).pathname;
+          if (urlPath.includes('/clips/')) {
+            const rel = urlPath.split('/clips/')[1];
+            if (rel) await supabaseAdmin.storage.from('clips').remove([rel]).catch(() => {});
+          } else if (urlPath.includes('/bird-audio/')) {
+            const rel = urlPath.split('/bird-audio/')[1];
+            if (rel) await supabaseAdmin.storage.from('bird-audio').remove([rel]).catch(() => {});
+          }
         }
       } catch (e) {
         // audio cleanup failure is non-fatal
@@ -162,20 +168,23 @@ export async function POST(req: NextRequest) {
           .from('live_detections')
           .select('audio_url')
           .in('id', ids);
-        const filePaths = (recs || [])
-          .map(r => r.audio_url)
-          .filter(Boolean)
-          .map(url => {
-            try {
-              return new URL(url).pathname.replace('/storage/v1/object/public/bird-audio/', '');
-            } catch {
-              return '';
+        const clipPaths: string[] = [];
+        const birdAudioPaths: string[] = [];
+        (recs || []).forEach(r => {
+          if (!r.audio_url) return;
+          try {
+            const p = new URL(r.audio_url).pathname;
+            if (p.includes('/clips/')) {
+              const rel = p.split('/clips/')[1];
+              if (rel) clipPaths.push(rel);
+            } else if (p.includes('/bird-audio/')) {
+              const rel = p.split('/bird-audio/')[1];
+              if (rel) birdAudioPaths.push(rel);
             }
-          })
-          .filter(Boolean);
-        if (filePaths.length > 0) {
-          await supabaseAdmin.storage.from('bird-audio').remove(filePaths).catch(() => {});
-        }
+          } catch {}
+        });
+        if (clipPaths.length > 0) await supabaseAdmin.storage.from('clips').remove(clipPaths).catch(() => {});
+        if (birdAudioPaths.length > 0) await supabaseAdmin.storage.from('bird-audio').remove(birdAudioPaths).catch(() => {});
       } catch (e) {
         // non-fatal
       }

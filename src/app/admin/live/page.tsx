@@ -155,6 +155,7 @@ interface LiveProjectItem {
 
 export default function LiveAdminPage() {
   const { currentRole, currentUser } = useRole();
+  const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
 
   // Navigation Tabs:
   // 'nodes'       -> Field Nodes & Hardware / Solar Telemetry
@@ -1063,6 +1064,23 @@ WantedBy=multi-user.target`;
                           <RefreshCw className="w-3.5 h-3.5" />
                           <span>Sync Now</span>
                         </button>
+
+                        {canDeleteDetections && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPurgeNodeScope(node.id || node.stationName);
+                              setPurgeStatusScope('all');
+                              setPurgeConfirmed(false);
+                              setIsPurgeModalOpen(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                            title={`Clear/delete detections for ${node.id || node.stationName}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Clear Detections</span>
+                          </button>
+                        )}
 
                         {currentRole === 'Admin' && (
                           <button
@@ -2470,7 +2488,7 @@ WantedBy=multi-user.target`;
                   <span>Refresh</span>
                 </button>
 
-                {currentRole === 'Admin' && (
+                {canDeleteDetections && (
                   <button
                     type="button"
                     onClick={() => {
@@ -2593,7 +2611,7 @@ WantedBy=multi-user.target`;
             </div>
 
             {/* 3. Bulk Selection Actions Banner */}
-            {currentRole === 'Admin' && selectedDetIds.size > 0 && (
+            {canDeleteDetections && selectedDetIds.size > 0 && (
               <div className="flex items-center justify-between p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 animate-fade-in shadow-xs">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600" />
@@ -2625,7 +2643,7 @@ WantedBy=multi-user.target`;
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#dde1dc] bg-[#f5f6f4] text-[#5a635d] text-[10px] uppercase font-mono tracking-wider">
-                    {currentRole === 'Admin' && (
+                    {canDeleteDetections && (
                       <th className="py-2.5 px-3 w-8 text-center">
                         <input
                           type="checkbox"
@@ -2652,7 +2670,7 @@ WantedBy=multi-user.target`;
                 <tbody className="divide-y divide-[#f0f2ef] font-medium bg-white">
                   {filteredLiveDetections.length === 0 ? (
                     <tr>
-                      <td colSpan={currentRole === 'Admin' ? 7 : 6} className="py-12 text-center text-[#5a635d]">
+                      <td colSpan={canDeleteDetections ? 7 : 6} className="py-12 text-center text-[#5a635d]">
                         <Database className="w-8 h-8 text-[#dde1dc] mx-auto mb-2" />
                         <p className="font-semibold text-sm text-[#1a1f1c]">No detections match criteria</p>
                         <p className="text-[11px] text-[#5a635d] mt-1">
@@ -2672,7 +2690,7 @@ WantedBy=multi-user.target`;
                           key={det.id} 
                           className={`hover:bg-[#f9faf8] transition ${isSelected ? 'bg-rose-50/40' : ''}`}
                         >
-                          {currentRole === 'Admin' && (
+                          {canDeleteDetections && (
                             <td className="py-2.5 px-3 text-center">
                               <input
                                 type="checkbox"
@@ -2791,12 +2809,12 @@ WantedBy=multi-user.target`;
                               </button>
 
                               {/* Single Delete */}
-                              {currentRole === 'Admin' && (
+                              {canDeleteDetections && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteSingleDetection(det.id)}
                                   disabled={isDeletingDet === det.id}
-                                  className="p-1.5 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-600 transition shadow-2xs"
+                                  className="p-1.5 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-600 transition shadow-2xs cursor-pointer"
                                   title="Delete this detection permanently"
                                 >
                                   <Trash2 className="w-3 h-3" />

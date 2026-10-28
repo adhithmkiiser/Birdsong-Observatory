@@ -188,6 +188,7 @@ export default function LiveDashboardPage() {
 
   // RBAC Permission: Only managers and admins can monitor live edge audio & spectrogram
   const canAccessLiveStream = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
 
   // Read initial tab from URL
   useEffect(() => {
@@ -692,10 +693,10 @@ export default function LiveDashboardPage() {
     }
   };
 
-  // Single Detection Deletion (Admin only)
+  // Single Detection Deletion (Admin, PM, Site Manager)
   const handleDeleteDetection = async (id: string | number) => {
-    if (currentRole !== 'Admin') {
-      alert('Only administrators can delete detections.');
+    if (!canDeleteDetections) {
+      alert('Only project managers and administrators can delete detections.');
       return;
     }
     if (!window.confirm('Delete this detection record permanently from Supabase?')) return;
@@ -720,10 +721,10 @@ export default function LiveDashboardPage() {
     }
   };
 
-  // Purge / Delete matching live detections (Admin only)
+  // Purge / Delete matching live detections (Admin, PM, Site Manager)
   const handleExecuteLivePurge = async () => {
-    if (currentRole !== 'Admin') {
-      alert('Only administrators can purge detections.');
+    if (!canDeleteDetections) {
+      alert('Only project managers and administrators can purge detections.');
       return;
     }
     if (!purgeConfirmed) return;
@@ -1163,7 +1164,7 @@ export default function LiveDashboardPage() {
                 )}
               </button>
 
-              {currentRole === 'Admin' && (
+              {canDeleteDetections && (
                 <button
                   onClick={() => {
                     setPurgeScope(selectedStationId !== 'ALL' ? 'station' : 'project');
@@ -1896,6 +1897,18 @@ export default function LiveDashboardPage() {
                             <Play className="w-4 h-4 fill-current" />
                             <span className="hidden sm:inline">Play Clip</span>
                           </button>
+
+                          {canDeleteDetections && (
+                            <button
+                              onClick={() => handleDeleteDetection(det.id)}
+                              disabled={isDeletingId === det.id}
+                              className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition-all shadow-2xs cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                              title="Delete this live detection from database"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">{isDeletingId === det.id ? 'Deleting...' : 'Delete'}</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2665,7 +2678,7 @@ export default function LiveDashboardPage() {
                           <span>{isRejected ? 'Rejected' : 'Reject'}</span>
                         </button>
 
-                        {currentRole === 'Admin' && (
+                        {canDeleteDetections && (
                           <button
                             disabled={isDeletingId === det.id}
                             onClick={() => handleDeleteDetection(det.id)}
