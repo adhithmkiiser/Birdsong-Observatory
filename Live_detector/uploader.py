@@ -293,14 +293,7 @@ class CloudUploaderWorker(threading.Thread):
                     }
                     if stream_url and stream_url.startswith("http"):
                         reg_update["elevation"] = stream_url  # Instant compatibility with existing schema
-                        try:
-                            reg_update["stream_url"] = stream_url
-                            self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
-                        except Exception:
-                            reg_update.pop("stream_url", None)
-                            self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
-                    else:
-                        self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
+                    self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
                 except Exception:
                     pass
             except Exception as e:

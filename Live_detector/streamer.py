@@ -163,7 +163,7 @@ class LiveAudioStreamServer(threading.Thread):
             self.tunnel_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1
             )
@@ -172,7 +172,7 @@ class LiveAudioStreamServer(threading.Thread):
 
             def parse_tunnel_output():
                 while self.tunnel_process and self.tunnel_process.poll() is None:
-                    line = self.tunnel_process.stderr.readline()
+                    line = self.tunnel_process.stdout.readline()
                     if not line:
                         break
                     match = url_pattern.search(line)
@@ -185,6 +185,17 @@ class LiveAudioStreamServer(threading.Thread):
                         logger.info(f"🔗 Stream Target: {self.public_stream_url}")
                         logger.info("📡 Automatically linking to your BirdSong Observatory Dashboard...")
                         logger.info("=" * 65)
+                        try:
+                            from supabase import create_client
+                            from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME
+                            sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+                            sb.table("recorders_registry").update({
+                                "elevation": self.public_stream_url,
+                                "status": "online"
+                            }).eq("recorder_id", STATION_NAME).execute()
+                            logger.info("📡 Successfully registered public tunnel URL to Supabase recorders_registry!")
+                        except Exception as ex:
+                            logger.warning(f"Could not update recorders_registry with tunnel URL: {ex}")
 
             t = threading.Thread(target=parse_tunnel_output, daemon=True)
             t.start()
