@@ -55,16 +55,48 @@ const SAMPLES: SpeciesSample[] = [
 // Global Module-level caches for instant zero-latency switching
 const AUDIO_BUFFER_CACHE = new Map<string, AudioBuffer>();
 const STFT_MATRIX_CACHE = new Map<string, { matrix: Float32Array[]; maxBin: number; duration: number }>();
-let globalAudioCtx: AudioContext | null = null;
+let globalAudioCtx: BaseAudioContext | null = null;
 
-function getGlobalAudioContext(): AudioContext {
-  if (!globalAudioCtx && typeof window !== 'undefined') {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (AudioContextClass) {
-      globalAudioCtx = new AudioContextClass();
+function getDecodingAudioContext(): BaseAudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!globalAudioCtx) {
+    try {
+      // 1. Prefer OfflineAudioContext: completely exempt from browser Autoplay Policies & user gesture restrictions
+      const OfflineCtx = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+      if (OfflineCtx) {
+        globalAudioCtx = new OfflineCtx(1, 48000, 48000);
+      }
+    } catch {
+      // Fallback to standard AudioContext if OfflineAudioContext not supported
+    }
+    if (!globalAudioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        globalAudioCtx = new AudioContextClass();
+      }
     }
   }
-  return globalAudioCtx!;
+  return globalAudioCtx;
+}
+
+// Safely decode audio buffer across all browser engines (Chrome, Edge, Safari, Firefox)
+// without requiring a user gesture or AudioContext resume.
+async function decodeAudioDataSafely(ctx: BaseAudioContext, arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
+  const bufferCopy = arrayBuffer.slice(0);
+  return new Promise((resolve, reject) => {
+    try {
+      const promise = ctx.decodeAudioData(
+        bufferCopy,
+        (decoded) => resolve(decoded),
+        (err) => reject(err)
+      );
+      if (promise && typeof (promise as any).then === 'function') {
+        (promise as Promise<AudioBuffer>).then(resolve).catch(reject);
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 // Fast Radix-2 Cooley-Tukey FFT implementation with precomputed twiddle factors
@@ -156,24 +188,24 @@ function computeSTFTMatrix(buffer: AudioBuffer, targetWidth: number): { matrix: 
 // Background prefetch & decode all audio samples upfront
 export async function preloadAllSpeciesSamples() {
   if (typeof window === 'undefined') return;
-  const audioCtx = getGlobalAudioContext();
+  const audioCtx = getDecodingAudioContext();
   if (!audioCtx) return;
 
-  await Promise.allSettled(
-    SAMPLES.map(async (sample) => {
-      try {
-        if (AUDIO_BUFFER_CACHE.has(sample.id)) return;
-        const res = await fetch(sample.audioUrl);
-        const arrayBuf = await res.arrayBuffer();
-        const decoded = await audioCtx.decodeAudioData(arrayBuf);
-        AUDIO_BUFFER_CACHE.set(sample.id, decoded);
-        const stft = computeSTFTMatrix(decoded, 640);
-        STFT_MATRIX_CACHE.set(sample.id, stft);
-      } catch (e) {
-        console.warn('Preload audio error for', sample.commonName, e);
-      }
-    })
-  );
+  // Preload in sequence to avoid clogging network bandwidth on initial render
+  for (const sample of SAMPLES) {
+    try {
+      if (AUDIO_BUFFER_CACHE.has(sample.id) && STFT_MATRIX_CACHE.has(sample.id)) continue;
+      const res = await fetch(sample.audioUrl);
+      if (!res.ok) continue;
+      const arrayBuf = await res.arrayBuffer();
+      const decoded = await decodeAudioDataSafely(audioCtx, arrayBuf);
+      AUDIO_BUFFER_CACHE.set(sample.id, decoded);
+      const stft = computeSTFTMatrix(decoded, 640);
+      STFT_MATRIX_CACHE.set(sample.id, stft);
+    } catch (e) {
+      console.warn('Preload audio error for', sample.commonName, e);
+    }
+  }
 }
 
 export function RavenProSpectrogram() {
@@ -189,6 +221,8 @@ export function RavenProSpectrogram() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const specCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const currentBufferRef = useRef<AudioBuffer | null>(null);
+  const currentStftRef = useRef<{ matrix: Float32Array[]; maxBin: number; duration: number } | null>(null);
 
   // Trigger immediate background preloading on mount
   useEffect(() => {
@@ -306,6 +340,8 @@ export function RavenProSpectrogram() {
     if (STFT_MATRIX_CACHE.has(sample.id) && AUDIO_BUFFER_CACHE.has(sample.id)) {
       const cachedSTFT = STFT_MATRIX_CACHE.get(sample.id)!;
       const cachedBuf = AUDIO_BUFFER_CACHE.get(sample.id)!;
+      currentBufferRef.current = cachedBuf;
+      currentStftRef.current = cachedSTFT;
       setDuration(cachedSTFT.duration);
       drawOscillogram(cachedBuf);
       renderFromSTFT(cachedSTFT, colorScheme);
@@ -314,24 +350,25 @@ export function RavenProSpectrogram() {
 
     setIsLoadingAudio(true);
     try {
-      const audioCtx = getGlobalAudioContext();
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
+      const audioCtx = getDecodingAudioContext();
+      if (!audioCtx) throw new Error('Web Audio API not supported');
 
       const response = await fetch(sample.audioUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status} loading ${sample.audioUrl}`);
       const arrayBuffer = await response.arrayBuffer();
-      const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const decodedBuffer = await decodeAudioDataSafely(audioCtx, arrayBuffer);
       
       AUDIO_BUFFER_CACHE.set(sample.id, decodedBuffer);
+      currentBufferRef.current = decodedBuffer;
       setDuration(decodedBuffer.duration);
       drawOscillogram(decodedBuffer);
 
       const stft = computeSTFTMatrix(decodedBuffer, 640);
       STFT_MATRIX_CACHE.set(sample.id, stft);
+      currentStftRef.current = stft;
       renderFromSTFT(stft, colorScheme);
     } catch (err) {
-      console.warn('Fallback render on decode:', err);
+      console.warn('Decode error for sample:', sample.commonName, err);
     } finally {
       setIsLoadingAudio(false);
     }
@@ -339,7 +376,17 @@ export function RavenProSpectrogram() {
 
   useEffect(() => {
     loadAndComputeSpectrogram(currentSample);
-  }, [selectedIdx, colorScheme, loadAndComputeSpectrogram, currentSample]);
+  }, [selectedIdx, loadAndComputeSpectrogram, currentSample]);
+
+  // Instant redraw whenever palette changes or canvas becomes ready
+  useEffect(() => {
+    if (currentStftRef.current) {
+      renderFromSTFT(currentStftRef.current, colorScheme);
+    }
+    if (currentBufferRef.current) {
+      drawOscillogram(currentBufferRef.current);
+    }
+  }, [colorScheme, renderFromSTFT, drawOscillogram]);
 
   // Audio Playback handling
   const togglePlay = () => {
@@ -522,6 +569,14 @@ export function RavenProSpectrogram() {
                   <span>T: {hoverData.time}</span> &bull; <span>F: {hoverData.freq}</span> &bull; <span>P: {hoverData.amp}</span>
                 </div>
               )}
+
+              {/* Subtle Loading Overlay */}
+              {isLoadingAudio && (
+                <div className="absolute inset-0 bg-[#0a1610]/80 backdrop-blur-2xs flex items-center justify-center gap-2 text-[#34d399] font-mono text-xs z-10 pointer-events-none">
+                  <div className="w-3.5 h-3.5 border-2 border-[#34d399] border-t-transparent rounded-full animate-spin" />
+                  <span>Decoding bioacoustic STFT matrix...</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -582,6 +637,12 @@ export function RavenProSpectrogram() {
           src={currentSample.audioUrl}
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleEnded}
+          onLoadedMetadata={(e) => {
+            const dur = e.currentTarget.duration;
+            if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
+              setDuration(prev => (prev > 0 ? prev : dur));
+            }
+          }}
           preload="auto"
         />
         {/* Parallel preloader tags for all other species */}
