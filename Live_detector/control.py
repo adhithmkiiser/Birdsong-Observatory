@@ -86,7 +86,7 @@ class ControlManager:
             for item in assignments:
                 model_id = str(item.get("model_id"))
                 enabled = item.get("enabled", True)
-                threshold = float(item.get("threshold", 0.25))
+                threshold = float(item.get("threshold", 0.10))
                 model_meta = item.get("models")
 
                 if not model_meta or not enabled:

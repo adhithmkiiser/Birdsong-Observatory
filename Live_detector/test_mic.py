@@ -83,18 +83,18 @@ def main():
     print(f"\n2. Testing Primary Device: {dev_str} ({target['name']})")
 
     # 3. Check and unmute ALSA mixer controls
-    print(f"\n3. Unmuting ALSA Hardware Capture Mixer on Card {card_idx}...")
+    print(f"\n3. Setting ALSA Hardware Capture Mixer on Card {card_idx} to optimal 65% (prevents clipping)...")
     unmute_cmds = [
         ["amixer", "-c", str(card_idx), "sset", "Capture", "cap"],
-        ["amixer", "-c", str(card_idx), "sset", "Capture", "100%"],
+        ["amixer", "-c", str(card_idx), "sset", "Capture", "65%"],
         ["amixer", "-c", str(card_idx), "sset", "Mic", "cap"],
-        ["amixer", "-c", str(card_idx), "sset", "Mic", "100%"],
+        ["amixer", "-c", str(card_idx), "sset", "Mic", "65%"],
         ["amixer", "sset", "Capture", "cap"],
-        ["amixer", "sset", "Capture", "100%"],
+        ["amixer", "sset", "Capture", "65%"],
     ]
     for c in unmute_cmds:
         run_cmd(c)
-    print("   ✅ Mixer un-muted and capture volume set to 100%.")
+    print("   ✅ Mixer un-muted and capture volume set to 65% to eliminate preamp distortion.")
 
     # 4. Live 3-Second Audio Test
     test_wav = "/tmp/test_mic_output.wav"

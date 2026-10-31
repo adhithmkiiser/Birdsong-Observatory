@@ -20,7 +20,8 @@ import numpy as np
 
 from config import (
     STREAM_PORT, SAMPLE_RATE, DATA_DIR,
-    PUBLIC_STREAM_URL, AUTO_CLOUDFLARE_TUNNEL
+    PUBLIC_STREAM_URL, AUTO_CLOUDFLARE_TUNNEL,
+    OPUS_STREAM_BITRATE, OPUS_STREAM_APPLICATION
 )
 
 logger = logging.getLogger("LiveAudioStreamer")
@@ -72,9 +73,9 @@ class StreamHandler(BaseHTTPRequestHandler):
                 "-ac", "1",
                 "-i", "pipe:0",
                 "-c:a", "libopus",
-                "-b:a", "64k",
+                "-b:a", str(OPUS_STREAM_BITRATE),
                 "-vbr", "on",
-                "-application", "lowdelay",
+                "-application", str(OPUS_STREAM_APPLICATION),
                 "-frame_duration", "20",
                 "-flush_packets", "1",
                 "-f", "ogg",
@@ -85,6 +86,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 bufsize=0
             )
 
@@ -187,12 +189,18 @@ class LiveAudioStreamServer(threading.Thread):
                         logger.info("=" * 65)
                         try:
                             from supabase import create_client
-                            from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME
+                            from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME, PROJECT_NAME, SITE_NAME
                             sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-                            sb.table("recorders_registry").update({
+                            # Upsert to guarantee record exists and has the live public HTTPS tunnel URL
+                            sb.table("recorders_registry").upsert({
+                                "id": STATION_NAME,
+                                "recorder_id": STATION_NAME,
+                                "project_name": PROJECT_NAME,
+                                "site_name": SITE_NAME,
+                                "project_type": "Live",
                                 "elevation": self.public_stream_url,
                                 "status": "online"
-                            }).eq("recorder_id", STATION_NAME).execute()
+                            }, on_conflict="id").execute()
                             logger.info("📡 Successfully registered public tunnel URL to Supabase recorders_registry!")
                         except Exception as ex:
                             logger.warning(f"Could not update recorders_registry with tunnel URL: {ex}")

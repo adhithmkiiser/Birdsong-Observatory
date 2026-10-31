@@ -23,7 +23,7 @@ from typing import Dict, List, Tuple, Any
 
 from config import (
     STATION_NAME, PROJECT_NAME, CLIPS_DIR,
-    TELEMETRY_INTERVAL_SECONDS
+    TELEMETRY_INTERVAL_SECONDS, DETECTION_COOLDOWN_SECONDS
 )
 from ring_buffer import CircularRingBuffer, AudioWindow
 from capture import AudioCaptureWorker
@@ -55,6 +55,7 @@ class LiveDetectorAgent:
         self.running = False
         self.models_lock = threading.Lock()
         self.active_models: Dict[str, ModelAdapter] = {}
+        self.last_detection_times: Dict[str, float] = {}
 
         # 1. Initialize Subsystems
         self.ring_buffer = CircularRingBuffer(capacity_seconds=30.0)
@@ -181,12 +182,19 @@ class LiveDetectorAgent:
                     activity, model_predictions, runtimes_map
                 )
 
-                # Collect all formatted detections
+                # Collect all formatted detections with temporal debouncing (prevents duplicate consecutive logs)
                 detections_to_enqueue = []
                 all_species_names = []
+                now_epoch = time.time()
 
                 for model_id, preds in model_predictions.items():
                     for common_name, conf in preds:
+                        sp_key = f"{model_id}:{common_name.lower().strip()}"
+                        last_t = self.last_detection_times.get(sp_key, 0.0)
+                        if now_epoch - last_t < DETECTION_COOLDOWN_SECONDS:
+                            continue
+
+                        self.last_detection_times[sp_key] = now_epoch
                         all_species_names.append(common_name)
                         detections_to_enqueue.append({
                             "model_id": model_id,

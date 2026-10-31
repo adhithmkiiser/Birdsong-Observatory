@@ -50,7 +50,7 @@ export default function LiveDetectionsPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
   
-  const [minConfidence, setMinConfidence] = useState(0.5);
+  const [minConfidence, setMinConfidence] = useState(0.60);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
   const [liveProjects, setLiveProjects] = useState<any[]>([]);
@@ -206,17 +206,16 @@ export default function LiveDetectionsPage() {
       liveAudioRef.current.pause();
       setIsLiveStreamPlaying(false);
     } else {
-      const ip = liveStreamStation?.ip_address;
-      if (!ip) {
-        alert('This station does not have an IP address configured. Please set the station IP in the Admin Console.');
-        return;
-      }
-      liveAudioRef.current.src = `http://${ip}:8888/stream`;
+      const publicTunnel = liveStreamStation?.stream_url || (liveStreamStation?.elevation?.startsWith('http') ? liveStreamStation.elevation : null);
+      const ip = liveStreamStation?.ip_address || '172.27.78.51';
+      const streamSrc = publicTunnel || `http://${ip}:8888/stream.opus`;
+
+      liveAudioRef.current.src = streamSrc;
       liveAudioRef.current.play().then(() => {
         setIsLiveStreamPlaying(true);
       }).catch(err => {
         console.warn('Live stream connection:', err);
-        alert(`Cannot connect to live stream at http://${ip}:8888/stream. Please ensure you are on the same field local network or VPN.`);
+        alert(`Cannot connect to live stream at ${streamSrc}. Ensure the edge device is online.`);
         setIsLiveStreamPlaying(false);
       });
     }
@@ -421,8 +420,8 @@ export default function LiveDetectionsPage() {
           </label>
           <input
             type="range"
-            min="0.5"
-            max="0.99"
+            min="0.10"
+            max="1.00"
             step="0.05"
             value={minConfidence}
             onChange={(e) => setMinConfidence(parseFloat(e.target.value))}

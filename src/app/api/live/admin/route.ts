@@ -203,13 +203,34 @@ export async function POST(req: NextRequest) {
       let q = supabaseAdmin.from('live_detections').delete();
 
       if (nodeId && nodeId !== 'All' && nodeId !== 'ALL_SITES') {
-        q = q.or(`recorder_id.eq.${nodeId},station_id.eq.${nodeId}`);
+        const rawNode = String(nodeId).trim();
+        const cleanNode = rawNode.includes('::') ? rawNode.split('::').pop()! : rawNode;
+        if (rawNode !== cleanNode) {
+          q = q.or(`recorder_id.eq.${rawNode},station_id.eq.${rawNode},recorder_id.eq.${cleanNode},station_id.eq.${cleanNode}`);
+        } else {
+          q = q.or(`recorder_id.eq.${rawNode},station_id.eq.${rawNode}`);
+        }
       }
 
+      // Note: live_detections only has project_name, NOT project_id.
+      // Resolve project name from projects table if an ID was passed.
       if (projectId && projectId !== 'All' && projectId !== 'ALL_PROJECTS') {
-        q = q.eq('project_id', projectId);
+        let targetName = projectName;
+        if (!targetName) {
+          try {
+            const { data: projRecord } = await supabaseAdmin
+              .from('projects')
+              .select('name')
+              .or(`id.eq.${projectId},name.eq.${projectId}`)
+              .maybeSingle();
+            targetName = projRecord?.name || projectId;
+          } catch {
+            targetName = projectId;
+          }
+        }
+        q = q.ilike('project_name', targetName);
       } else if (projectName && projectName !== 'All') {
-        q = q.eq('project_name', projectName);
+        q = q.ilike('project_name', projectName);
       }
 
       if (statusFilter && statusFilter !== 'all') {
@@ -220,12 +241,29 @@ export async function POST(req: NextRequest) {
         } else if (statusFilter === 'pending') {
           q = q.is('verification_status', null);
         }
-      } else {
-        q = q.gt('id', 0);
       }
+
+      // PostgREST requires at least one filter on DELETE to prevent accidental full-table wipes
+      q = q.gt('id', 0);
 
       const { error, count } = await q;
       if (error) throw error;
+
+      // Also clean up matching records from window_summaries so triage stays synchronized
+      try {
+        let wq = supabaseAdmin.from('window_summaries').delete();
+        if (nodeId && nodeId !== 'All' && nodeId !== 'ALL_SITES') {
+          const rawNode = String(nodeId).trim();
+          const cleanNode = rawNode.includes('::') ? rawNode.split('::').pop()! : rawNode;
+          wq = wq.or(`node_id.eq.${rawNode},node_id.eq.${cleanNode}`);
+        } else {
+          wq = wq.not('window_id', 'is', null);
+        }
+        await wq;
+      } catch (wErr) {
+        console.warn('Non-fatal window_summaries purge notice:', wErr);
+      }
+
       return NextResponse.json({ success: true, count });
     }
 

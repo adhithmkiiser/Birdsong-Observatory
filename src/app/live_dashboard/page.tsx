@@ -37,7 +37,8 @@ import {
   Wifi,
   Sliders,
   Trash2,
-  Music
+  Music,
+  Maximize2
 } from 'lucide-react';
 import { AccumulationChart } from '@/components/charts/AccumulationChart';
 import { DiurnalChart } from '@/components/charts/DiurnalChart';
@@ -91,12 +92,41 @@ const MONTH_NAMES = [
 ];
 
 function dedupeDetections(list: any[]) {
-  const seen = new Set<string>();
-  return list.filter((d) => {
-    if (d.verification_status === 'NO') return false;
-    const key = `${d.recorder_id || d.station_id}|${d.timestamp}|${d.common_name}|${d.scientific_name}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+  if (!list || list.length === 0) return [];
+
+  // Sort descending by timestamp, then highest confidence first
+  const sorted = [...list].sort((a, b) => {
+    const tA = new Date(a.timestamp || a.created_at || 0).getTime();
+    const tB = new Date(b.timestamp || b.created_at || 0).getTime();
+    if (tB !== tA) return tB - tA;
+    return (b.confidence || 0) - (a.confidence || 0);
+  });
+
+  const seenExact = new Set<string>();
+  const lastSpeciesTimeMap: Record<string, number> = {};
+
+  return sorted.filter((d) => {
+    if (d.verification_status === 'NO' || d.verification_status === 'rejected') return false;
+
+    const station = d.recorder_id || d.station_id || 'unknown';
+    const species = (d.common_name || d.scientific_name || '').toLowerCase().trim();
+    const ts = new Date(d.timestamp || d.created_at || 0).getTime();
+
+    // 1. Exact audio URL or exact timestamp deduplication
+    const exactKey = d.audio_url 
+      ? `${station}|${d.audio_url}|${species}` 
+      : `${station}|${d.timestamp}|${species}`;
+    if (seenExact.has(exactKey)) return false;
+    seenExact.add(exactKey);
+
+    // 2. Temporal debounce: same species within 3.5 seconds on the same station (sliding window overlap)
+    const spKey = `${station}|${species}`;
+    const lastTime = lastSpeciesTimeMap[spKey];
+    if (lastTime && Math.abs(lastTime - ts) < 3500) {
+      return false; // Skip the overlapping duplicate window
+    }
+    lastSpeciesTimeMap[spKey] = ts;
+
     return true;
   });
 }
@@ -124,9 +154,9 @@ export default function LiveDashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<string>('ALL');
 
-  // Search & Filter (Default 25% confidence standard for bioacoustic field detection)
+  // Search & Filter (Default 60% confidence standard for verified bioacoustic detections)
   const [searchQuery, setSearchQuery] = useState('');
-  const [minConfidence, setMinConfidence] = useState(0.25);
+  const [minConfidence, setMinConfidence] = useState(0.60);
 
   // Species Accumulation Filter States
   const [accumulationInterval, setAccumulationInterval] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
@@ -162,6 +192,7 @@ export default function LiveDashboardPage() {
   const [speciesEcologyMap, setSpeciesEcologyMap] = useState<Record<string, any>>({});
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogSort, setCatalogSort] = useState<'detections' | 'alphabetical' | 'iucn'>('detections');
+  const [selectedFullImage, setSelectedFullImage] = useState<{ url: string; title: string; scientific?: string } | null>(null);
 
   // Supabase Data States
   const [liveProjects, setLiveProjects] = useState<any[]>([]);
@@ -175,7 +206,7 @@ export default function LiveDashboardPage() {
   // Live Audio & Detection Streaming States
   const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
   const [isLiveAudioPlaying, setIsLiveAudioPlaying] = useState(false);
-  const [directStreamUrl, setDirectStreamUrl] = useState('http://172.27.78.51:8888/stream.opus');
+  const [directStreamUrl, setDirectStreamUrl] = useState('/api/live/stream');
   const [selectedStreamNode, setSelectedStreamNode] = useState('Test_01');
   const [liveAudioVolume, setLiveAudioVolume] = useState(0.85);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -186,8 +217,8 @@ export default function LiveDashboardPage() {
   const [liveFeedFilter, setLiveFeedFilter] = useState<'session' | 'all'>('session');
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
-  // RBAC Permission: Only managers and admins can monitor live edge audio & spectrogram
-  const canAccessLiveStream = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  // Live stream access enabled across observatory visitors and researchers
+  const canAccessLiveStream = true;
   const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
 
   // Read initial tab from URL
@@ -441,10 +472,15 @@ export default function LiveDashboardPage() {
 
   // Automatically link the Stream Target URL right when the station runs or connects
   useEffect(() => {
+    // On localhost, prioritize the same-origin proxy to eliminate any browser CORS / Private Network Access blocks
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      setDirectStreamUrl('/api/live/stream');
+      return;
+    }
     const activeStation = stationsList.find(s => (s.recorder_id || s.id) === selectedStreamNode) || stationsList[0];
     if (activeStation) {
       const autoUrl = activeStation.stream_url || (activeStation.elevation?.startsWith('http') ? activeStation.elevation : null);
-      if (autoUrl && autoUrl !== directStreamUrl) {
+      if (autoUrl && autoUrl !== directStreamUrl && !autoUrl.includes('announced-collapse')) {
         setDirectStreamUrl(autoUrl);
       }
     }
@@ -745,6 +781,11 @@ export default function LiveDashboardPage() {
         })
       });
 
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Server failed to purge database records');
+      }
+
       // Filter local state
       setDetections(prev => prev.filter(d => {
         if (targetNode !== 'All') {
@@ -760,6 +801,16 @@ export default function LiveDashboardPage() {
           if (purgeStatusScope === 'pending' && isPending) return false;
         }
         if (targetNode === 'All' && purgeStatusScope === 'all') return false;
+        return true;
+      }));
+
+      // Also filter local windowSummaries so triage watchdog updates
+      setWindowSummaries(prev => prev.filter(w => {
+        if (targetNode !== 'All') {
+          const nid = w.node_id;
+          if (nid === targetNode) return false;
+        }
+        if (targetNode === 'All') return false;
         return true;
       }));
 
@@ -862,27 +913,31 @@ export default function LiveDashboardPage() {
     setLiveStreamError(null);
     setTimeout(() => {
       if (!liveAudioElementRef.current) return;
-      liveAudioElementRef.current.src = directStreamUrl;
+      const targetUrl = directStreamUrl.trim();
+      liveAudioElementRef.current.src = targetUrl;
+      liveAudioElementRef.current.load();
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
         setLiveStreamError(null);
       }).catch(err => {
         console.warn('Live audio play request interrupted:', err);
-        if (directStreamUrl.includes('livedetector.local')) {
-          const ipUrl = directStreamUrl.replace('livedetector.local', '172.27.78.51');
-          setDirectStreamUrl(ipUrl);
+        // If Cloudflare tunnel or mDNS failed, automatically fall back to verified local IP
+        if (targetUrl.includes('trycloudflare.com') || targetUrl.includes('livedetector.local')) {
+          const fallbackUrl = 'http://172.27.78.51:8888/stream.opus';
+          setDirectStreamUrl(fallbackUrl);
           if (liveAudioElementRef.current) {
-            liveAudioElementRef.current.src = ipUrl;
+            liveAudioElementRef.current.src = fallbackUrl;
+            liveAudioElementRef.current.load();
             liveAudioElementRef.current.play().then(() => {
               setIsLiveAudioPlaying(true);
               setLiveStreamError(null);
             }).catch(() => {
-              setLiveStreamError(`Cannot reach continuous edge stream at "${ipUrl}". Check network connection.`);
+              setLiveStreamError(`Cannot reach live stream at "${fallbackUrl}".`);
             });
             return;
           }
         }
-        setLiveStreamError(`Cannot reach continuous edge stream at "${directStreamUrl}".`);
+        setLiveStreamError(`Cannot reach continuous edge stream at "${targetUrl}".`);
       });
     }, 100);
   };
@@ -910,29 +965,33 @@ export default function LiveDashboardPage() {
       setIsLiveAudioPlaying(false);
     } else {
       setLiveStreamError(null);
-      if (!liveAudioElementRef.current.src || liveAudioElementRef.current.src === window.location.href) {
-        liveAudioElementRef.current.src = directStreamUrl;
+      const targetUrl = directStreamUrl.trim();
+      if (!liveAudioElementRef.current.src || !liveAudioElementRef.current.src.includes(targetUrl)) {
+        liveAudioElementRef.current.src = targetUrl;
+        liveAudioElementRef.current.load();
       }
       liveAudioElementRef.current.play().then(() => {
         setIsLiveAudioPlaying(true);
         setLiveStreamError(null);
       }).catch(err => {
         console.warn('Audio play request interrupted:', err);
-        if (directStreamUrl.includes('livedetector.local')) {
-          const ipUrl = directStreamUrl.replace('livedetector.local', '172.27.78.51');
-          setDirectStreamUrl(ipUrl);
+        // Auto-fallback from expired cloudflare tunnel or mDNS to verified local IP
+        if (targetUrl.includes('trycloudflare.com') || targetUrl.includes('livedetector.local')) {
+          const fallbackUrl = 'http://172.27.78.51:8888/stream.opus';
+          setDirectStreamUrl(fallbackUrl);
           if (liveAudioElementRef.current) {
-            liveAudioElementRef.current.src = ipUrl;
+            liveAudioElementRef.current.src = fallbackUrl;
+            liveAudioElementRef.current.load();
             liveAudioElementRef.current.play().then(() => {
               setIsLiveAudioPlaying(true);
               setLiveStreamError(null);
             }).catch(() => {
-              setLiveStreamError(`Cannot connect to live stream at ${ipUrl}. Check network connectivity.`);
+              setLiveStreamError(`Cannot connect to live stream at ${fallbackUrl}. Check network connectivity.`);
             });
             return;
           }
         }
-        setLiveStreamError(`Cannot connect to "${directStreamUrl}". Continuous port 8888 streaming requires the field station to be active on your local network or routed via a tunnel.`);
+        setLiveStreamError(`Cannot connect to "${targetUrl}".`);
       });
     }
   };
@@ -1243,7 +1302,7 @@ export default function LiveDashboardPage() {
                 <input
                   type="range"
                   min="0.10"
-                  max="0.95"
+                  max="1.00"
                   step="0.05"
                   value={minConfidence}
                   onChange={e => setMinConfidence(parseFloat(e.target.value))}
@@ -1663,7 +1722,22 @@ export default function LiveDashboardPage() {
               crossOrigin="anonymous"
               onError={() => {
                 console.warn('Live audio playback error. Checking direct stream URL...');
-                setLiveStreamError(`Cannot reach audio stream at "${directStreamUrl}". If accessing from cloud (Render), browsers cannot connect directly to local edge devices without a tunnel or local LAN.`);
+                const fallbackLocal = 'http://172.27.78.51:8888/stream.opus';
+                if (directStreamUrl !== fallbackLocal) {
+                  setDirectStreamUrl(fallbackLocal);
+                  if (liveAudioElementRef.current) {
+                    liveAudioElementRef.current.src = fallbackLocal;
+                    liveAudioElementRef.current.load();
+                    liveAudioElementRef.current.play().then(() => {
+                      setIsLiveAudioPlaying(true);
+                      setLiveStreamError(null);
+                    }).catch(() => {
+                      setLiveStreamError(`Cannot reach audio stream at "${fallbackLocal}".`);
+                    });
+                  }
+                } else {
+                  setLiveStreamError(`Cannot reach audio stream at "${directStreamUrl}". Ensure the field edge device is powered on.`);
+                }
               }}
             />
 
@@ -1813,7 +1887,7 @@ export default function LiveDashboardPage() {
                     <input
                       type="range"
                       min="0.10"
-                      max="0.95"
+                      max="1.00"
                       step="0.05"
                       value={minConfidence}
                       onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
@@ -2340,7 +2414,12 @@ export default function LiveDashboardPage() {
             {/* Species Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[640px] overflow-y-auto pr-1">
               {(() => {
-                const uniqueNames = Array.from(new Set(filteredDetections.map(d => d.common_name).filter(Boolean)));
+                const NON_AVIAN_CLASSES = new Set([
+                  'engine', 'human vocal', 'human non-vocal', 'human voice', 'human', 'homo sapiens',
+                  'noise', 'environmental noise', 'silence', 'siren', 'static', 'background'
+                ]);
+                const uniqueNames = Array.from(new Set(filteredDetections.map(d => d.common_name).filter(Boolean)))
+                  .filter(name => !NON_AVIAN_CLASSES.has(name.toLowerCase().trim()));
                 
                 let list = uniqueNames.map(spName => {
                   const spDetections = filteredDetections.filter(d => d.common_name === spName);
@@ -2376,7 +2455,7 @@ export default function LiveDashboardPage() {
                 if (list.length === 0) {
                   return (
                     <div className="col-span-3 py-16 text-center text-xs text-[#5a635d]">
-                      No species matching the search query in current live recordings.
+                      No avian species matching the search query in current live recordings.
                     </div>
                   );
                 }
@@ -2398,19 +2477,31 @@ export default function LiveDashboardPage() {
                       className="bg-white border border-[#dde1dc] rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
                     >
                       <div>
-                        {/* Photo Banner with Badges */}
-                        <div className="h-44 relative bg-slate-900 overflow-hidden">
+                        {/* Photo Banner with Badges & Full-View Support */}
+                        <div 
+                          onClick={() => setSelectedFullImage({ url: imageUrl, title: spName, scientific })}
+                          className="h-48 relative bg-slate-950 overflow-hidden cursor-pointer group"
+                          title="Click to view full uncropped photo"
+                        >
+                          {/* Ambient blurred backdrop to fill letterbox seamlessly */}
+                          <img
+                            src={imageUrl}
+                            alt=""
+                            className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110"
+                          />
+
+                          {/* Full uncropped photo in native proportions */}
                           <img
                             src={imageUrl}
                             alt={spName}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                            className="relative w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300 ease-out z-10"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
                             }}
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
+                          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-20 pointer-events-none" />
                           
-                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-30">
                             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/90 text-[#1a1f1c] shadow-xs backdrop-blur-xs">
                               {iucn}
                             </span>
@@ -2419,11 +2510,14 @@ export default function LiveDashboardPage() {
                                 Endemic
                               </span>
                             )}
+                            <span className="p-1 rounded-md bg-black/60 text-white/90 opacity-0 group-hover:opacity-100 transition-opacity" title="Expand Full Image">
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </span>
                           </div>
 
-                          <div className="absolute bottom-2 left-3 right-3 text-white">
-                            <h3 className="font-serif font-bold text-sm leading-tight text-white drop-shadow-xs">{spName}</h3>
-                            <p className="text-[11px] italic text-white/80">{scientific}</p>
+                          <div className="absolute bottom-2 left-3 right-3 text-white z-30 pointer-events-none">
+                            <h3 className="font-serif font-bold text-sm leading-tight text-white drop-shadow-md">{spName}</h3>
+                            <p className="text-[11px] italic text-white/90 drop-shadow-xs">{scientific}</p>
                           </div>
                         </div>
 
@@ -2922,6 +3016,52 @@ export default function LiveDashboardPage() {
         defaultProjectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
         defaultSiteId={selectedSiteId !== 'ALL' ? selectedSiteId : undefined}
       />
+
+      {/* ─── FULL UNCROPPED SPECIES PHOTO LIGHTBOX MODAL ───────────────────────── */}
+      {selectedFullImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setSelectedFullImage(null)}
+        >
+          <div 
+            className="relative max-w-4xl w-full max-h-[92vh] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3.5 bg-slate-950/80 border-b border-slate-800 text-white">
+              <div>
+                <h3 className="font-serif font-bold text-base">{selectedFullImage.title}</h3>
+                {selectedFullImage.scientific && (
+                  <p className="text-xs text-slate-400 italic">{selectedFullImage.scientific}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedFullImage(null)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 flex items-center justify-center bg-black/70 max-h-[74vh] overflow-hidden">
+              <img
+                src={selectedFullImage.url}
+                alt={selectedFullImage.title}
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded-xl shadow-lg"
+              />
+            </div>
+            <div className="p-3 text-center text-xs text-slate-400 bg-slate-950 border-t border-slate-800 flex justify-between items-center px-4">
+              <span>High-Resolution Ecological Photo</span>
+              <a 
+                href={selectedFullImage.url} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-semibold"
+              >
+                Open original in new tab <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

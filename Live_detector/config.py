@@ -56,11 +56,22 @@ SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "48000"))  # 48 kHz standard
 CHANNELS = 1                                           # Mono audio
 WINDOW_SECONDS = float(os.getenv("WINDOW_SECONDS", "3.0"))   # 3-second slices
 WINDOW_SAMPLES = int(SAMPLE_RATE * WINDOW_SECONDS)           # 144,000 samples
-HOP_SECONDS = float(os.getenv("HOP_SECONDS", "1.5"))         # 50% overlap by default
+HOP_SECONDS = float(os.getenv("HOP_SECONDS", "3.0"))         # 3.0s hop = clean non-overlapping windows (prevents duplicate audio clips)
 HOP_SAMPLES = int(SAMPLE_RATE * HOP_SECONDS)
+DETECTION_COOLDOWN_SECONDS = float(os.getenv("DETECTION_COOLDOWN_SECONDS", "3.0")) # Debounce consecutive triggers for same species
 
-# Mic Device Specification (ALSA hardware string or 'auto' to auto-detect USB mic)
-AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "auto")
+# Mic Device Specification (Persistent ALSA named card string: plughw:CARD=Audio,DEV=0)
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "plughw:CARD=Audio,DEV=0")
+MIC_CAPTURE_GAIN = os.getenv("MIC_CAPTURE_GAIN", "65%")  # 65% prevents preamp saturation & square-wave clipping
+
+# BirdNET & ML Inference Thresholds
+BIRDNET_THRESHOLD = float(os.getenv("BIRDNET_THRESHOLD", "0.10"))  # Detect all calls starting from 10% confidence
+STRICT_GEO_FILTER = os.getenv("STRICT_GEO_FILTER", "true").lower() in ("true", "1", "yes")
+MIN_NON_AVIAN_CONFIDENCE = float(os.getenv("MIN_NON_AVIAN_CONFIDENCE", "0.65"))
+
+# Live Audio Stream Fidelity
+OPUS_STREAM_BITRATE = os.getenv("OPUS_STREAM_BITRATE", "96k")
+OPUS_STREAM_APPLICATION = os.getenv("OPUS_STREAM_APPLICATION", "audio")
 
 # DSP Activity Analysis Frequency Bands (in Hz)
 BAND_LOW_FREQ = (150, 1200)      # Low band: mammals (deer, elephants, primates), anurans

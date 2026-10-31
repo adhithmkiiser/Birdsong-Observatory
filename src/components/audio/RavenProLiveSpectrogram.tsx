@@ -497,14 +497,26 @@ export function RavenProLiveSpectrogram({
             <button
               type="button"
               onClick={() => {
+                const url = '/api/live/stream';
+                setCustomUrlInput(url);
+                onStreamUrlChange(url);
+                setShowUrlEditor(false);
+              }}
+              className="px-2.5 py-1 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-600/50 text-[10px] font-mono cursor-pointer transition font-semibold"
+            >
+              🚀 /api/live/stream (Direct Proxy)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 const url = 'http://172.27.78.51:8888/stream.opus';
                 setCustomUrlInput(url);
                 onStreamUrlChange(url);
                 setShowUrlEditor(false);
               }}
-              className="px-2.5 py-1 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-600/50 text-[10px] font-mono cursor-pointer transition"
+              className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white/70 border border-white/10 text-[10px] font-mono cursor-pointer transition"
             >
-              ⚡ 172.27.78.51:8888 (Field Pi LAN)
+              ⚡ 172.27.78.51:8888 (Direct LAN)
             </button>
             <button
               type="button"

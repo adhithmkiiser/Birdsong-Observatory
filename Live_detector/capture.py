@@ -15,21 +15,22 @@ import threading
 import logging
 import numpy as np
 from ring_buffer import CircularRingBuffer
-from config import SAMPLE_RATE, CHANNELS, AUDIO_INPUT_DEVICE
+from config import SAMPLE_RATE, CHANNELS, AUDIO_INPUT_DEVICE, MIC_CAPTURE_GAIN
 
 logger = logging.getLogger("CaptureEngine")
 
 def unmute_alsa_card(card_id: str | int):
-    """Attempt to un-mute and set 95-100% gain on ALSA capture mixer controls."""
+    """Attempt to un-mute and set optimal gain (65% default to prevent clipping) on ALSA capture mixer controls."""
+    gain = MIC_CAPTURE_GAIN
     commands = [
         ["amixer", "-c", str(card_id), "sset", "Capture", "cap"],
-        ["amixer", "-c", str(card_id), "sset", "Capture", "95%"],
+        ["amixer", "-c", str(card_id), "sset", "Capture", gain],
         ["amixer", "-c", str(card_id), "sset", "Mic", "cap"],
-        ["amixer", "-c", str(card_id), "sset", "Mic", "95%"],
+        ["amixer", "-c", str(card_id), "sset", "Mic", gain],
         ["amixer", "-c", str(card_id), "sset", "Internal Mic", "cap"],
-        ["amixer", "-c", str(card_id), "sset", "Internal Mic", "95%"],
+        ["amixer", "-c", str(card_id), "sset", "Internal Mic", gain],
         ["amixer", "sset", "Capture", "cap"],
-        ["amixer", "sset", "Capture", "95%"],
+        ["amixer", "sset", "Capture", gain],
     ]
     for cmd in commands:
         try:
@@ -42,17 +43,10 @@ def auto_detect_audio_input(preferred: str = AUDIO_INPUT_DEVICE) -> tuple[str, s
     Scans for ALSA audio capture devices.
     Returns (alsa_device_string, friendly_description).
     """
-    # 1. If user explicitly provided a specific hardware string (e.g. "plughw:2,0" or "hw:1,0")
-    if preferred and preferred.lower() not in ("auto", "default", ""):
-        m = re.search(r"card\s*(\d+)|hw:(\d+)|plughw:(\d+)", preferred)
-        if m:
-            card_num = m.group(1) or m.group(2) or m.group(3)
-            unmute_alsa_card(card_num)
-        return preferred, f"Configured device: {preferred}"
-
-    # 2. Query arecord -l to list all capture hardware
+    # 1. Query arecord -l to list all capture hardware
     usb_candidates = []
     other_candidates = []
+    available_cards = set()
 
     try:
         proc = subprocess.run(["arecord", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
@@ -62,6 +56,7 @@ def auto_detect_audio_input(preferred: str = AUDIO_INPUT_DEVICE) -> tuple[str, s
                 m = re.search(r"card\s*(\d+):\s*([^,\[]+)(?:\[([^\]]+)\])?,\s*device\s*(\d+):", line)
                 if m:
                     card_idx = m.group(1)
+                    available_cards.add(card_idx)
                     card_name = (m.group(3) or m.group(2)).strip()
                     dev_idx = m.group(4)
                     
@@ -70,12 +65,26 @@ def auto_detect_audio_input(preferred: str = AUDIO_INPUT_DEVICE) -> tuple[str, s
                         continue
 
                     cand = (f"plughw:{card_idx},{dev_idx}", f"Card {card_idx} ({card_name})", card_idx)
-                    if any(x in card_name.lower() for x in ["usb", "mic", "audio", "headset", "samson", "rode", "blue"]):
+                    if any(x in card_name.lower() for x in ["usb", "mic", "audio", "headset", "samson", "rode", "blue", "ab13x"]):
                         usb_candidates.append(cand)
                     else:
                         other_candidates.append(cand)
     except Exception as e:
         logger.debug(f"arecord -l query notice: {e}")
+
+    # 2. Check if user preferred device actually exists
+    if preferred and preferred.lower() not in ("auto", "default", ""):
+        if "CARD=" in preferred:
+            return preferred, f"Configured named ALSA device: {preferred}"
+        m = re.search(r"card\s*(\d+)|hw:(\d+)|plughw:(\d+)", preferred)
+        card_num = m.group(1) or m.group(2) or m.group(3) if m else None
+        if card_num and card_num in available_cards:
+            unmute_alsa_card(card_num)
+            return preferred, f"Configured device: {preferred}"
+        elif not card_num:
+            return preferred, f"Configured device: {preferred}"
+        else:
+            logger.warning(f"⚠️ Preferred device '{preferred}' (Card {card_num}) not found in ALSA capture devices. Auto-detecting fallback...")
 
     # 3. Check /proc/asound/cards as fallback
     if not usb_candidates and not other_candidates and os.path.exists("/proc/asound/cards"):
@@ -107,7 +116,7 @@ def auto_detect_audio_input(preferred: str = AUDIO_INPUT_DEVICE) -> tuple[str, s
         unmute_alsa_card(card_num)
         return dev_str, f"Auto-detected {dev_desc}"
 
-    # Default fallback
+    return "plughw:0,0", "Fallback default device"
     unmute_alsa_card(0)
     unmute_alsa_card(1)
     return "default", "Default ALSA capture device"
@@ -163,7 +172,7 @@ class AudioCaptureWorker(threading.Thread):
                 self.process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
                     bufsize=4096 * 4
                 )
 

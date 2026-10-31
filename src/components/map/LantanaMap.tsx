@@ -255,57 +255,6 @@ export default function LantanaMap({
   }, [showBasemapMenu]);
 
 
-  // Fallback survey plot polygon boundaries generated around stations if no custom shapefile is uploaded
-  const fallbackStationShapefiles: MapShapefileItem[] = useMemo(() => {
-    if (sites.length === 0) return [];
-    const habToken = (site: LantanaSiteMarkerData) => {
-      const h = (site.habitat || '').toUpperCase();
-      if (h === 'LC' || h === 'LI' || h === 'CS') return h;
-      const token = (site.recorder_id || '').toUpperCase().split(/[-_/]/)[0];
-      if (token === 'LC' || token === 'LI' || token === 'CS') return token;
-      return 'LC'; // Default to transparent green for PAM/live station
-    };
-
-    return sites.map((s) => {
-      const hab = habToken(s);
-      // Create an 8-sided plot perimeter polygon (~450m radius)
-      const radiusKm = 0.45;
-      const points: [number, number][] = [];
-      const numPoints = 8;
-      for (let i = 0; i <= numPoints; i++) {
-        const angle = (i * 2 * Math.PI) / numPoints;
-        const dLat = (radiusKm / 111) * Math.cos(angle);
-        const dLng = (radiusKm / (111 * Math.cos((s.lat * Math.PI) / 180))) * Math.sin(angle);
-        points.push([Number((s.lng + dLng).toFixed(6)), Number((s.lat + dLat).toFixed(6))]);
-      }
-
-      return {
-        id: `plot-${s.id}`,
-        name: `${s.name} Survey Plot`,
-        targetId: s.id,
-        targetType: 'site' as const,
-        habitat: hab,
-        geojson: {
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              properties: {
-                name: `${s.name} Survey Zone`,
-                habitat: hab,
-                siteId: s.id
-              },
-              geometry: {
-                type: 'Polygon',
-                coordinates: [points]
-              }
-            }
-          ]
-        }
-      };
-    });
-  }, [sites]);
-
   // Filter loaded shapefiles so only boundaries relevant to the current project, site, or map region are shown
   const relevantShapefiles = useMemo(() => {
     if (propShapefiles && propShapefiles.length > 0) return propShapefiles;
@@ -372,11 +321,10 @@ export default function LantanaMap({
     });
   }, [propShapefiles, loadedShapefiles, projectId, selectedSiteId, sites, center]);
 
-  // Active shapefiles: custom relevant shapefiles, or fallback survey boundaries around stations
+  // Active shapefiles: only show actual user-uploaded shapefiles (no synthetic polygons around stations)
   const activeShapefiles = useMemo(() => {
-    if (relevantShapefiles.length > 0) return relevantShapefiles;
-    return fallbackStationShapefiles;
-  }, [relevantShapefiles, fallbackStationShapefiles]);
+    return relevantShapefiles;
+  }, [relevantShapefiles]);
 
   const activeBasemap = BASEMAP_OPTIONS.find((b) => b.id === selectedBasemap) || BASEMAP_OPTIONS[0];
 
@@ -628,28 +576,30 @@ export default function LantanaMap({
           <span>{activeBasemap.name}</span>
         </button>
 
-        {/* Toggle Shapefile Visibility */}
-        <button
-          onClick={() => setShowShapefiles(!showShapefiles)}
-          className={`backdrop-blur-md border px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-md ${
-            showShapefiles
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-              : 'bg-white/95 text-slate-600 border-[#dde1dc] hover:bg-white'
-          }`}
-          title="Toggle Shapefile Boundaries"
-        >
-          {showShapefiles ? (
-            <>
-              <Eye className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Shapefiles ({activeShapefiles.length})</span>
-            </>
-          ) : (
-            <>
-              <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-              <span>Shapefiles Hidden</span>
-            </>
-          )}
-        </button>
+        {/* Toggle Shapefile Visibility - only show when custom shapefiles exist */}
+        {activeShapefiles.length > 0 && (
+          <button
+            onClick={() => setShowShapefiles(!showShapefiles)}
+            className={`backdrop-blur-md border px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-md ${
+              showShapefiles
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                : 'bg-white/95 text-slate-600 border-[#dde1dc] hover:bg-white'
+            }`}
+            title="Toggle Shapefile Boundaries"
+          >
+            {showShapefiles ? (
+              <>
+                <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Shapefiles ({activeShapefiles.length})</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                <span>Shapefiles Hidden</span>
+              </>
+            )}
+          </button>
+        )}
 
         {/* Direct Upload Shapefile Button - Only visible for Admin, Assigned Project Manager, or Assigned Site Manager */}
         {canUploadShapefile && (
@@ -739,7 +689,7 @@ export default function LantanaMap({
             />
             <span className="text-[10px] text-rose-700 font-extrabold">{maxSpecies} spp (High)</span>
           </div>
-          {showShapefiles && (
+          {showShapefiles && activeShapefiles.length > 0 && (
             <div className="flex items-center gap-2 pt-1 border-t border-slate-100 text-[10px] text-slate-500">
               <span className="font-semibold text-emerald-700">Shapefiles:</span>
               <span className="inline-flex items-center gap-1">
@@ -767,7 +717,7 @@ export default function LantanaMap({
               </span>
             </div>
           </div>
-          {showShapefiles && (
+          {showShapefiles && activeShapefiles.length > 0 && (
             <div className="flex items-center gap-2 pt-1 border-t border-slate-100 text-[10px] text-slate-500">
               <span className="font-semibold text-emerald-700">Polygon:</span>
               <span className="inline-flex items-center gap-1">

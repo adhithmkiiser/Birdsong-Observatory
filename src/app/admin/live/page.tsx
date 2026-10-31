@@ -153,6 +153,33 @@ interface LiveProjectItem {
   image_url?: string;
 }
 
+function dedupeLiveDetections(list: any[]) {
+  if (!list || list.length === 0) return [];
+  const sorted = [...list].sort((a, b) => {
+    const tA = new Date(a.timestamp || a.created_at || 0).getTime();
+    const tB = new Date(b.timestamp || b.created_at || 0).getTime();
+    if (tB !== tA) return tB - tA;
+    return (b.confidence || 0) - (a.confidence || 0);
+  });
+  const seenExact = new Set<string>();
+  const lastTimeMap: Record<string, number> = {};
+  return sorted.filter((d) => {
+    const station = d.recorder_id || d.station_id || 'unknown';
+    const species = (d.common_name || d.scientific_name || '').toLowerCase().trim();
+    const ts = new Date(d.timestamp || d.created_at || 0).getTime();
+    const exactKey = d.audio_url 
+      ? `${station}|${d.audio_url}|${species}` 
+      : `${station}|${d.timestamp}|${species}`;
+    if (seenExact.has(exactKey)) return false;
+    seenExact.add(exactKey);
+    const spKey = `${station}|${species}`;
+    const lastT = lastTimeMap[spKey];
+    if (lastT && Math.abs(lastT - ts) < 3500) return false;
+    lastTimeMap[spKey] = ts;
+    return true;
+  });
+}
+
 export default function LiveAdminPage() {
   const { currentRole, currentUser } = useRole();
   const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
@@ -204,8 +231,8 @@ export default function LiveAdminPage() {
   const [genRecorderId, setGenRecorderId] = useState('Test_01');
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
   const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
-  const [genAudioDevice, setGenAudioDevice] = useState('plughw:1,0');
-  const [genHopSeconds, setGenHopSeconds] = useState('1.5');
+  const [genAudioDevice, setGenAudioDevice] = useState('plughw:CARD=Audio,DEV=0');
+  const [genHopSeconds, setGenHopSeconds] = useState('3.0');
   const [genLatitude, setGenLatitude] = useState('13.6288');
   const [genLongitude, setGenLongitude] = useState('79.4192');
   const [genPiUser, setGenPiUser] = useState('pi');
@@ -327,6 +354,9 @@ export default function LiveAdminPage() {
         })
       });
       const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Server failed to purge live detections');
+      }
 
       setLiveDetections(prev => prev.filter(d => {
         if (purgeNodeScope !== 'All') {
@@ -454,7 +484,7 @@ export default function LiveAdminPage() {
           }
 
           if (data.detections) {
-            setLiveDetections(data.detections);
+            setLiveDetections(dedupeLiveDetections(data.detections));
           }
           return;
         }
@@ -517,7 +547,7 @@ export default function LiveAdminPage() {
       }
 
       const { data: dets } = await supabase.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(100);
-      if (dets) setLiveDetections(dets);
+      if (dets) setLiveDetections(dedupeLiveDetections(dets));
 
     } catch (e) {
       console.error('Failed to load Live admin data:', e);
@@ -622,7 +652,7 @@ export default function LiveAdminPage() {
           node_id: nodeId,
           model_id: modelId,
           enabled: updated,
-          threshold: 0.50,
+          threshold: 0.60,
           model_name: m?.name || 'Model',
           runtime: m?.runtime || 'birdnet_tflite'
         }];
@@ -1423,7 +1453,7 @@ WantedBy=multi-user.target`;
                       modelsList.map(model => {
                         const assignment = nodeModelAssignments.find(a => a.node_id === node.id && a.model_id === model.id);
                         const isEnabled = assignment ? assignment.enabled : false;
-                        const threshold = assignment ? assignment.threshold : 0.65;
+                        const threshold = assignment ? assignment.threshold : 0.60;
 
                         return (
                           <tr key={`${node.id}_${model.id}`} className="hover:bg-[#f9faf8] transition">
@@ -1452,7 +1482,7 @@ WantedBy=multi-user.target`;
                               <input
                                 type="range"
                                 min="0.10"
-                                max="0.95"
+                                max="1.00"
                                 step="0.05"
                                 value={threshold}
                                 disabled={!isEnabled}
@@ -2267,8 +2297,8 @@ WantedBy=multi-user.target`;
                       <strong className="text-white">Configure Microphone Hardware Card</strong>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText('echo "AUDIO_INPUT_DEVICE=plughw:3,0" >> ~/Live_detector/.env');
-                          showNotification('Mic config command copied!');
+                          navigator.clipboard.writeText('echo \'AUDIO_INPUT_DEVICE="plughw:CARD=Audio,DEV=0"\' >> ~/Live_detector/.env');
+                          showNotification('Persistent mic config command copied!');
                         }}
                         className="p-1 text-emerald-400 hover:text-emerald-300"
                         title="Copy fix command"
@@ -2277,10 +2307,10 @@ WantedBy=multi-user.target`;
                       </button>
                     </div>
                     <p className="text-[#a0aba3] text-[11px]">
-                      If <code className="text-emerald-400">arecord -l</code> reports card 3, bind it directly in your Pi's environment:
+                      Use the persistent ALSA named card string so device index shifts across reboots never break audio:
                     </p>
                     <code className="text-emerald-300 block bg-[#121614] p-2 rounded-lg font-mono text-[11px] select-all">
-                      echo "AUDIO_INPUT_DEVICE=plughw:3,0" &gt;&gt; ~/Live_detector/.env
+                      echo 'AUDIO_INPUT_DEVICE="plughw:CARD=Audio,DEV=0"' &gt;&gt; ~/Live_detector/.env
                     </code>
                   </div>
 

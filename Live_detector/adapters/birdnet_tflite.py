@@ -11,13 +11,18 @@ from typing import List, Tuple, Dict, Any
 from .base import ModelAdapter
 
 import logging
-from config import NODE_LATITUDE, NODE_LONGITUDE, BIRDNET_USE_LAT_LON_FILTER
+from config import (
+    NODE_LATITUDE, NODE_LONGITUDE, BIRDNET_USE_LAT_LON_FILTER,
+    BIRDNET_THRESHOLD, STRICT_GEO_FILTER, MIN_NON_AVIAN_CONFIDENCE
+)
 
 logger = logging.getLogger("BirdNetAdapter")
 
 class BirdNetTFLiteAdapter(ModelAdapter):
-    def __init__(self, model_id: str = "birdnet_default", threshold: float = 0.25,
+    def __init__(self, model_id: str = "birdnet_default", threshold: float = None,
                  lat: float = None, lon: float = None, use_geo_filter: bool = None):
+        if threshold is None:
+            threshold = BIRDNET_THRESHOLD
         super().__init__(model_id, threshold)
         self.interpreter = None
         self.input_details = None
@@ -154,6 +159,10 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                     scientific_name.lower() in NON_AVIAN_CLASSES
                 )
 
+                # Filter low-confidence anthropogenic/indoor noise (footsteps, chair scrapes, coughs)
+                if is_non_avian and conf < MIN_NON_AVIAN_CONFIDENCE:
+                    continue
+
                 # Apply Lat/Long species occurrence filter to avian species
                 if self.use_geo_filter and self.allowed_species and not is_non_avian:
                     is_in_region = (
@@ -161,8 +170,10 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                         scientific_name.lower() in self.allowed_species or
                         label_str.lower() in self.allowed_species
                     )
-                    # Out-of-region bird taxa require high confidence (0.70)
-                    if not is_in_region and conf < 0.70:
+                    # Strictly drop out-of-region birds (prevents European/American birds like Magpies in India)
+                    if STRICT_GEO_FILTER and not is_in_region:
+                        continue
+                    elif not is_in_region and conf < 0.92:
                         continue
 
                 results.append((common_name, round(conf, 4)))
