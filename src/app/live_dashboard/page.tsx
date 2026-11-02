@@ -1710,14 +1710,21 @@ export default function LiveDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="p-3.5 bg-white border border-[#dde1dc] rounded-xl shadow-2xs space-y-1">
+                  <div className={`p-3.5 bg-white border rounded-xl shadow-2xs space-y-1 ${
+                    activeTel?.under_voltage_flag ? 'border-amber-400 bg-amber-50/50' : 'border-[#dde1dc]'
+                  }`}>
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
-                      <Sun className="w-3 h-3 text-amber-500" /> Power Source
+                      <Sun className={`w-3 h-3 ${activeTel?.under_voltage_flag ? 'text-rose-500 animate-pulse' : 'text-amber-500'}`} /> Power Source
                     </span>
-                    <div className="text-sm font-bold font-mono text-[#1a1f1c]">
-                      {battVal != null ? `${Math.round(battVal)}%` : 'USB 5V'}{voltVal != null ? ` • ${voltVal.toFixed(2)}V` : ''}
+                    <div className="text-sm font-bold font-mono text-[#1a1f1c] flex items-center gap-2 flex-wrap">
+                      <span>{battVal != null ? `${Math.round(battVal)}%` : 'USB 5V'}{voltVal != null ? ` • ${voltVal.toFixed(2)}V` : ''}</span>
+                      {activeTel?.under_voltage_flag && (
+                        <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded border border-rose-300">
+                          &lt; 4.63V Low Power
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[10px] text-[#5a635d] truncate" title={activeTel?.power_status || (battVal != null ? 'Monitored Battery' : 'Powerbank Supply (5V Active)')}>
+                    <div className={`text-[10px] truncate ${activeTel?.under_voltage_flag ? 'text-rose-700 font-bold' : 'text-[#5a635d]'}`} title={activeTel?.power_status || (battVal != null ? 'Monitored Battery' : 'Powerbank Supply (5V Active)')}>
                       {activeTel?.power_status || (battVal != null ? 'Monitored Battery' : 'Powerbank Supply (5V Active)')}
                     </div>
                   </div>
@@ -2361,7 +2368,7 @@ export default function LiveDashboardPage() {
                       {hasUnderVoltage && (
                         <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                          <span>Solar dip detected (&lt;4.63V). Continuous edge inference maintained.</span>
+                          <span>Power dip / low voltage detected (&lt;4.63V). Recharge or swap powerbank soon.</span>
                         </div>
                       )}
 
