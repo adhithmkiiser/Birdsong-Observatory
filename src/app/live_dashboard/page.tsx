@@ -360,7 +360,7 @@ export default function LiveDashboardPage() {
                 long: 79.4192,
                 elevation: null,
                 last_ping: tel.ping_time || tel.timestamp || new Date().toISOString(),
-                battery_level: tel.battery_level ?? (tel.battery_capacity_percent ? Math.round(tel.battery_capacity_percent) : 100),
+                battery_level: tel.battery_level ?? (tel.battery_capacity_percent ? Math.round(tel.battery_capacity_percent) : null),
                 cpu_temperature: tel.cpu_temp_c ?? tel.cpu_temperature ?? 40.4,
                 storage_used_percent: tel.disk_usage ?? 6,
                 firmware_version: 'v2.4'
@@ -1710,13 +1710,13 @@ export default function LiveDashboardPage() {
 
                   <div className="p-3.5 bg-white border border-[#dde1dc] rounded-xl shadow-2xs space-y-1">
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
-                      <Sun className="w-3 h-3 text-amber-500" /> Solar / Battery
+                      <Sun className="w-3 h-3 text-amber-500" /> Power Source
                     </span>
                     <div className="text-sm font-bold font-mono text-[#1a1f1c]">
-                      {battVal != null ? `${Math.round(battVal)}%` : '--'}{voltVal != null ? ` • ${voltVal.toFixed(2)}V` : ''}
+                      {battVal != null ? `${Math.round(battVal)}%` : 'USB 5V'}{voltVal != null ? ` • ${voltVal.toFixed(2)}V` : ''}
                     </div>
-                    <div className="text-[10px] text-[#5a635d] truncate">
-                      {activeTel?.power_status || (battVal != null ? 'Active Power Supply' : 'Awaiting Telemetry')}
+                    <div className="text-[10px] text-[#5a635d] truncate" title={activeTel?.power_status || (battVal != null ? 'Monitored Battery' : 'Powerbank Supply (5V Active)')}>
+                      {activeTel?.power_status || (battVal != null ? 'Monitored Battery' : 'Powerbank Supply (5V Active)')}
                     </div>
                   </div>
 
@@ -2369,7 +2369,7 @@ export default function LiveDashboardPage() {
                           <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
                             <Sun className="w-3 h-3 text-amber-500" /> SOLAR / VOLTS
                           </span>
-                          <strong className="text-[#1a1f1c]">{batteryVolt != null ? `${batteryVolt.toFixed(2)} V` : (stn.battery_level != null ? `${stn.battery_level}%` : '--')}</strong>
+                          <strong className="text-[#1a1f1c]">{batteryVolt != null ? `${batteryVolt.toFixed(2)} V` : (stn.battery_level != null ? `${stn.battery_level}%` : 'USB 5V')}</strong>
                           <div className="text-[10px] text-emerald-700 font-semibold truncate" title={powerStatus}>
                             {powerStatus}
                           </div>

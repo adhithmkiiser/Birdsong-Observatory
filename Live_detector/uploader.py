@@ -246,7 +246,7 @@ class CloudUploaderWorker(threading.Thread):
                 disk_pct = t.get("disk_percent_free")
                 disk_used = int(round(100.0 - float(disk_pct))) if disk_pct is not None else 10
                 bat_pct = t.get("battery_capacity_percent")
-                bat_int = int(round(float(bat_pct))) if bat_pct is not None else 100
+                bat_int = int(round(float(bat_pct))) if bat_pct is not None else None
                 temp_val = float(t.get("cpu_temp_c")) if t.get("cpu_temp_c") is not None else 40.0
 
                 telem_records.append({
@@ -306,7 +306,7 @@ class CloudUploaderWorker(threading.Thread):
                             disk_pct = t.get("disk_percent_free")
                             disk_used = int(round(100.0 - float(disk_pct))) if disk_pct is not None else 10
                             bat_pct = t.get("battery_capacity_percent")
-                            bat_int = int(round(float(bat_pct))) if bat_pct is not None else 100
+                            bat_int = int(round(float(bat_pct))) if bat_pct is not None else None
                             temp_val = float(t.get("cpu_temp_c")) if t.get("cpu_temp_c") is not None else 40.0
 
                             legacy_records.append({
