@@ -377,6 +377,25 @@ export default function LiveDashboardPage() {
           scopedRecorders = scopedRecorders.filter((r: any) => projNames.has(r.project_name));
         }
 
+        // Deduplicate stations by recorder_id so duplicate DB records never render twice
+        const uniqueRecordersMap = new Map<string, any>();
+        for (const r of scopedRecorders) {
+          const key = r.recorder_id || r.id;
+          if (!uniqueRecordersMap.has(key)) {
+            uniqueRecordersMap.set(key, r);
+          } else {
+            const existing = uniqueRecordersMap.get(key);
+            uniqueRecordersMap.set(key, {
+              ...existing,
+              ...r,
+              lat: r.lat ?? existing.lat,
+              long: r.long ?? existing.long,
+              elevation: (r.elevation && r.elevation.startsWith('http')) ? r.elevation : existing.elevation
+            });
+          }
+        }
+        scopedRecorders = Array.from(uniqueRecordersMap.values());
+
         const ecoMap: Record<string, any> = {};
         (ecologyData || []).forEach((e: any) => {
           if (e.common_name) {

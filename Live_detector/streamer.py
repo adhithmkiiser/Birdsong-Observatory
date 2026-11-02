@@ -191,16 +191,23 @@ class LiveAudioStreamServer(threading.Thread):
                             from supabase import create_client
                             from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME, PROJECT_NAME, SITE_NAME
                             sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-                            # Upsert to guarantee record exists and has the live public HTTPS tunnel URL
-                            sb.table("recorders_registry").upsert({
-                                "id": STATION_NAME,
-                                "recorder_id": STATION_NAME,
-                                "project_name": PROJECT_NAME,
-                                "site_name": SITE_NAME,
-                                "project_type": "Live",
+                            # First update any existing record with this recorder_id to avoid duplicate rows
+                            up_res = sb.table("recorders_registry").update({
                                 "elevation": self.public_stream_url,
                                 "status": "online"
-                            }, on_conflict="id").execute()
+                            }).eq("recorder_id", STATION_NAME).execute()
+
+                            if not up_res.data:
+                                # Upsert if no record exists yet
+                                sb.table("recorders_registry").upsert({
+                                    "id": f"{PROJECT_NAME.lower()}::{SITE_NAME.lower()}::{STATION_NAME}",
+                                    "recorder_id": STATION_NAME,
+                                    "project_name": PROJECT_NAME,
+                                    "site_name": SITE_NAME,
+                                    "project_type": "Live",
+                                    "elevation": self.public_stream_url,
+                                    "status": "online"
+                                }, on_conflict="id").execute()
                             logger.info("📡 Successfully registered public tunnel URL to Supabase recorders_registry!")
                         except Exception as ex:
                             logger.warning(f"Could not update recorders_registry with tunnel URL: {ex}")
