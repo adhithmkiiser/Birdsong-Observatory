@@ -214,7 +214,7 @@ export default function LiveDashboardPage() {
   const [lastLiveDetectionId, setLastLiveDetectionId] = useState<any>(null);
   const [liveStreamError, setLiveStreamError] = useState<string | null>(null);
   const [liveStreamSessionStart, setLiveStreamSessionStart] = useState<number | null>(null);
-  const [liveFeedFilter, setLiveFeedFilter] = useState<'session' | 'all'>('session');
+  const [liveFeedFilter, setLiveFeedFilter] = useState<'session' | 'recent' | 'all'>('recent');
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Live stream access enabled across observatory visitors and researchers
@@ -464,8 +464,27 @@ export default function LiveDashboardPage() {
       )
       .subscribe();
 
+    // High-performance background polling every 3.5 seconds to guarantee live updates
+    // even if Postgres CDC / Realtime replication is disabled in Supabase
+    const pollInterval = setInterval(async () => {
+      if (!isCurrent) return;
+      try {
+        const { data: latestDets } = await supabase
+          .from('live_detections')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(30);
+        if (latestDets && latestDets.length > 0 && isCurrent) {
+          setDetections(prev => dedupeDetections([...latestDets, ...prev]));
+        }
+      } catch (err) {
+        // silent fallback
+      }
+    }, 3500);
+
     return () => {
       isCurrent = false;
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [currentRole, currentUser, selectedStreamNode]);
@@ -535,18 +554,30 @@ export default function LiveDashboardPage() {
     });
   }, [detections, searchQuery, selectedStationId, minConfidence]);
 
+  // Count of detections specifically in this live stream session
+  const sessionDetectionsCount = useMemo(() => {
+    if (!liveStreamSessionStart) return 0;
+    return filteredDetections.filter(d => d.timestamp && new Date(d.timestamp).getTime() >= liveStreamSessionStart).length;
+  }, [filteredDetections, liveStreamSessionStart]);
+
   // Detections displayed specifically in the Live Stream tab (Tab 5):
-  // When in 'session' mode, it only shows detections detected during the active stream session.
-  // When disconnected, it resets to empty. All detections are permanently saved in the database.
+  // 'session': only shows detections captured during the active stream session.
+  // 'recent': shows recent activity (last 2 hours or latest 20 calls) so monitoring is immediately informative.
+  // 'all': all detections matching current station / confidence filter.
   const liveTabDetections = useMemo(() => {
     if (liveFeedFilter === 'session') {
       if (!isLiveStreamActive || !liveStreamSessionStart) {
-        return []; // Resets upon disconnect!
+        return [];
       }
       return filteredDetections.filter(d => {
         if (!d.timestamp) return false;
         return new Date(d.timestamp).getTime() >= liveStreamSessionStart;
       });
+    }
+    if (liveFeedFilter === 'recent') {
+      const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+      const recent = filteredDetections.filter(d => d.timestamp && new Date(d.timestamp).getTime() >= twoHoursAgo);
+      return recent.length > 0 ? recent : filteredDetections.slice(0, 20);
     }
     return filteredDetections;
   }, [filteredDetections, liveFeedFilter, isLiveStreamActive, liveStreamSessionStart]);
@@ -1833,12 +1864,12 @@ export default function LiveDashboardPage() {
                   </h2>
                   <p>
                     {isLiveStreamActive
-                      ? `Classification events ingested live from ${selectedStreamNode}. Session resets on disconnect.`
-                      : `Live stream disconnected. Click "Connect Live Audio" above to start a live session.`}
+                      ? `Classification events ingested live from ${selectedStreamNode}. Auto-syncing with edge recorder.`
+                      : `Edge recorder is monitoring in background. Connect audio above to view the real-time spectrogram.`}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Session / History Feed Toggle */}
+                  {/* Session / Recent / All Feed Toggle */}
                   <div className="inline-flex rounded-lg bg-[#f0f7f3] p-0.5 border border-[#dde1dc] text-xs">
                     <button
                       type="button"
@@ -1848,9 +1879,22 @@ export default function LiveDashboardPage() {
                           ? 'bg-[#1f4d3a] text-white shadow-2xs'
                           : 'text-[#5a635d] hover:text-[#1a1f1c]'
                       }`}
+                      title="Only calls detected during the current live session"
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreamActive ? 'bg-emerald-400 animate-pulse' : 'bg-gray-400'}`} />
-                      <span>Live Session ({liveTabDetections.length})</span>
+                      <span>Live Session ({sessionDetectionsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLiveFeedFilter('recent')}
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                        liveFeedFilter === 'recent'
+                          ? 'bg-[#1f4d3a] text-white shadow-2xs'
+                          : 'text-[#5a635d] hover:text-[#1a1f1c]'
+                      }`}
+                      title="Recent bird calls detected by this node"
+                    >
+                      <span>Recent Feed</span>
                     </button>
                     <button
                       type="button"
@@ -1862,7 +1906,7 @@ export default function LiveDashboardPage() {
                       }`}
                       title="View all permanent detections saved in the database"
                     >
-                      <span>All Saved History ({filteredDetections.length})</span>
+                      <span>All Saved ({filteredDetections.length})</span>
                     </button>
                   </div>
                 </div>
@@ -1903,16 +1947,29 @@ export default function LiveDashboardPage() {
               {/* Detections / Live Audio Streams List Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[650px] overflow-y-auto pr-1">
                 {liveTabDetections.length === 0 ? (
-                  <div className="col-span-2 py-16 text-center text-xs text-[#5a635d] space-y-2 bg-white border border-[#dde1dc] rounded-xl">
+                  <div className="col-span-2 py-12 text-center text-xs text-[#5a635d] space-y-2.5 bg-white border border-[#dde1dc] rounded-xl p-6">
                     <Bird className="w-8 h-8 text-[#5a635d]/40 mx-auto" />
                     <p className="font-semibold text-sm text-[#1a1f1c]">
-                      {isLiveStreamActive ? 'Listening for live avian calls...' : 'Stream Disconnected (Session Reset)'}
+                      {liveFeedFilter === 'session'
+                        ? 'No calls detected yet during this live session'
+                        : 'No detections match the current filter'}
                     </p>
                     <p className="text-xs text-[#5a635d]/80 max-w-md mx-auto">
-                      {isLiveStreamActive 
-                        ? `The edge AI is actively monitoring ${selectedStreamNode}. Avian classifications will appear here live as they vocalize.`
-                        : 'Connect to the live stream to monitor incoming species calls in real time. (All historical detections remain safely preserved in the database).'}
+                      {liveFeedFilter === 'session'
+                        ? `The edge AI is actively listening on ${selectedStreamNode}. When a bird vocalizes above ${Math.round(minConfidence * 100)}% confidence, it will appear here immediately.`
+                        : `Adjust your search or slide the confidence threshold below ${Math.round(minConfidence * 100)}% to reveal lower confidence vocalizations.`}
                     </p>
+                    {liveFeedFilter === 'session' && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setLiveFeedFilter('recent')}
+                          className="px-3 py-1.5 bg-[#f0f7f3] border border-[#1f4d3a]/30 text-[#1f4d3a] rounded-lg font-semibold text-xs hover:bg-[#e2efe8] transition cursor-pointer"
+                        >
+                          Show Recent Activity &rarr;
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   liveTabDetections.map((det) => {

@@ -152,7 +152,24 @@ export default function LiveDetectionsPage() {
       )
       .subscribe();
 
+    // Background polling every 3.5 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: latest } = await supabase
+          .from('live_detections')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(25);
+        if (latest && latest.length > 0) {
+          setDetections(prev => dedupeDetections([...latest, ...prev]));
+        }
+      } catch (e) {
+        // silent
+      }
+    }, 3500);
+
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, []);
