@@ -1025,9 +1025,9 @@ WantedBy=multi-user.target`;
                 const cpuTemp = tel ? (tel.cpu_temp_c ?? tel.cpu_temperature ?? null) : null;
                 const diskPercent = tel ? (tel.disk_percent_free ?? (tel.disk_usage !== undefined && tel.disk_usage !== null ? 100 - Number(tel.disk_usage) : null)) : null;
                 const diskFreeGb = tel ? (tel.disk_free_gb ?? (diskPercent !== null ? Number(((diskPercent / 100) * 32).toFixed(1)) : null)) : null;
-                const batteryCap = tel ? (tel.battery_capacity_percent ?? tel.battery_level ?? null) : null;
-                const batteryVolt = tel ? (tel.battery_voltage_v ?? (batteryCap !== null ? 5.08 : null)) : null;
-                const powerStatus = tel ? (tel.power_status || (batteryCap !== null ? `Stable Solar / USB Supply (${Number(batteryCap).toFixed(0)}% Charge)` : 'Stable Solar / USB Supply')) : 'Awaiting Telemetry';
+                const batteryCap = tel?.battery_capacity_percent ?? null;
+                const batteryVolt = tel?.battery_voltage_v ?? 5.08;
+                const powerStatus = tel?.power_status || (batteryCap !== null ? `Stable Solar / USB Supply (${Number(batteryCap).toFixed(0)}% Charge)` : 'Stable USB Powerbank Supply (5V Active)');
                 const ramPercent = tel ? (tel.ram_percent ?? null) : null;
                 const uptime = tel ? (tel.uptime_hours ?? null) : null;
 

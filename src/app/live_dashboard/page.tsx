@@ -360,7 +360,7 @@ export default function LiveDashboardPage() {
                 long: 79.4192,
                 elevation: null,
                 last_ping: tel.ping_time || tel.timestamp || new Date().toISOString(),
-                battery_level: tel.battery_level ?? (tel.battery_capacity_percent ? Math.round(tel.battery_capacity_percent) : null),
+                battery_level: tel.battery_capacity_percent ? Math.round(tel.battery_capacity_percent) : null,
                 cpu_temperature: tel.cpu_temp_c ?? tel.cpu_temperature ?? 40.4,
                 storage_used_percent: tel.disk_usage ?? 6,
                 firmware_version: 'v2.4'
@@ -1690,7 +1690,9 @@ export default function LiveDashboardPage() {
             {(() => {
               const activeTel = telemetryMap[selectedStreamNode] || telemetryMap['Test_01'] || null;
               const cpuVal = activeTel?.cpu_temp_c ?? activeTel?.cpu_temperature ?? null;
-              const battVal = activeTel?.battery_capacity_percent ?? activeTel?.battery_level ?? null;
+              // Only display percentage if an actual battery fuel gauge is present (battery_capacity_percent != null)
+              // Standard USB powerbanks have no data bus and report null, so we show 'USB 5V' instead of a fake 100%
+              const battVal = activeTel?.battery_capacity_percent != null ? activeTel.battery_capacity_percent : null;
               const voltVal = activeTel?.battery_voltage_v ?? null;
               const diskVal = activeTel?.disk_free_gb ?? null;
               const isCool = cpuVal != null ? cpuVal < 60 : true;
@@ -2330,7 +2332,7 @@ export default function LiveDashboardPage() {
                   const diskFree = tel?.disk_free_gb ?? null;
                   const diskPercent = tel?.disk_percent_free ?? (tel?.disk_usage != null ? 100 - Number(tel.disk_usage) : (stn.storage_used_percent != null ? 100 - Number(stn.storage_used_percent) : null));
                   const batteryVolt = tel?.battery_voltage_v ?? null;
-                  const powerStatus = tel?.power_status || (tel?.battery_capacity_percent != null ? `Battery ${Math.round(tel.battery_capacity_percent)}%` : (stn.battery_level != null ? `Battery ${stn.battery_level}%` : 'Awaiting Telemetry'));
+                  const powerStatus = tel?.power_status || (tel?.battery_capacity_percent != null ? `Battery ${Math.round(tel.battery_capacity_percent)}%` : 'Powerbank Supply (5V Active)');
                   const hasUnderVoltage = tel?.under_voltage_flag;
 
                   return (
@@ -2369,7 +2371,7 @@ export default function LiveDashboardPage() {
                           <span className="text-[#5a635d] text-[10px] block flex items-center gap-1">
                             <Sun className="w-3 h-3 text-amber-500" /> SOLAR / VOLTS
                           </span>
-                          <strong className="text-[#1a1f1c]">{batteryVolt != null ? `${batteryVolt.toFixed(2)} V` : (stn.battery_level != null ? `${stn.battery_level}%` : 'USB 5V')}</strong>
+                          <strong className="text-[#1a1f1c]">{batteryVolt != null ? `${batteryVolt.toFixed(2)} V` : (tel?.battery_capacity_percent != null ? `${Math.round(tel.battery_capacity_percent)}%` : 'USB 5V')}</strong>
                           <div className="text-[10px] text-emerald-700 font-semibold truncate" title={powerStatus}>
                             {powerStatus}
                           </div>
