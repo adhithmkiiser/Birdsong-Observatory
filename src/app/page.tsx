@@ -14,7 +14,7 @@ export default function HomePage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
-  
+
   // Loading, Timer & Progress State
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingProgress, setLoadingProgress] = useState<number>(10);
@@ -57,7 +57,7 @@ export default function HomePage() {
       setLoadingProgress(70);
 
       const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
-      
+
       // Fetch exact real table counts in parallel
       const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, lantanaSpeciesRes, pamStatsRes] = await Promise.all([
         supabase.from('pam_detections').select('*', { count: 'exact', head: true }),
@@ -91,31 +91,31 @@ export default function HomePage() {
 
       for (const p of projData) {
         if (p.project_type === 'Live') {
-           const activeCount = liveRecorders.filter((r: any) => {
-             const projMatches = (r.project_name && (
-               r.project_name.toLowerCase() === (p.name || '').toLowerCase() ||
-               r.project_name.toLowerCase() === (p.id || '').toLowerCase()
-             )) || (r.project_id && (
-               r.project_id.toLowerCase() === (p.id || '').toLowerCase() ||
-               r.project_id.toLowerCase() === (p.name || '').toLowerCase()
-             ));
-             if (!projMatches) return false;
+          const activeCount = liveRecorders.filter((r: any) => {
+            const projMatches = (r.project_name && (
+              r.project_name.toLowerCase() === (p.name || '').toLowerCase() ||
+              r.project_name.toLowerCase() === (p.id || '').toLowerCase()
+            )) || (r.project_id && (
+              r.project_id.toLowerCase() === (p.id || '').toLowerCase() ||
+              r.project_id.toLowerCase() === (p.name || '').toLowerCase()
+            ));
+            if (!projMatches) return false;
 
-             // Online if marked 'online' in recorders_registry
-             if (r.status === 'online') return true;
-             // Or if pinged recently within 30 minutes
-             if (r.last_ping) {
-               const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
-               return diffMins <= 30;
-             }
-             return false;
-           }).length;
-           p.active_nodes_count = activeCount;
-           statsMap[p.id] = {
-             recorders: Math.max(activeCount, 1),
-             species: liveDetections > 0 ? 12 : 0,
-             detections: liveDetections
-           };
+            // Online if marked 'online' in recorders_registry
+            if (r.status === 'online') return true;
+            // Or if pinged recently within 30 minutes
+            if (r.last_ping) {
+              const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
+              return diffMins <= 30;
+            }
+            return false;
+          }).length;
+          p.active_nodes_count = activeCount;
+          statsMap[p.id] = {
+            recorders: Math.max(activeCount, 1),
+            species: liveDetections > 0 ? 12 : 0,
+            detections: liveDetections
+          };
         } else if (p.project_type === 'Lantana') {
           statsMap[p.id] = {
             recorders: (lantanaSitesRes.data || []).length || 25,
@@ -209,24 +209,22 @@ export default function HomePage() {
 
   return (
     <main className="w-full bg-[#ffffff] text-[#1a1f1c] font-sans">
-      
+
       {/* 1. Hero Section */}
       <Hero />
 
       {/* 2. Interactive Bioacoustics Spectrogram & Summary Cards Section */}
       <section className="w-full bg-gradient-to-b from-[#ffffff] via-[#f9faf9] to-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
         <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-8">
-          
+
           <div className="space-y-2 border-b border-[#dde1dc] pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <h2 className="text-[#1a1f1c] font-serif text-2xl sm:text-3xl font-semibold tracking-tight">
                 Real-time soundscape analysis and observatory metrics
               </h2>
-              <p className="text-[#5a635d] text-sm sm:text-base leading-relaxed max-w-[720px] mt-1">
-                Explore calibrated Raven Pro time-frequency spectrograms alongside live telemetry figures aggregated across our active Western Ghats field deployments.
-              </p>
+
             </div>
-            
+
             <div className="hidden lg:flex items-center gap-2 text-xs font-mono text-[#5a635d] bg-white px-3 py-1.5 rounded-lg border border-[#dde1dc] shadow-2xs flex-shrink-0">
               <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
               <span>Live Database Sync</span>
@@ -234,7 +232,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
-            
+
             {/* Left Side: Spectrogram & Audio Player */}
             <div className="lg:col-span-7 xl:col-span-8 space-y-3">
               <RavenProSpectrogram />
@@ -245,7 +243,7 @@ export default function HomePage() {
 
             {/* Right Side: Responsive Summary Cards (1 col on mobile, 2 cols on tablet, 1 col on desktop next to spectrogram) */}
             <div className="lg:col-span-5 xl:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-              
+
               {/* Card 1: Total Projects (Forest Emerald Accent) */}
               <div className="p-5 rounded-2xl border border-[#b8dbc8] bg-gradient-to-br from-[#f0f7f3] to-[#ffffff] hover:border-[#1f4d3a] hover:shadow-sm transition-all space-y-1.5 group">
                 <div className="flex items-center justify-between">
@@ -331,7 +329,7 @@ export default function HomePage() {
       {/* 3. Projects Section (PAM & Live Detectors) */}
       <section id="projects" className="w-full bg-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
         <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-12">
-          
+
           <div className="space-y-2 border-b border-[#dde1dc] pb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono text-[#1f4d3a] font-semibold mb-1">
@@ -362,16 +360,15 @@ export default function HomePage() {
                         <CheckCircle2 className="w-4 h-4 text-[#10b981]" />
                       </div>
                     )}
-                    
+
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#1f4d3a]">
                         {isLoading ? 'Loading' : 'Loaded'}
                       </span>
-                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md ${
-                        isLoading 
-                          ? 'bg-[#1f4d3a] text-white animate-pulse' 
-                          : 'bg-[#eaf3ee] text-[#1f4d3a] border border-[#b8dbc8]'
-                      }`}>
+                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md ${isLoading
+                        ? 'bg-[#1f4d3a] text-white animate-pulse'
+                        : 'bg-[#eaf3ee] text-[#1f4d3a] border border-[#b8dbc8]'
+                        }`}>
                         {Math.round(loadingProgress)}%
                       </span>
                     </div>
@@ -554,7 +551,7 @@ export default function HomePage() {
       <section className="w-full bg-[#ffffff] py-14 sm:py-20 border-b border-[#dde1dc]">
         <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
           <div className="p-8 sm:p-10 rounded-2xl border border-[#b8dbc8] bg-gradient-to-br from-[#f0f7f3] to-[#ffffff] grid grid-cols-1 lg:grid-cols-12 gap-8 items-start shadow-xs">
-            
+
             <div className="lg:col-span-5 space-y-2">
               <span className="label-mono text-[#1f4d3a]">APPLICATIONS</span>
               <h2 className="text-[#1a1f1c] font-serif text-2xl sm:text-3xl font-semibold tracking-tight">

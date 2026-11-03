@@ -483,8 +483,8 @@ export default function PamAdminPage() {
   };
 
   const handleExecuteDeleteAllDetections = async () => {
-    if (currentRole !== 'Admin') {
-      alert('Only administrators can delete detections.');
+    if (currentRole !== 'Admin' && currentRole !== 'Project Manager') {
+      alert('Only administrators and project managers can delete detections.');
       return;
     }
     if (!deleteAllConfirmed) return;
@@ -537,6 +537,9 @@ export default function PamAdminPage() {
       setSelectedDetectionIds(new Set());
       setIsDeleteAllModalOpen(false);
       showNotification(res.message || (siteName === 'ALL_SITES' ? 'All project detections were permanently deleted.' : `All detections for "${siteName}" were permanently deleted.`));
+      if (pamSelectedSite !== 'Select Site') {
+        handleLoadDetections(0);
+      }
     } catch (err: any) {
       alert('Failed to delete detections: ' + (err.message || 'Unknown network error'));
     } finally {

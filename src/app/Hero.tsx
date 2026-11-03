@@ -6,7 +6,7 @@ import Link from 'next/link';
 export default function HomeHero() {
   return (
     <section className="relative w-full min-h-[520px] sm:min-h-[580px] md:min-h-[620px] lg:min-h-[660px] xl:min-h-[700px] flex items-center overflow-hidden border-b border-[#1b3d2b] bg-[#07130c]">
-      
+
       {/* 1. Full-Width Background Rainforest Image Filling the Entire Screen Edge-to-Edge */}
       <img
         src="/Image/Hero%20Image.png"
@@ -25,12 +25,9 @@ export default function HomeHero() {
       {/* 3. Fluid Responsive Foreground Container Aligned Across All Viewports */}
       <div className="relative z-10 w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-14 sm:py-16 md:py-20 lg:py-24">
         <div className="max-w-3xl xl:max-w-4xl space-y-6 sm:space-y-8">
-          
-          {/* Institutional / Mission Tag */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-emerald-500/30 backdrop-blur-md text-emerald-300 font-mono text-xs font-semibold tracking-wide shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Passive Acoustic Ecology &bull; Western Ghats</span>
-          </div>
+
+
+
 
           {/* Headline in Crisp White with Emerald Accent */}
           <h1 className="text-white font-serif font-semibold text-3xl sm:text-5xl md:text-6xl lg:text-[62px] xl:text-[68px] leading-[1.12] tracking-tight drop-shadow-sm">

@@ -129,10 +129,10 @@ export default function CommonDashboardView({
     setTimeout(() => setCopiedLinkToast(false), 2500);
   };
 
-  // Execute Detections Purge (Admin only)
+  // Execute Detections Purge (Admin & Project Manager)
   const handleExecutePurge = async () => {
-    if (currentRole !== 'Admin') {
-      alert('Only administrators can delete detections.');
+    if (currentRole !== 'Admin' && currentRole !== 'Project Manager') {
+      alert('Only administrators and project managers can delete detections.');
       return;
     }
     if (!purgeConfirmed) return;

@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  Compass, 
-  Radio, 
-  Cpu, 
-  BarChart3, 
-  FileText, 
-  CheckCircle2, 
-  MapPin, 
+import {
+  Compass,
+  Radio,
+  Cpu,
+  BarChart3,
+  FileText,
+  CheckCircle2,
+  MapPin,
   Download,
   Layers,
   ChevronRight,
@@ -42,7 +42,7 @@ const METHOD_STAGES: MethodStage[] = [
     number: '02',
     title: 'Data Collection',
     subtitle: 'Autonomous PAM & BirdNET-Pi live nodes',
-    summary: 'Field teams deploy autonomous PAM recorders or BirdNET-Pi live nodes. Audio, metadata, and telemetry stream or batch into centralized repositories.',
+    summary: 'Field teams deploy autonomous PAM recorders or live detectors.',
     details: [
       'Deployment of autonomous passive acoustic monitoring (PAM) units and solar IoT nodes.',
       'High-resolution lossless 48 kHz / 24-bit audio capture preserving full avian acoustic bandwidth.',
@@ -56,7 +56,7 @@ const METHOD_STAGES: MethodStage[] = [
     subtitle: 'Bioacoustic vocalization classification',
     summary: 'Bioacoustic models classify vocalizations, filter environmental noise, and link detections to species, sites, and habitat covariates with full spectrogram verification.',
     details: [
-      'Neural network classification calibrated for Western Ghats avian vocal repertoires.',
+      'Neural network classification calibrated for selected avian vocal repertoires.',
       'Calibrated confidence thresholding to filter wind, rain, and ambient acoustic artifacts.',
       'Full time-frequency spectrogram verification with harmonic syllable matching.'
     ]
@@ -68,7 +68,7 @@ const METHOD_STAGES: MethodStage[] = [
     subtitle: 'Ecological diversity & temporal activity patterns',
     summary: 'Acoustic occurrence records translate into species accumulation curves, diversity indices, and diurnal activity profiles across habitats.',
     details: [
-      'Rarefaction-standardized species accumulation curves evaluating survey completeness.',
+      'Standardized species accumulation curves evaluating survey completeness.',
       'Diurnal vocal activity profiles showing dawn chorus and dusk acoustic peaks.',
       'Comparative diversity analytics between restored corridors and control habitats.'
     ]
@@ -80,7 +80,7 @@ const METHOD_STAGES: MethodStage[] = [
     subtitle: 'Technical dossiers & conservation recommendations',
     summary: 'We deliver comprehensive technical dossiers with verified spectrograms, distribution maps, and actionable management recommendations for forest managers.',
     details: [
-      'Publication-grade research dossiers with timestamped bioacoustic spectrogram figures.',
+      'Publication-grade research reports with timestamped bioacoustic spectrogram figures.',
       'Georeferenced species occurrence maps and baseline ecological audits for protected areas.',
       'Verifiable bioacoustic evidence and management recommendations for state forest departments.'
     ]
@@ -96,7 +96,7 @@ export default function WhatWeProvide() {
   return (
     <section id="method" className="w-full bg-[#fbfcfb] py-16 sm:py-20 border-b border-[#e2e8f0]">
       <div className="w-full max-w-7xl 2xl:max-w-[1700px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 space-y-8">
-        
+
         {/* Section Heading - Academic & Understated */}
         <div className="space-y-2 border-b border-[#e2e8f0] pb-5">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#edf3ef] border border-[#cbdcd0] text-[11px] font-mono text-[#1f4d3a] font-semibold tracking-wide">
@@ -123,27 +123,24 @@ export default function WhatWeProvide() {
                 <button
                   key={s.id}
                   onClick={() => setActiveStageIdx(idx)}
-                  className={`group relative text-left p-2.5 sm:p-3 rounded-lg transition-all duration-150 border cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
-                      : isPast
+                  className={`group relative text-left p-2.5 sm:p-3 rounded-lg transition-all duration-150 border cursor-pointer ${isSelected
+                    ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
+                    : isPast
                       ? 'bg-[#f4f7f5] text-[#1a1f1c] border-[#d2e0d7] hover:bg-[#eaf1ec]'
                       : 'bg-white text-[#525f57] border-[#e2e8f0] hover:border-[#1f4d3a] hover:bg-[#fafbfa]'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className={`font-mono text-[10px] font-semibold uppercase tracking-wider ${
-                      isSelected ? 'text-[#a7f3d0]' : isPast ? 'text-[#1f4d3a]' : 'text-[#829288]'
-                    }`}>
+                    <span className={`font-mono text-[10px] font-semibold uppercase tracking-wider ${isSelected ? 'text-[#a7f3d0]' : isPast ? 'text-[#1f4d3a]' : 'text-[#829288]'
+                      }`}>
                       Stage {s.number}
                     </span>
-                    <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-[9px] ${
-                      isSelected
-                        ? 'bg-white/20 text-white font-bold'
-                        : isPast
+                    <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-[9px] ${isSelected
+                      ? 'bg-white/20 text-white font-bold'
+                      : isPast
                         ? 'bg-[#1f4d3a] text-white'
                         : 'bg-[#f1f5f3] text-[#829288]'
-                    }`}>
+                      }`}>
                       {isPast ? <Check className="w-2.5 h-2.5 stroke-[2.5]" /> : <Icon className="w-2.5 h-2.5" />}
                     </div>
                   </div>
@@ -158,10 +155,10 @@ export default function WhatWeProvide() {
 
         {/* Active Stage Detailed Breakdown (2 Columns) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 lg:gap-8 items-start">
-          
+
           {/* Left Column (5 cols): Stage Protocol & Scientific Standards */}
           <div className="lg:col-span-5 space-y-5">
-            
+
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#edf3ef] text-[#1f4d3a] font-mono text-[11px] font-semibold uppercase tracking-wider border border-[#cbdcd0]">
                 STAGE {activeStage.number} &bull; {activeStage.subtitle}
@@ -238,9 +235,9 @@ function StageVisualPublication({ stageIndex }: { stageIndex: number }) {
     return (
       <div className="rounded-lg border border-[#e2e8f0] bg-white overflow-hidden shadow-2xs">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-          src="/images/study_design_transect.jpg" 
-          alt="Bioacoustic Study Design: Elevation Transect and Radial Sensor Buffers Illustration" 
+        <img
+          src="/images/study_design_transect.jpg"
+          alt="Bioacoustic Study Design: Elevation Transect and Radial Sensor Buffers Illustration"
           className="w-full h-auto object-cover block"
         />
       </div>
@@ -252,9 +249,9 @@ function StageVisualPublication({ stageIndex }: { stageIndex: number }) {
     return (
       <div className="rounded-lg border border-[#e2e8f0] bg-white overflow-hidden shadow-2xs">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-          src="/images/pam_field_recorder.jpg" 
-          alt="Passive Acoustic Monitoring Field Hardware Deployment" 
+        <img
+          src="/images/pam_field_recorder.jpg"
+          alt="Passive Acoustic Monitoring Field Hardware Deployment"
           className="w-full h-auto object-cover block"
         />
       </div>
@@ -266,9 +263,9 @@ function StageVisualPublication({ stageIndex }: { stageIndex: number }) {
     return (
       <div className="rounded-lg border border-[#e2e8f0] bg-white overflow-hidden shadow-2xs">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-          src="/images/bioacoustic_spectrogram_academic.png" 
-          alt="Bioacoustic Spectrogram & Oscillogram from IISER Bioacoustics Lab" 
+        <img
+          src="/images/bioacoustic_spectrogram_academic.png"
+          alt="Bioacoustic Spectrogram & Oscillogram from IISER Bioacoustics Lab"
           className="w-full h-auto object-cover block"
         />
       </div>
@@ -280,9 +277,9 @@ function StageVisualPublication({ stageIndex }: { stageIndex: number }) {
     return (
       <div className="rounded-lg border border-[#e2e8f0] bg-white overflow-hidden shadow-2xs">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-          src="/images/species_accumulation_curve.png" 
-          alt="Species Accumulation (Rarefaction) and Diurnal Vocal Activity Profile" 
+        <img
+          src="/images/species_accumulation_curve.png"
+          alt="Species Accumulation (Rarefaction) and Diurnal Vocal Activity Profile"
           className="w-full h-auto object-cover block"
         />
       </div>
@@ -293,9 +290,9 @@ function StageVisualPublication({ stageIndex }: { stageIndex: number }) {
   return (
     <div className="rounded-lg border border-[#e2e8f0] bg-white overflow-hidden shadow-2xs">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img 
-        src="/images/conservation_report_dossier.jpg" 
-        alt="Ecological Restoration and Bioacoustics Conservation Audit Dossier" 
+      <img
+        src="/images/conservation_report_dossier.jpg"
+        alt="Ecological Restoration and Bioacoustics Conservation Audit Dossier"
         className="w-full h-auto object-cover block"
       />
     </div>

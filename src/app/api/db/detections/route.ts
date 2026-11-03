@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
 // DELETE: Delete detections
 export async function DELETE(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin']);
+  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
 
   try {
@@ -132,15 +132,19 @@ export async function DELETE(req: NextRequest) {
           try {
             if (t === 'pam_detections') {
               if (resolvedProjectId === 'nilgiri' || siteNames.length > 0 || targetTable === 'pam_detections') {
-                let q = supabaseAdmin.from('pam_detections').delete();
                 if (siteNames.length > 0) {
-                  q = q.in('site_name', siteNames);
+                  for (const sName of siteNames) {
+                    const { error } = await supabaseAdmin
+                      .from('pam_detections')
+                      .delete()
+                      .or(`site_name.eq."${sName}",project_name.eq."${sName}"`);
+                    if (error) console.error(`Error deleting site "${sName}" from pam_detections:`, error);
+                  }
                 } else {
-                  q = q.gt('id', 0);
+                  const { error } = await supabaseAdmin.from('pam_detections').delete().gt('id', 0);
+                  if (error) throw new Error(`Failed to delete pam_detections: ${error.message}`);
                 }
-                const { error } = await q;
-                if (error) console.error('Error deleting project from pam_detections:', error);
-                results['pam_detections'] = !error;
+                results['pam_detections'] = true;
               } else {
                 results['pam_detections'] = true;
               }
@@ -232,9 +236,12 @@ export async function DELETE(req: NextRequest) {
               q = q.eq('recorder_name', recorderId);
             }
             // Do NOT filter project_name = projectName since project_name in pam_detections stores the site_name
-            const { error } = await q;
-            if (error) console.error('Error deleting from pam_detections:', error);
-            results['pam_detections'] = !error;
+            const { error: pamErr } = await q;
+            if (pamErr) {
+              console.error('Error deleting from pam_detections:', pamErr);
+              throw new Error(`Failed to delete from pam_detections: ${pamErr.message}`);
+            }
+            results['pam_detections'] = true;
           } else if (t === 'detection_hourly_rollup') {
             if (matchedSiteNewId) {
               const { error } = await supabaseAdmin

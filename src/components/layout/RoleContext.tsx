@@ -147,19 +147,41 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function initSession() {
-      // Restore logged-in session from localStorage if present
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
-      const sessionEmail = stored ? JSON.parse(stored).email : null;
-      if (sessionEmail) {
-        const { data, error } = await supabase.from('users').select('*').ilike('email', sessionEmail).single();
-        if (data && !error) {
-          const mapped = mapDbUserToUser(data);
-          setCurrentUser(mapped);
-          setCurrentRoleState(mapped.role);
-          if (mapped.role === 'Admin') {
-            await refreshUsers();
+      // First load users list from database
+      try {
+        const { data, error } = await supabase.from('users').select('*').neq('email', 'system_settings@birdlab.in').order('created_at', { ascending: true });
+        if (!error && data && data.length > 0) {
+          const mappedUsers = data.map(mapDbUserToUser);
+          setUsersList(mappedUsers);
+
+          // Restore logged-in session from localStorage if present
+          const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
+          const sessionEmail = stored ? (() => { try { return JSON.parse(stored).email; } catch { return null; } })() : null;
+          if (sessionEmail) {
+            const foundUser = mappedUsers.find(u => u.email.toLowerCase() === sessionEmail.toLowerCase());
+            if (foundUser) {
+              setCurrentUser(foundUser);
+              setCurrentRoleState(foundUser.role);
+              return;
+            }
+          }
+
+          // If no stored session or invalid, default to the primary Admin account
+          const primaryAdmin = mappedUsers.find(u => u.role === 'Admin') || mappedUsers[0];
+          if (primaryAdmin) {
+            setCurrentUser(primaryAdmin);
+            setCurrentRoleState(primaryAdmin.role);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('birdlab-session', JSON.stringify({
+                email: primaryAdmin.email,
+                role: primaryAdmin.role,
+                name: primaryAdmin.name
+              }));
+            }
           }
         }
+      } catch (e) {
+        console.error('Failed to initialize session / load users:', e);
       }
     }
     initSession();
@@ -167,7 +189,19 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   const setCurrentRole = (role: UserRole) => {
     setCurrentRoleState(role);
-    setCurrentUser(prev => ({ ...prev, role }));
+    const matchingUser = usersList.find(u => u.role === role);
+    if (matchingUser) {
+      setCurrentUser(matchingUser);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('birdlab-session', JSON.stringify({
+          email: matchingUser.email,
+          role: matchingUser.role,
+          name: matchingUser.name
+        }));
+      }
+    } else {
+      setCurrentUser(prev => ({ ...prev, role }));
+    }
   };
 
   const loginUser = async (email: string, pass: string): Promise<{ success: boolean; message: string; user?: User }> => {
