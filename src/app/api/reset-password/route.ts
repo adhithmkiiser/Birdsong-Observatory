@@ -1,25 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
+// Rate limiter for OTP password resets (max 3 requests per 10 minutes per email/IP)
+const resetRateLimits = new Map<string, { count: number; resetAt: number }>();
+const MAX_RESETS = 3;
+const RESET_WINDOW_MS = 10 * 60 * 1000;
+
+function checkResetRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = resetRateLimits.get(key);
+  if (!entry || now > entry.resetAt) {
+    resetRateLimits.set(key, { count: 1, resetAt: now + RESET_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= MAX_RESETS) return false;
+  entry.count += 1;
+  return true;
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
     const { email, name } = await req.json();
 
-    if (!email) {
+    if (!email || typeof email !== 'string') {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
-    // Generate a 6-digit OTP
-    const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+    const cleanEmail = email.trim().toLowerCase();
+    if (!checkResetRateLimit(`${ip}:${cleanEmail}`)) {
+      return NextResponse.json(
+        { error: 'Too many password reset requests. Please wait 10 minutes before requesting another code.' },
+        { status: 429 }
+      );
+    }
 
-    // 1. Update the user in the database
+    // Generate a cryptographically secure 6-digit OTP
+    const generatedOTP = crypto.randomInt(100000, 1000000).toString();
+
+    // 1. Locate the user in the database
     const { data: users, error: findError } = await supabaseAdmin
       .from('users')
       .select('id, email, full_name')
-      .ilike('email', email.trim());
+      .ilike('email', cleanEmail);
 
     if (findError || !users || users.length === 0) {
-      // Even if user is not found, return success to prevent email enumeration
+      // Return generic success to prevent email enumeration
       return NextResponse.json({ success: true, dispatched: false });
     }
 
@@ -90,7 +117,7 @@ BirdSong Observatory System`;
 
   } catch (error: any) {
     console.error('Reset password error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to process password reset request' }, { status: 500 });
   }
 }
 
@@ -99,34 +126,38 @@ export async function PUT(req: NextRequest) {
   try {
     const { email, currentPassword, newPassword } = await req.json();
 
-    if (!email || !newPassword) {
-      return NextResponse.json({ error: 'Email and new permanent password are required.' }, { status: 400 });
+    if (!email || !currentPassword || !newPassword) {
+      return NextResponse.json(
+        { error: 'Email, current/temporary password, and new permanent password are all required.' },
+        { status: 400 }
+      );
     }
 
-    if (newPassword.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
+    if (String(newPassword).length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
     }
 
-    // 1. Locate user via supabaseAdmin (bypassing public RLS)
+    // 1. Locate user via supabaseAdmin
     const { data: users, error: findError } = await supabaseAdmin
       .from('users')
       .select('*')
-      .ilike('email', email.trim());
+      .ilike('email', String(email).trim());
 
     if (findError || !users || users.length === 0) {
-      return NextResponse.json({ error: 'User record not found in observatory registry.' }, { status: 404 });
+      return NextResponse.json({ error: 'Current credentials could not be verified.' }, { status: 401 });
     }
 
     const targetUser = users[0];
 
-    // If currentPassword is supplied, verify it matches
-    if (currentPassword && targetUser.password_hash) {
-      if (
-        targetUser.password_hash !== currentPassword &&
-        targetUser.password_hash.toLowerCase() !== currentPassword.toLowerCase()
-      ) {
-        return NextResponse.json({ error: 'Current credentials could not be verified.' }, { status: 401 });
-      }
+    // Strictly verify currentPassword / OTP matches in constant time
+    const expectedPass = String(targetUser.password_hash || '');
+    const suppliedPass = String(currentPassword);
+    const bufA = Buffer.from(suppliedPass);
+    const bufB = Buffer.from(expectedPass);
+    const isMatch = bufA.length > 0 && bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+
+    if (!isMatch) {
+      return NextResponse.json({ error: 'Current credentials could not be verified.' }, { status: 401 });
     }
 
     // 2. Update permanent password and clear temporary/OTP flags
@@ -150,7 +181,6 @@ export async function PUT(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('Set permanent password error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to update credentials' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update credentials' }, { status: 500 });
   }
 }
-

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  if (authError || !user) {
+    return NextResponse.json({ success: false, error: authError || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { action } = body;
@@ -205,10 +211,12 @@ export async function POST(req: NextRequest) {
       if (nodeId && nodeId !== 'All' && nodeId !== 'ALL_SITES') {
         const rawNode = String(nodeId).trim();
         const cleanNode = rawNode.includes('::') ? rawNode.split('::').pop()! : rawNode;
+        const safeRaw = escapePostgrestValue(rawNode);
+        const safeClean = escapePostgrestValue(cleanNode);
         if (rawNode !== cleanNode) {
-          q = q.or(`recorder_id.eq.${rawNode},station_id.eq.${rawNode},recorder_id.eq.${cleanNode},station_id.eq.${cleanNode}`);
+          q = q.or(`recorder_id.eq.${safeRaw},station_id.eq.${safeRaw},recorder_id.eq.${safeClean},station_id.eq.${safeClean}`);
         } else {
-          q = q.or(`recorder_id.eq.${rawNode},station_id.eq.${rawNode}`);
+          q = q.or(`recorder_id.eq.${safeRaw},station_id.eq.${safeRaw}`);
         }
       }
 
@@ -218,10 +226,11 @@ export async function POST(req: NextRequest) {
         let targetName = projectName;
         if (!targetName) {
           try {
+            const safeProjId = escapePostgrestValue(projectId);
             const { data: projRecord } = await supabaseAdmin
               .from('projects')
               .select('name')
-              .or(`id.eq.${projectId},name.eq.${projectId}`)
+              .or(`id.eq.${safeProjId},name.eq.${safeProjId}`)
               .maybeSingle();
             targetName = projRecord?.name || projectId;
           } catch {
@@ -255,7 +264,9 @@ export async function POST(req: NextRequest) {
         if (nodeId && nodeId !== 'All' && nodeId !== 'ALL_SITES') {
           const rawNode = String(nodeId).trim();
           const cleanNode = rawNode.includes('::') ? rawNode.split('::').pop()! : rawNode;
-          wq = wq.or(`node_id.eq.${rawNode},node_id.eq.${cleanNode}`);
+          const safeRaw = escapePostgrestValue(rawNode);
+          const safeClean = escapePostgrestValue(cleanNode);
+          wq = wq.or(`node_id.eq.${safeRaw},node_id.eq.${safeClean}`);
         } else {
           wq = wq.not('window_id', 'is', null);
         }

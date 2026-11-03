@@ -3,9 +3,24 @@ import { supabase } from '@/lib/supabase';
 import fs from 'fs/promises';
 import path from 'path';
 
+// 60-second in-memory cache for aggregated species to prevent DB query amplification
+let cachedAllSpecies: { timestamp: number; results: any[] } | null = null;
+const DETECTED_CACHE_TTL_MS = 60 * 1000;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const q = (searchParams.get('q') || '').toLowerCase().trim();
+  const q = (searchParams.get('q') || '').toLowerCase().trim().slice(0, 100);
+
+  if (cachedAllSpecies && Date.now() - cachedAllSpecies.timestamp < DETECTED_CACHE_TTL_MS) {
+    let filtered = cachedAllSpecies.results;
+    if (q) {
+      filtered = filtered.filter((r: any) =>
+        String(r.common_name).toLowerCase().includes(q) ||
+        String(r.scientific_name).toLowerCase().includes(q)
+      );
+    }
+    return NextResponse.json({ total_results: filtered.length, species: filtered });
+  }
 
   // Load local species master metadata
   const filePath = path.join(process.cwd(), 'public', 'species_data.json');
@@ -151,6 +166,9 @@ export async function GET(request: NextRequest) {
 
   // Sort by total detections descending
   results.sort((a, b) => b.total_detections - a.total_detections);
+
+  // Cache the full aggregated list for 60 seconds
+  cachedAllSpecies = { timestamp: Date.now(), results };
 
   if (q) {
     results = results.filter((r: any) =>

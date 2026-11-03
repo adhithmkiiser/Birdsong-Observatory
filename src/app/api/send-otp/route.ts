@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authGuard } from '@/lib/authGuard';
 
 export async function POST(request: NextRequest) {
+  // Only authenticated Admins can dispatch welcome/OTP emails through this endpoint
+  const { user, error: authError } = await authGuard(request, ['Admin']);
+  if (authError || !user) {
+    return NextResponse.json(
+      { success: false, dispatched: false, message: authError || 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
   try {
     const { email, name, otpCode, isNewUser = false } = await request.json();
 
@@ -25,7 +35,10 @@ export async function POST(request: NextRequest) {
       ? 'Welcome to BirdSong Observatory - Your One-Time Temporary Password'
       : 'BirdSong Observatory - Password Reset One-Time Code';
 
-    const textBody = `Dear ${name},
+    const safeName = String(name || 'User').replace(/[\r\n<>]/g, '');
+    const safeOtp = String(otpCode).replace(/[^a-zA-Z0-9_-]/g, '');
+
+    const textBody = `Dear ${safeName},
 
 ${isNewUser
         ? 'An account has been created for you on the IISER Tirupati BirdSong Observatory Platform.'
@@ -33,19 +46,19 @@ ${isNewUser
 }
 Website link: https://birdsong-observatory.onrender.com/
 
-Your Temporary One - Time Password(OTP) is: ${ otpCode }
+Your Temporary One-Time Password (OTP) is: ${safeOtp}
 
-Please log in using your email(${ email }) and this temporary password.Upon initial login, you will be required to set your new permanent password.
+Please log in using your email (${email}) and this temporary password. Upon initial login, you will be required to set your new permanent password.
 
 Best regards,
-    IISER Tirupati Bioacoustics Research Team
+IISER Tirupati Bioacoustics Research Team
 BirdSong Observatory System`.trim();
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${ apiKey } `
+        Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         from: fromEmail,

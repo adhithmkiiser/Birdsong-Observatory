@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEcologicalTraits } from '@/lib/birdEcologicalTraits';
 
-// In-memory cache to guarantee sub-10ms response times
+// In-memory cache to guarantee sub-10ms response times (bounded to prevent memory exhaustion)
 const memoryCache = new Map<string, any>();
 const CACHE_TTL = 3600 * 1000 * 12; // 12 hours TTL
+const MAX_CACHE_ENTRIES = 200;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const page = searchParams.get('page') || '1';
-  const query = (searchParams.get('q') || '').trim();
+  const query = (searchParams.get('q') || '').trim().slice(0, 100);
   const cacheKey = `species-${page}-${query.toLowerCase()}`;
 
   // Check instant in-memory cache
@@ -80,7 +81,11 @@ export async function GET(request: NextRequest) {
       species: results
     };
 
-    // Save to memory cache
+    // Save to bounded memory cache
+    if (memoryCache.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = memoryCache.keys().next().value;
+      if (oldestKey) memoryCache.delete(oldestKey);
+    }
     memoryCache.set(cacheKey, { timestamp: Date.now(), data: payload });
 
     return NextResponse.json(payload);

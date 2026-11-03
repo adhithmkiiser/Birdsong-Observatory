@@ -136,52 +136,37 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUsers = async () => {
     try {
-      const { data, error } = await supabase.from('users').select('*').neq('email', 'system_settings@birdlab.in').order('created_at', { ascending: true });
-      if (!error && data && data.length > 0) {
-        setUsersList(data.map(mapDbUserToUser));
+      const res = await apiFetch('/api/db/users', { method: 'GET' });
+      if (res?.users && Array.isArray(res.users)) {
+        setUsersList(res.users.map(mapDbUserToUser));
       }
     } catch (e) {
-      console.error('Failed to load users from database:', e);
+      console.error('Failed to load users from server:', e);
     }
   };
 
   useEffect(() => {
     async function initSession() {
-      // First load users list from database
       try {
-        const { data, error } = await supabase.from('users').select('*').neq('email', 'system_settings@birdlab.in').order('created_at', { ascending: true });
-        if (!error && data && data.length > 0) {
-          const mappedUsers = data.map(mapDbUserToUser);
-          setUsersList(mappedUsers);
-
-          // Restore logged-in session from localStorage if present
-          const stored = typeof window !== 'undefined' ? localStorage.getItem('birdlab-session') : null;
-          const sessionEmail = stored ? (() => { try { return JSON.parse(stored).email; } catch { return null; } })() : null;
-          if (sessionEmail) {
-            const foundUser = mappedUsers.find(u => u.email.toLowerCase() === sessionEmail.toLowerCase());
-            if (foundUser) {
-              setCurrentUser(foundUser);
-              setCurrentRoleState(foundUser.role);
-              return;
-            }
+        const res = await apiFetch('/api/auth/login', { method: 'GET' });
+        if (res?.authenticated && res?.user) {
+          const authUser = res.user;
+          setCurrentUser(authUser);
+          setCurrentRoleState(authUser.role);
+          if (typeof window !== 'undefined' && authUser.sessionToken) {
+            localStorage.setItem('birdlab-session', JSON.stringify({
+              email: authUser.email,
+              token: authUser.sessionToken,
+              role: authUser.role,
+              name: authUser.name
+            }));
           }
-
-          // If no stored session or invalid, default to the primary Admin account
-          const primaryAdmin = mappedUsers.find(u => u.role === 'Admin') || mappedUsers[0];
-          if (primaryAdmin) {
-            setCurrentUser(primaryAdmin);
-            setCurrentRoleState(primaryAdmin.role);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('birdlab-session', JSON.stringify({
-                email: primaryAdmin.email,
-                role: primaryAdmin.role,
-                name: primaryAdmin.name
-              }));
-            }
+          if (authUser.role === 'Admin') {
+            await refreshUsers();
           }
         }
-      } catch (e) {
-        console.error('Failed to initialize session / load users:', e);
+      } catch {
+        // No active authenticated session; remain Public guest
       }
     }
     initSession();
@@ -192,13 +177,6 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     const matchingUser = usersList.find(u => u.role === role);
     if (matchingUser) {
       setCurrentUser(matchingUser);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('birdlab-session', JSON.stringify({
-          email: matchingUser.email,
-          role: matchingUser.role,
-          name: matchingUser.name
-        }));
-      }
     } else {
       setCurrentUser(prev => ({ ...prev, role }));
     }
@@ -206,46 +184,37 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   const loginUser = async (email: string, pass: string): Promise<{ success: boolean; message: string; user?: User }> => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('email', email.trim())
-        .single();
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email: email.trim(), password: pass })
+      });
+      const data = await res.json();
 
-      if (error || !data) {
-        return { success: false, message: 'No account found with this email address.' };
+      if (!res.ok || !data.success || !data.user) {
+        return { success: false, message: data.message || 'Invalid email or password.' };
       }
 
-      if (data.password_hash && data.password_hash !== pass) {
-        return { success: false, message: 'Incorrect password. Please verify your credentials.' };
-      }
+      const authUser = data.user;
+      setCurrentUser(authUser);
+      setCurrentRoleState(authUser.role);
 
-      if (data.status && data.status !== 'active') {
-        return { success: false, message: 'This account is currently suspended or inactive.' };
-      }
-
-      const mapped = mapDbUserToUser(data);
-      const updated = { ...mapped, lastLogin: 'Just now' };
-      setCurrentUser(updated);
-      setCurrentRoleState(updated.role);
-
-      // Persist session
+      // Persist signed session token (never store raw password in localStorage)
       if (typeof window !== 'undefined') {
-        localStorage.setItem('birdlab-session', JSON.stringify({ email: updated.email }));
+        localStorage.setItem('birdlab-session', JSON.stringify({
+          email: authUser.email,
+          token: authUser.sessionToken,
+          role: authUser.role,
+          name: authUser.name
+        }));
       }
 
-      // If user is admin, also refresh full usersList
-      if (updated.role === 'Admin') {
+      if (authUser.role === 'Admin') {
         await refreshUsers();
       }
 
-      // Save last login time to DB asynchronously
-      apiFetch('/api/db/users', {
-        method: 'PUT',
-        body: JSON.stringify({ id: mapped.id, last_login: new Date().toISOString() })
-      }, updated).catch(e => console.error('Failed to update last login', e));
-
-      return { success: true, message: `Welcome back, ${mapped.name}!`, user: updated };
+      return { success: true, message: data.message || `Welcome back, ${authUser.name}!`, user: authUser };
     } catch (err: any) {
       return { success: false, message: err.message || 'Login failed.' };
     }
@@ -255,6 +224,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('birdlab-session');
     }
+    fetch('/api/auth/login', { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
     setCurrentUser(defaultPublicUser);
     setCurrentRoleState('Public');
     setUsersList([]);
@@ -273,7 +243,6 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       return u;
     }));
 
-    // Update in Supabase
     const dbUpdates: any = {};
     if (updates.name !== undefined) dbUpdates.full_name = updates.name;
     if (updates.email !== undefined) dbUpdates.email = updates.email;
@@ -296,30 +265,18 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ id: userId, ...dbUpdates })
       }, currentUser);
     } catch (e: any) {
-      console.warn('API error updating user, attempting direct DB update:', e);
-      try {
-        const { error: directErr } = await supabase.from('users').update(dbUpdates).eq('id', userId);
-        if (directErr) throw directErr;
-      } catch (err: any) {
-        console.error('Direct DB update failed:', err);
-        alert('Error updating user in database: ' + (e.message || err.message));
-      }
+      console.error('API error updating user:', e);
+      alert('Error updating user in database: ' + e.message);
     }
   };
 
   const deleteUser = async (userId: string) => {
     setUsersList(prev => prev.filter(u => u.id !== userId));
     try {
-      await apiFetch(`/api/db/users?id=${userId}`, { method: 'DELETE' }, currentUser);
+      await apiFetch(`/api/db/users?id=${encodeURIComponent(userId)}`, { method: 'DELETE' }, currentUser);
     } catch (e: any) {
-      console.warn('API error deleting user, attempting direct DB delete:', e);
-      try {
-        const { error: directErr } = await supabase.from('users').delete().eq('id', userId);
-        if (directErr) throw directErr;
-      } catch (err: any) {
-        console.error('Direct DB delete failed:', err);
-        alert('Error deleting user in database: ' + (e.message || err.message));
-      }
+      console.error('API error deleting user:', e);
+      alert('Error deleting user in database: ' + e.message);
     }
   };
 
@@ -332,18 +289,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       }, currentUser);
       setUsersList(prev => [...prev, newUser]);
     } catch (e: any) {
-      console.warn('API error adding user, attempting direct DB insert:', e);
-      try {
-        const { error: directErr } = await supabase.from('users').insert([dbUser]);
-        if (!directErr) {
-          setUsersList(prev => [...prev, newUser]);
-          return;
-        }
-        throw directErr;
-      } catch (err: any) {
-        console.error('Direct DB insert failed:', err);
-        alert('Error adding user to database: ' + (e.message || err.message));
-      }
+      console.error('API error adding user:', e);
+      alert('Error adding user to database: ' + e.message);
     }
   };
 

@@ -29,6 +29,7 @@ logger = logging.getLogger("LiveAudioStreamer")
 class StreamHandler(BaseHTTPRequestHandler):
     capture_worker = None
     active_listeners: int = 0
+    MAX_ACTIVE_LISTENERS: int = 5
     listener_lock = threading.Lock()
 
     def do_OPTIONS(self):
@@ -45,6 +46,12 @@ class StreamHandler(BaseHTTPRequestHandler):
             return
 
         with StreamHandler.listener_lock:
+            if StreamHandler.active_listeners >= StreamHandler.MAX_ACTIVE_LISTENERS:
+                logger.warning(f"Rejected stream connection: max listeners ({StreamHandler.MAX_ACTIVE_LISTENERS}) reached.")
+                self.send_response(503)
+                self.send_header("Retry-After", "15")
+                self.end_headers()
+                return
             StreamHandler.active_listeners += 1
             logger.info(f"🎧 New live audio listener connected! (Total active: {StreamHandler.active_listeners})")
 

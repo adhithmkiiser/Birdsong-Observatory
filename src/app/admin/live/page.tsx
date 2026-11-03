@@ -54,6 +54,7 @@ import {
 import { useRole } from '@/components/layout/RoleContext';
 import { User, UserRole } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 import { AdminNavTabs } from '@/components/admin/AdminNavTabs';
 
 // ==============================================================================
@@ -284,14 +285,13 @@ export default function LiveAdminPage() {
     });
 
     try {
-      const res = await fetch('/api/live/admin', {
+      const res = await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete_detection', id })
       });
       const data = await res.json();
       if (!data.success) {
-        await fetch(`/api/db/detections?table=live_detections&id=${id}`, { method: 'DELETE' });
+        await apiFetch(`/api/db/detections?table=live_detections&id=${id}`, { method: 'DELETE' });
       }
       showNotification('Detection permanently deleted from database.');
     } catch (e: any) {
@@ -316,16 +316,14 @@ export default function LiveAdminPage() {
     setSelectedDetIds(new Set());
 
     try {
-      const res = await fetch('/api/live/admin', {
+      const res = await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete_detections_bulk', ids: idsToDelete })
       });
       const data = await res.json();
       if (!data.success) {
-        await fetch('/api/db/detections?table=live_detections', {
+        await apiFetch('/api/db/detections?table=live_detections', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: idsToDelete })
         });
       }
@@ -344,9 +342,8 @@ export default function LiveAdminPage() {
     setIsPurging(true);
 
     try {
-      const res = await fetch('/api/live/admin', {
+      const res = await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'purge_detections',
           nodeId: purgeNodeScope,
@@ -397,9 +394,8 @@ export default function LiveAdminPage() {
     }));
 
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'verify_detection', id, status })
       });
       showNotification(status === 'YES' ? 'Detection Approved' : 'Detection Rejected');
@@ -605,9 +601,8 @@ export default function LiveAdminPage() {
 
   const handleUpdateNodeGps = async (nodeId: string, lat: number, long: number) => {
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update_gps', nodeId, lat, long })
       });
 
@@ -633,9 +628,8 @@ export default function LiveAdminPage() {
   const handleToggleNodeModel = async (nodeId: string, modelId: string, currentEnabled: boolean) => {
     const updated = !currentEnabled;
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'toggle_node_model', nodeId, modelId, enabled: updated })
       });
     } catch (e) {
@@ -665,9 +659,8 @@ export default function LiveAdminPage() {
   const handleThresholdChange = async (nodeId: string, modelId: string, newThreshold: number) => {
     setNodeModelAssignments(prev => prev.map(n => (n.node_id === nodeId && n.model_id === modelId) ? { ...n, threshold: newThreshold } : n));
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'toggle_node_model', nodeId, modelId, enabled: true, threshold: newThreshold })
       });
     } catch (e) {
@@ -697,9 +690,8 @@ export default function LiveAdminPage() {
     };
 
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create_model', modelData: newModel })
       });
     } catch (err) {
@@ -717,9 +709,8 @@ export default function LiveAdminPage() {
     setRecorders(prev => prev.map(n => n.recorder_id === nodeId ? { ...n, status: 'syncing', last_ping: new Date().toISOString() } : n));
     showNotification(`📡 Realtime heartbeat signal sent to ${nodeId}`);
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'sync_now', nodeId })
       });
     } catch (e) {}
@@ -735,9 +726,8 @@ export default function LiveAdminPage() {
     }
     if (!confirm(`Delete recorder "${node.id}" from ${node.projectName}? This will remove its registry entry.`)) return;
     try {
-      await fetch('/api/live/admin', {
+      await apiFetch('/api/live/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete_node', nodeId: node.id })
       });
       setRecorders(prev => prev.filter(r => r.recorder_id !== node.id));

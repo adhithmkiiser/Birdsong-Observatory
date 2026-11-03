@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const ALLOWED_TABLES = ['pam_detections', 'lantana_detections', 'live_detections', 'recorders_registry', 'detections', 'detection_hourly_rollup'];
@@ -134,10 +134,11 @@ export async function DELETE(req: NextRequest) {
               if (resolvedProjectId === 'nilgiri' || siteNames.length > 0 || targetTable === 'pam_detections') {
                 if (siteNames.length > 0) {
                   for (const sName of siteNames) {
+                    const safeSName = escapePostgrestValue(sName);
                     const { error } = await supabaseAdmin
                       .from('pam_detections')
                       .delete()
-                      .or(`site_name.eq."${sName}",project_name.eq."${sName}"`);
+                      .or(`site_name.eq."${safeSName}",project_name.eq."${safeSName}"`);
                     if (error) console.error(`Error deleting site "${sName}" from pam_detections:`, error);
                   }
                 } else {
@@ -207,13 +208,18 @@ export async function DELETE(req: NextRequest) {
       }
 
       // ── Specific Site / Recorder Deletion ──────────────────────────────────
+      const safeSiteName = siteName ? escapePostgrestValue(siteName) : '';
+      const safeSiteId = siteId ? escapePostgrestValue(siteId) : '';
+      const safeResolvedSiteName = resolvedSiteName ? escapePostgrestValue(resolvedSiteName) : '';
+      const safeRecorderId = recorderId ? escapePostgrestValue(recorderId) : '';
+
       // Look up site_id in sites_new for rollups and detections table
       let matchedSiteNewId: number | null = null;
       try {
         const { data: stNew } = await supabaseAdmin
           .from('sites_new')
           .select('id, name')
-          .or(`name.eq."${resolvedSiteName}",name.ilike."${resolvedSiteName}"`)
+          .or(`name.eq."${safeResolvedSiteName}",name.ilike."${safeResolvedSiteName}"`)
           .limit(1);
         if (stNew && stNew.length > 0) {
           matchedSiteNewId = stNew[0].id;
@@ -227,9 +233,9 @@ export async function DELETE(req: NextRequest) {
           if (t === 'pam_detections') {
             let q = supabaseAdmin.from('pam_detections').delete();
             if (siteName && siteId && siteName !== siteId) {
-              q = q.or(`site_name.eq."${siteName}",site_name.eq."${siteId}",project_name.eq."${siteName}",project_name.eq."${siteId}"`);
+              q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",project_name.eq."${safeSiteName}",project_name.eq."${safeSiteId}"`);
             } else {
-              q = q.or(`site_name.eq."${resolvedSiteName}",project_name.eq."${resolvedSiteName}"`);
+              q = q.or(`site_name.eq."${safeResolvedSiteName}",project_name.eq."${safeResolvedSiteName}"`);
             }
 
             if (recorderId && recorderId !== 'All') {
@@ -267,13 +273,13 @@ export async function DELETE(req: NextRequest) {
           } else if (t === 'lantana_detections') {
             let q = supabaseAdmin.from('lantana_detections').delete();
             if (siteName && siteId && siteName !== siteId) {
-              q = q.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+              q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
             } else {
               q = q.eq('site_name', resolvedSiteName);
             }
 
             if (recorderId && recorderId !== 'All') {
-              q = q.or(`recorder_id.eq."${recorderId}",recorder_name.eq."${recorderId}"`);
+              q = q.or(`recorder_id.eq."${safeRecorderId}",recorder_name.eq."${safeRecorderId}"`);
             }
             if (projectId) {
               q = q.eq('project_id', projectId);
@@ -285,9 +291,9 @@ export async function DELETE(req: NextRequest) {
             // Collect audio URLs if any to clean storage
             let selQ = supabaseAdmin.from('live_detections').select('audio_url');
             if (siteName && siteId && siteName !== siteId) {
-              selQ = selQ.or(`site_name.eq."${siteName}",site_name.eq."${siteId}",station_name.eq."${siteName}"`);
+              selQ = selQ.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
             } else {
-              selQ = selQ.or(`site_name.eq."${resolvedSiteName}",station_name.eq."${resolvedSiteName}"`);
+              selQ = selQ.or(`site_name.eq."${safeResolvedSiteName}",station_name.eq."${safeResolvedSiteName}"`);
             }
             if (recorderId && recorderId !== 'All') {
               selQ = selQ.eq('recorder_id', recorderId);
@@ -315,9 +321,9 @@ export async function DELETE(req: NextRequest) {
 
             let q = supabaseAdmin.from('live_detections').delete();
             if (siteName && siteId && siteName !== siteId) {
-              q = q.or(`site_name.eq."${siteName}",site_name.eq."${siteId}",station_name.eq."${siteName}"`);
+              q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
             } else {
-              q = q.or(`site_name.eq."${resolvedSiteName}",station_name.eq."${resolvedSiteName}"`);
+              q = q.or(`site_name.eq."${safeResolvedSiteName}",station_name.eq."${safeResolvedSiteName}"`);
             }
             if (recorderId && recorderId !== 'All') {
               q = q.eq('recorder_id', recorderId);

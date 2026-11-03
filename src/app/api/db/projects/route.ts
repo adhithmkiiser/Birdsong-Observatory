@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 // POST: Create a new project
@@ -59,11 +59,13 @@ export async function DELETE(req: NextRequest) {
 
     const isLantana = project.project_type === 'Lantana';
     const projName = project.name;
+    const safeId = escapePostgrestValue(id);
+    const safeProjName = escapePostgrestValue(projName || id);
 
     // 1. Delete associated sites
     const sitesTable = isLantana ? 'lantana_sites' : 'sites';
     if (isLantana) {
-      await supabaseAdmin.from(sitesTable).delete().or(`project_id.eq.${id},id.like.${id}_%`);
+      await supabaseAdmin.from(sitesTable).delete().or(`project_id.eq."${safeId}",id.like."${safeId}_%"`);
     } else {
       await supabaseAdmin.from(sitesTable).delete().eq('project_id', id);
     }
@@ -71,9 +73,9 @@ export async function DELETE(req: NextRequest) {
     // 2. Delete associated detections
     const detectionsTable = isLantana ? 'lantana_detections' : 'pam_detections';
     if (isLantana) {
-      await supabaseAdmin.from(detectionsTable).delete().or(`project_id.eq.${id},project_name.eq.${projName || id}`);
+      await supabaseAdmin.from(detectionsTable).delete().or(`project_id.eq."${safeId}",project_name.eq."${safeProjName}"`);
     } else {
-      await supabaseAdmin.from(detectionsTable).delete().or(`project_name.eq.${id},project_name.eq.${projName || id}`);
+      await supabaseAdmin.from(detectionsTable).delete().or(`project_name.eq."${safeId}",project_name.eq."${safeProjName}"`);
     }
 
     // 3. Delete the project itself

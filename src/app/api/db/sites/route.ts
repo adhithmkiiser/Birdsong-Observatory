@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 // Allowed tables to prevent SQL injection or targeting wrong tables
@@ -119,10 +119,13 @@ export async function DELETE(req: NextRequest) {
       }
 
       // 2. Cascade delete all associated detections from ALL related databases
+      const safeSiteName = siteName ? escapePostgrestValue(siteName) : '';
+      const safeSiteId = siteId ? escapePostgrestValue(siteId) : '';
+
       // A. Lantana detections
       let lq = supabaseAdmin.from('lantana_detections').delete();
       if (siteName && siteId && siteName !== siteId) {
-        lq = lq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+        lq = lq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         lq = lq.eq('site_name', siteName);
       }
@@ -132,7 +135,7 @@ export async function DELETE(req: NextRequest) {
       // B. PAM detections
       let pq = supabaseAdmin.from('pam_detections').delete();
       if (siteName && siteId && siteName !== siteId) {
-        pq = pq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+        pq = pq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         pq = pq.eq('site_name', siteName);
       }
@@ -142,9 +145,9 @@ export async function DELETE(req: NextRequest) {
       // C. Live detections
       let livq = supabaseAdmin.from('live_detections').delete();
       if (siteName && siteId && siteName !== siteId) {
-        livq = livq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}",station_name.eq."${siteName}"`);
+        livq = livq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
       } else if (siteName) {
-        livq = livq.or(`site_name.eq."${siteName}",station_name.eq."${siteName}"`);
+        livq = livq.or(`site_name.eq."${safeSiteName}",station_name.eq."${safeSiteName}"`);
       }
       if (recorderId) livq = livq.eq('recorder_id', recorderId);
       await livq;
@@ -152,7 +155,7 @@ export async function DELETE(req: NextRequest) {
       // D. Recorders registry
       let rq = supabaseAdmin.from('recorders_registry').delete();
       if (siteName && siteId && siteName !== siteId) {
-        rq = rq.or(`site_name.eq."${siteName}",site_name.eq."${siteId}"`);
+        rq = rq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         rq = rq.eq('site_name', siteName);
       }

@@ -10,6 +10,7 @@ Handles remote model management and live commands from the web dashboard:
 """
 
 import os
+import re
 import time
 import json
 import hashlib
@@ -84,7 +85,7 @@ class ControlManager:
             current_assigned_ids = set()
 
             for item in assignments:
-                model_id = str(item.get("model_id"))
+                model_id = str(item.get("model_id") or "")
                 enabled = item.get("enabled", True)
                 threshold = float(item.get("threshold", 0.10))
                 model_meta = item.get("models")
@@ -92,17 +93,26 @@ class ControlManager:
                 if not model_meta or not enabled:
                     continue
 
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", model_id):
+                    logger.error(f"Rejected unsafe model_id: {model_id}")
+                    continue
+
                 current_assigned_ids.add(model_id)
                 runtime = model_meta.get("runtime", "onnx")
                 name = model_meta.get("name", "Custom Model")
-                storage_path = model_meta.get("storage_path")  # e.g. "models/<id>/model.onnx"
-                labels_path = model_meta.get("labels_path")    # e.g. "models/<id>/labels.txt"
+                storage_path = model_meta.get("storage_path") or ""  # e.g. "models/<id>/model.onnx"
+                labels_path = model_meta.get("labels_path") or ""    # e.g. "models/<id>/labels.txt"
                 manifest = model_meta.get("manifest") or {}
                 expected_sha256 = model_meta.get("sha256")
 
-                # Local destination paths
-                model_dir = MODELS_DIR / model_id
-                local_weights = str(model_dir / os.path.basename(storage_path))
+                # Local destination paths (resolved and verified against path traversal)
+                model_dir = (MODELS_DIR / model_id).resolve()
+                if not str(model_dir).startswith(str(MODELS_DIR.resolve())):
+                    logger.error(f"Path traversal blocked for model_id: {model_id}")
+                    continue
+
+                safe_weights_filename = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(storage_path) or "model.bin")
+                local_weights = str(model_dir / safe_weights_filename)
                 local_labels = str(model_dir / "labels.txt")
                 local_manifest = str(model_dir / "manifest.json")
 
@@ -184,11 +194,15 @@ class ControlManager:
                     )
                     continue
 
-                # Verify SHA256 if specified
-                if expected_sha256 and os.path.exists(local_weights):
+                # Verify SHA256 checksum (mandatory for custom non-builtin models when sha256 is provided, or warn if missing on builtin)
+                if os.path.exists(local_weights):
                     actual_sha256 = self.calculate_sha256(local_weights)
-                    if actual_sha256.lower() != expected_sha256.lower():
-                        logger.error(f"SHA256 checksum mismatch for {name}! Expected {expected_sha256}, got {actual_sha256}")
+                    if expected_sha256:
+                        if actual_sha256.lower() != expected_sha256.lower():
+                            logger.error(f"SHA256 checksum mismatch for {name}! Expected {expected_sha256}, got {actual_sha256}")
+                            continue
+                    elif runtime != "birdnet_tflite":
+                        logger.error(f"Refusing to load custom model '{name}' ({model_id}) without a verified SHA256 checksum.")
                         continue
 
                 # Instantiate adapter if not already loaded or threshold changed

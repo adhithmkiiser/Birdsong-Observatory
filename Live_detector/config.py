@@ -47,9 +47,9 @@ NODE_LATITUDE = float(os.getenv("NODE_LATITUDE", os.getenv("LATITUDE", "13.6288"
 NODE_LONGITUDE = float(os.getenv("NODE_LONGITUDE", os.getenv("LONGITUDE", "79.4192")))
 BIRDNET_USE_LAT_LON_FILTER = os.getenv("BIRDNET_USE_LAT_LON_FILTER", "true").lower() in ("true", "1", "yes")
 
-# Supabase Credentials
+# Supabase Credentials (loaded from Live_detector/.env or environment)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ktihcjfxxxazohimtiav.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTI2MDU4NiwiZXhwIjoyMTAwODM2NTg2fQ.idvkAZGKVtilS0NJ4PD9Lw9T__xz_10oAHLnoyIdZnA")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 # Audio Capture Settings
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "48000"))  # 48 kHz standard

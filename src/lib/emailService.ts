@@ -3,6 +3,8 @@
  * Sends OTP / welcome emails through the secure /api/send-otp server route.
  */
 
+import { apiFetch } from '@/lib/apiClient';
+
 interface SendOTPEmailParams {
   email: string;
   name: string;
@@ -17,9 +19,8 @@ export async function sendOneTimePasswordEmail({
   isNewUser = false
 }: SendOTPEmailParams) {
   try {
-    const res = await fetch('/api/send-otp', {
+    const res = await apiFetch('/api/send-otp', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, name, otpCode, isNewUser })
     });
 
