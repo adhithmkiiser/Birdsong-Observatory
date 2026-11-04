@@ -16,4 +16,4 @@ psutil>=5.9.0
 
 # Inference Engines (Install appropriate wheel for Raspberry Pi OS)
 onnxruntime>=1.15.0
-tflite-runtime>=2.14.0; sys_platform != "win32"
+tflite-runtime>=2.14.0; sys_platform != "win32" and python_version < "3.12"
