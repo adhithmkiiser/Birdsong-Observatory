@@ -53,6 +53,16 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 import DashboardLoader from '@/components/ui/DashboardLoader';
+import { SPECIES_MASTER_LIST } from '@/lib/speciesMasterData';
+
+function normalizeSpeciesImageUrl(url?: string | null): string {
+  if (!url) return '';
+  let clean = url.trim();
+  if (clean.includes('upload.wikimedia.org/wikipedia/commons/thumb/')) {
+    clean = clean.replace(/\/(\d{4,})px-/, '/800px-');
+  }
+  return clean;
+}
 
 export interface WindowSummaryItem {
   id: string;
@@ -398,10 +408,34 @@ export default function LiveDashboardPage() {
         scopedRecorders = Array.from(uniqueRecordersMap.values());
 
         const ecoMap: Record<string, any> = {};
+        // 1. Seed with all 129 curated species from SPECIES_MASTER_LIST (with Wikimedia photos & scientific names)
+        SPECIES_MASTER_LIST.forEach((m: any) => {
+          if (m.common_name) {
+            const normImg = normalizeSpeciesImageUrl(m.image_url);
+            const entry = {
+              ...m,
+              image_url: normImg,
+              image_link: normImg,
+            };
+            ecoMap[m.common_name.toLowerCase().trim()] = entry;
+            ecoMap[m.common_name.trim()] = entry;
+          }
+        });
+        // 2. Overlay Supabase lantana_species_ecology rows while preserving master image_url if DB row lacks one
         (ecologyData || []).forEach((e: any) => {
           if (e.common_name) {
-            ecoMap[e.common_name.toLowerCase().trim()] = e;
-            ecoMap[e.common_name.trim()] = e;
+            const keyLower = e.common_name.toLowerCase().trim();
+            const existing = ecoMap[keyLower] || {};
+            const dbImg = normalizeSpeciesImageUrl(e.image_link || e.image_url || e.square_url);
+            const merged = {
+              ...existing,
+              ...e,
+              scientific_name: e.scientific_name || existing.scientific_name,
+              image_link: dbImg || existing.image_link || existing.image_url,
+              image_url: dbImg || existing.image_url || existing.image_link,
+            };
+            ecoMap[keyLower] = merged;
+            ecoMap[e.common_name.trim()] = merged;
           }
         });
         setSpeciesEcologyMap(ecoMap);
@@ -573,6 +607,80 @@ export default function LiveDashboardPage() {
       return matchesSearch && matchesStation && matchesConf;
     });
   }, [detections, searchQuery, selectedStationId, minConfidence]);
+
+  // Track which species have already been requested from /api/species/info so we don't re-fetch
+  const fetchedSpeciesInfoRef = useRef<Set<string>>(new Set());
+
+  // Automatically resolve real photos & scientific names from iNaturalist / Wikipedia for any detected species missing an image
+  useEffect(() => {
+    const NON_AVIAN_SET = new Set([
+      'engine', 'human vocal', 'human non-vocal', 'human voice', 'human', 'homo sapiens',
+      'noise', 'environmental noise', 'silence', 'siren', 'static', 'background',
+      'dog', 'canis lupus familiaris', 'domestic dog', 'cat', 'felis catus', 'domestic cat',
+      'cattle', 'bos taurus', 'sheep', 'goat', 'horse', 'pig'
+    ]);
+
+    const uniqueSpecies = Array.from(new Set(detections.map(d => d.common_name).filter(Boolean)))
+      .filter(name => !NON_AVIAN_SET.has(name.toLowerCase().trim()));
+
+    const missingSpecies = uniqueSpecies.filter(spName => {
+      const key = spName.toLowerCase().trim();
+      if (fetchedSpeciesInfoRef.current.has(key)) return false;
+      const eco = speciesEcologyMap[key] || speciesEcologyMap[spName.trim()];
+      const hasImage = Boolean(eco?.image_link || eco?.image_url || eco?.square_url);
+      const hasRealScientific = Boolean(
+        eco?.scientific_name &&
+        eco.scientific_name.toLowerCase().trim() !== key &&
+        eco.scientific_name.toLowerCase().trim() !== 'aves'
+      );
+      return !hasImage || !hasRealScientific;
+    });
+
+    if (missingSpecies.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const spName of missingSpecies) {
+        if (cancelled) break;
+        const key = spName.toLowerCase().trim();
+        fetchedSpeciesInfoRef.current.add(key);
+        try {
+          const res = await fetch(`/api/species/info?name=${encodeURIComponent(spName)}`);
+          if (!res.ok) continue;
+          const info = await res.json();
+          if (info && info.found && !cancelled) {
+            const photoUrl = info.photo?.large || info.photo?.medium || info.photo?.square || '';
+            setSpeciesEcologyMap(prev => {
+              const existing = prev[key] || prev[spName.trim()] || {};
+              const updated = {
+                ...existing,
+                common_name: existing.common_name || spName,
+                scientific_name:
+                  (existing.scientific_name && existing.scientific_name.toLowerCase().trim() !== key)
+                    ? existing.scientific_name
+                    : (info.scientific_name || existing.scientific_name || spName),
+                image_link: existing.image_link || photoUrl,
+                image_url: existing.image_url || photoUrl,
+                square_url: existing.square_url || info.photo?.square || photoUrl,
+                iucn_status: existing.iucn_status || info.conservation_status || 'Least Concern',
+              };
+              return {
+                ...prev,
+                [key]: updated,
+                [spName.trim()]: updated,
+              };
+            });
+          }
+        } catch {
+          // ignore network errors
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detections, speciesEcologyMap]);
 
   // Count of detections specifically in this live stream session
   const sessionDetectionsCount = useMemo(() => {
@@ -2547,8 +2655,12 @@ export default function LiveDashboardPage() {
                 }
 
                 return list.map(({ spName, count, sample, eco, avgConf }) => {
-                  const imageUrl = eco.image_link || eco.image_url || eco.square_url || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
-                  const scientific = eco.scientific_name || sample?.scientific_name || 'Aves';
+                  const rawImg = eco.image_link || eco.image_url || eco.square_url || '';
+                  const imageUrl = normalizeSpeciesImageUrl(rawImg) || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                  const sampleSci = sample?.scientific_name && sample.scientific_name.toLowerCase().trim() !== spName.toLowerCase().trim()
+                    ? sample.scientific_name
+                    : '';
+                  const scientific = eco.scientific_name || sampleSci || 'Aves';
                   const iucn = eco.iucn_status || 'Least Concern';
                   const isEndemic = eco.endemic_status && String(eco.endemic_status).trim().toLowerCase() === 'yes';
                   const habitat = eco.habitat || eco.preferred_habitat || 'Wet Evergreen & Forest Canopy';
@@ -2573,6 +2685,7 @@ export default function LiveDashboardPage() {
                           <img
                             src={imageUrl}
                             alt=""
+                            referrerPolicy="no-referrer"
                             className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110"
                           />
 
@@ -2580,9 +2693,35 @@ export default function LiveDashboardPage() {
                           <img
                             src={imageUrl}
                             alt={spName}
+                            referrerPolicy="no-referrer"
                             className="relative w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300 ease-out z-10"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                            onError={async (e) => {
+                              const imgEl = e.currentTarget;
+                              if (imgEl.dataset.fallbackAttempted === 'true') {
+                                imgEl.src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                                return;
+                              }
+                              imgEl.dataset.fallbackAttempted = 'true';
+                              try {
+                                const res = await fetch(`/api/species/info?name=${encodeURIComponent(spName)}`);
+                                if (res.ok) {
+                                  const info = await res.json();
+                                  const fallbackPhoto = info?.photo?.large || info?.photo?.medium || info?.photo?.square;
+                                  if (fallbackPhoto) {
+                                    imgEl.src = fallbackPhoto;
+                                    const key = spName.toLowerCase().trim();
+                                    setSpeciesEcologyMap(prev => ({
+                                      ...prev,
+                                      [key]: { ...(prev[key] || {}), image_link: fallbackPhoto, image_url: fallbackPhoto, scientific_name: prev[key]?.scientific_name || info.scientific_name },
+                                      [spName.trim()]: { ...(prev[spName.trim()] || {}), image_link: fallbackPhoto, image_url: fallbackPhoto, scientific_name: prev[spName.trim()]?.scientific_name || info.scientific_name }
+                                    }));
+                                    return;
+                                  }
+                                }
+                              } catch {
+                                // fall through
+                              }
+                              imgEl.src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
                             }}
                           />
                           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-20 pointer-events-none" />

@@ -98,7 +98,12 @@ class BirdNetTFLiteAdapter(ModelAdapter):
                         if name and not name.startswith("#"):
                             self.allowed_species.add(name.lower())
                             if "_" in name:
-                                for part in name.split("_"):
+                                parts = name.split("_")
+                                sci = parts[0].strip()
+                                com = parts[-1].strip()
+                                if com and sci:
+                                    self.scientific_map[com.lower()] = sci
+                                for part in parts:
                                     self.allowed_species.add(part.strip().lower())
                 logger.info(f"🌿 BirdNET GPS species filter loaded {len(self.allowed_species)} allowed taxa for ({self.lat:.4f}, {self.lon:.4f}) from {found_path}")
             except Exception as e:

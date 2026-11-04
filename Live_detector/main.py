@@ -188,6 +188,8 @@ class LiveDetectorAgent:
                 now_epoch = time.time()
 
                 for model_id, preds in model_predictions.items():
+                    runtime = runtimes_map.get(model_id)
+                    sci_map = getattr(runtime, "scientific_map", {}) if runtime else {}
                     for common_name, conf in preds:
                         sp_key = f"{model_id}:{common_name.lower().strip()}"
                         last_t = self.last_detection_times.get(sp_key, 0.0)
@@ -196,10 +198,11 @@ class LiveDetectorAgent:
 
                         self.last_detection_times[sp_key] = now_epoch
                         all_species_names.append(common_name)
+                        resolved_sci = sci_map.get(common_name.lower().strip(), common_name)
                         detections_to_enqueue.append({
                             "model_id": model_id,
                             "common_name": common_name,
-                            "scientific_name": common_name, # Can resolve via taxonomy map
+                            "scientific_name": resolved_sci,
                             "confidence": conf
                         })
                         logger.info(f"🎵 [{model_id}] {common_name} ({conf * 100:.1f}%) | Flags: {flags}")

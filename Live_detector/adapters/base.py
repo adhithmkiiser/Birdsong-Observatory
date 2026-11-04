@@ -16,6 +16,7 @@ class ModelAdapter(ABC):
         self.model_id = model_id
         self.threshold = threshold
         self.labels: List[str] = []
+        self.scientific_map: Dict[str, str] = {}
         self.manifest: Dict[str, Any] = {}
         self.target_sample_rate: int = 48000
         self.input_type: str = "raw_waveform"  # or "mel_spectrogram"
@@ -94,11 +95,17 @@ class ModelAdapter(ABC):
         return log_mel.astype(np.float32)
 
     def parse_labels(self, labels_path: str) -> List[str]:
-        """Parses label text file line by line."""
+        """Parses label text file line by line and populates scientific_map."""
         labels = []
         with open(labels_path, "r", encoding="utf-8") as f:
             for line in f:
                 l = line.strip()
                 if l:
                     labels.append(l)
+                    if "_" in l:
+                        parts = l.split("_")
+                        sci = parts[0].strip()
+                        com = parts[-1].strip()
+                        if com and sci:
+                            self.scientific_map[com.lower()] = sci
         return labels
