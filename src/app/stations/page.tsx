@@ -53,7 +53,7 @@ export default function StationsPage() {
         latitude: r.lat ? r.lat.toFixed(4) : '13.6288',
         longitude: r.long ? r.long.toFixed(4) : '79.4192',
         firmware_version: r.firmware_version || 'v2.4 (Live)',
-        birdnet_version: 'BirdNET-Pi',
+        birdnet_version: 'BirdNET v2.4',
         state: r.site_name,
         country: r.project_name
       };
@@ -68,7 +68,7 @@ export default function StationsPage() {
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <Cpu className="w-5 h-5 text-emerald-400" /> Field Recorder Telemetry & Node Management
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Monitor deployed BirdNET-Pi hardware nodes, battery levels, disk space, and firmware health.</p>
+          <p className="text-xs text-slate-400 mt-1">Monitor deployed BirdNET hardware nodes, battery levels, disk space, and firmware health.</p>
         </div>
       </div>
 
@@ -81,8 +81,8 @@ export default function StationsPage() {
         ) : stations.length === 0 ? (
           <div className="col-span-3 py-16 flex flex-col items-center gap-3 text-slate-500">
             <Cpu className="w-10 h-10 text-slate-700" />
-            <div className="font-black text-sm text-slate-300">No Stations Deployed Yet</div>
-            <p className="text-xs text-slate-500 max-w-sm text-center">Deploy a BirdNET-Pi field node and register it via the Admin console to see telemetry here.</p>
+            <div className="font-black text-slate-300 text-sm">No Stations Deployed Yet</div>
+            <p className="text-xs text-slate-500 max-w-sm text-center">Deploy a BirdNET field node and register it via the Admin console to see telemetry here.</p>
           </div>
         ) : stations.map((station) => (
           <div key={station.id} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-4 relative overflow-hidden">

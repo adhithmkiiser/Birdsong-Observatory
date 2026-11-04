@@ -1487,7 +1487,7 @@ function ReportsContent() {
                   <strong>Streaming Flow:</strong> Edge USB microphone continuous 48 kHz buffer &rarr; 3-second sliding window &rarr; BirdNET TFLite ONNX inference engine &rarr; Confidence filtering &rarr; Telemetry + call packet payload dispatch &rarr; Supabase <code>live_detections</code> table &rarr; Live dashboard waterfall view.
                 </p>
                 <div className="flex items-center gap-4 text-xs font-mono pt-1">
-                  <span>Model: <strong>BirdNET-Pi v2.4</strong></span>
+                  <span>Model: <strong>BirdNET v2.4 and a custom trained model</strong></span>
                   <span>•</span>
                   <span>Inference Latency: <strong>320 ms / 3-sec window</strong></span>
                   <span>•</span>

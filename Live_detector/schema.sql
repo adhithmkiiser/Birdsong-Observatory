@@ -136,7 +136,7 @@ create policy "Allow public read on window_summaries" on public.window_summaries
 insert into public.models (id, name, version, description, runtime, storage_path, labels_path, manifest, is_active)
 values (
   'ece0a4c8-5c85-475d-8001-79248995663b',
-  'BirdNET-Pi v2.4 (Official)',
+  'BirdNET v2.4 (Official)',
   'v2.4',
   'Default Cornell BirdNET acoustic classifier with geographic species filtering for Tirupati',
   'birdnet_tflite',

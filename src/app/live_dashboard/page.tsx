@@ -1517,8 +1517,8 @@ export default function LiveDashboardPage() {
               <div className="p-4 sm:p-5 bg-white rounded-2xl border border-[#dde1dc] shadow-xs flex items-center justify-between">
                 <div>
                   <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-[#5a635d]">Classifier Model</span>
-                  <div className="text-2xl sm:text-3xl font-bold font-serif text-[#1a1f1c] mt-1">BirdNET-Pi</div>
-                  <p className="text-[11px] text-[#5a635d] font-medium mt-0.5">v2.4 CNN Model</p>
+                  <div className="text-xl sm:text-2xl font-bold font-serif text-[#1a1f1c] mt-1">BirdNET v2.4</div>
+                  <p className="text-[11px] text-[#5a635d] font-medium mt-0.5">and a custom trained model</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-[#f0f7f3] border border-[#dde1dc] text-[#1f4d3a] flex items-center justify-center">
                   <ShieldCheck className="w-5 h-5" />

@@ -1382,7 +1382,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now live-detector`;
                   </span>
                   <div>
                     <h3 className="font-serif font-bold text-sm text-white flex items-center gap-2">
-                      Cornell BirdNET-Pi v2.4 (Official Edge Engine)
+                      Cornell BirdNET v2.4 (Official Edge Engine)
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60 uppercase">
                         Built-in Edge TFLite
                       </span>

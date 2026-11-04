@@ -41,7 +41,7 @@ const METHOD_STAGES: MethodStage[] = [
     id: 'stage-2',
     number: '02',
     title: 'Data Collection',
-    subtitle: 'Autonomous PAM & BirdNET-Pi live nodes',
+    subtitle: 'Autonomous PAM & BirdNET v2.4 live nodes',
     summary: 'Field teams deploy autonomous PAM recorders or live detectors.',
     details: [
       'Deployment of autonomous passive acoustic monitoring (PAM) units and solar IoT nodes.',
