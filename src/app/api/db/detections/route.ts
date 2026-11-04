@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue, canUserManageProject, canUserManageSite } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const ALLOWED_TABLES = ['pam_detections', 'lantana_detections', 'live_detections', 'recorders_registry', 'detections', 'detection_hourly_rollup'];
@@ -7,7 +7,7 @@ const ALLOWED_TABLES = ['pam_detections', 'lantana_detections', 'live_detections
 // POST: Insert array of detections
 export async function POST(req: NextRequest) {
   const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
-  if (authError) return NextResponse.json({ error: authError }, { status: 401 });
+  if (authError || !user) return NextResponse.json({ error: authError || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await req.json();
@@ -17,8 +17,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid table specified' }, { status: 400 });
     }
 
-    if (!Array.isArray(records)) {
-      return NextResponse.json({ error: 'Records must be an array' }, { status: 400 });
+    if (!Array.isArray(records) || records.length === 0) {
+      return NextResponse.json({ error: 'Records must be a non-empty array' }, { status: 400 });
+    }
+
+    if (user.role !== 'Admin') {
+      const sample = records[0] || {};
+      const targetProj =
+        sample.project_id ||
+        sample.project_name ||
+        (table === 'lantana_detections' ? 'tst_lantana' : table === 'pam_detections' ? 'nilgiri' : table === 'live_detections' ? 'test' : '');
+      if (targetProj && !canUserManageProject(user, targetProj)) {
+        return NextResponse.json({ error: 'Unauthorized to insert detections into this project' }, { status: 403 });
+      }
     }
 
     // Insert records. For massive datasets, the frontend should chunk them (e.g. 500 at a time)
@@ -352,6 +363,21 @@ export async function DELETE(req: NextRequest) {
     const table = tableParam;
     if (!table || !ALLOWED_TABLES.includes(table)) {
       return NextResponse.json({ error: 'Invalid table specified' }, { status: 400 });
+    }
+
+    // Verify table/project ownership for non-Admins before single/batch/project/node deletion
+    if (user.role !== 'Admin') {
+      const defaultProjForTable =
+        table === 'lantana_detections' ? 'tst_lantana' :
+        table === 'live_detections' ? 'test' :
+        table === 'pam_detections' ? 'nilgiri' : '';
+      const requestedProj = body?.deleteByProject?.projectId || body?.deleteByProject?.projectName || body?.deleteByNode?.projectName || defaultProjForTable;
+      if (requestedProj && !canUserManageProject(user, requestedProj)) {
+        return NextResponse.json({ error: 'Unauthorized to delete detections for this project' }, { status: 403 });
+      }
+      if (user.role === 'Site Manager' && body?.deleteByProject) {
+        return NextResponse.json({ error: 'Site Managers cannot delete entire project detections' }, { status: 403 });
+      }
     }
 
     // Single ID deletion

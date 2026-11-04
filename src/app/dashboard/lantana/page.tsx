@@ -136,12 +136,22 @@ const AudioPlayer: React.FC<{ src: string; speciesName: string }> = ({ src, spec
 
 // ─── Main Lantana Dashboard Page ──────────────────────────────────────────────
 export default function LantanaDashboardPage() {
-  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
-  const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
+  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic, canManageProject, canViewProject } = useRole();
   const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'richness' | 'explorer' | 'indicators' | 'performance'>('summary');
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL_LANTANA');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const isAssignedToCurrentLantanaProject = useMemo(() => {
+    if (currentRole === 'Admin') return true;
+    if (currentRole !== 'Project Manager' && currentRole !== 'Site Manager') return false;
+    if (selectedProjectId && selectedProjectId !== 'ALL_LANTANA') {
+      return canManageProject(selectedProjectId);
+    }
+    return canManageProject('tst_lantana');
+  }, [currentRole, selectedProjectId, canManageProject]);
+
+  const canAccessReports = isAssignedToCurrentLantanaProject || visibilitySettings?.allowPublicReports;
 
   // Raw Supabase data
   const [rawRecorders, setRawRecorders] = useState<any[]>([]);
@@ -183,26 +193,7 @@ export default function LantanaDashboardPage() {
           supabase.from('lantana_species_ecology').select('*').order('common_name')
         ]);
 
-        let lantanaProjects = (projs.data || []).filter((p: any) => p.project_type === 'Lantana');
-        
-        // Apply RBAC filtering
-        if (currentRole === 'Project Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
-        } else if (currentRole === 'Site Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          if (assigned.length > 0) {
-              lantanaProjects = lantanaProjects.filter((p: any) => assigned.includes(p.id));
-          } else {
-              const siteIds = currentUser?.assignedSites || [];
-              const { data: sData } = siteIds.length > 0 
-                ? await supabase.from('lantana_sites').select('project_id').or(`id.in.(${siteIds.join(',')}),site_name.in.(${siteIds.join(',')})`)
-                : { data: [] };
-              const allowedProjIds = new Set((sData || []).map((s: any) => s.project_id));
-              lantanaProjects = lantanaProjects.filter((p: any) => allowedProjIds.has(p.id));
-          }
-        }
-        
+        let lantanaProjects = (projs.data || []).filter((p: any) => p.project_type === 'Lantana' && canViewProject(p));
         setProjectsList(lantanaProjects);
 
         // Pre-select project from query param, otherwise first project
@@ -258,17 +249,10 @@ export default function LantanaDashboardPage() {
       try {
         let siteQuery = supabase.from('lantana_sites').select('*').order('site_name');
         
-        if (selectedProjectId !== 'ALL_LANTANA') {
+        if (projectsList.length === 0 && metaLoaded) {
+          siteQuery = siteQuery.eq('id', 'NONE');
+        } else if (selectedProjectId !== 'ALL_LANTANA') {
           siteQuery = siteQuery.eq('project_id', selectedProjectId);
-        } else {
-           if (currentRole === 'Project Manager' || currentRole === 'Site Manager') {
-             const allowedProjIds = projectsList.map(p => p.id);
-             if (allowedProjIds.length > 0) {
-               siteQuery = siteQuery.in('project_id', allowedProjIds);
-             } else {
-               siteQuery = siteQuery.eq('id', 'NONE');
-             }
-           }
         }
         
         if (currentRole === 'Site Manager') {
@@ -999,19 +983,19 @@ export default function LantanaDashboardPage() {
   const scopeKey = selectedSiteGroup !== 'All' ? `${selectedProjectId}:${selectedSiteGroup}` : selectedProjectId;
 
   const navMenuItems = useMemo(() => {
-    if (currentRole !== 'Public') return allNavMenuItems;
+    if (isAssignedToCurrentLantanaProject) return allNavMenuItems;
     return allNavMenuItems.filter(item => isTabVisibleForPublic('lantanaPam', item.id, scopeKey));
-  }, [currentRole, isTabVisibleForPublic, scopeKey]);
+  }, [isAssignedToCurrentLantanaProject, isTabVisibleForPublic, scopeKey]);
 
   // If activeTab is hidden from public, redirect to first visible tab
   useEffect(() => {
-    if (currentRole === 'Public' && navMenuItems.length > 0) {
+    if (!isAssignedToCurrentLantanaProject && navMenuItems.length > 0) {
       const isCurrentVisible = navMenuItems.some(item => item.id === activeTab);
       if (!isCurrentVisible) {
         setActiveTab(navMenuItems[0].id as any);
       }
     }
-  }, [currentRole, navMenuItems, activeTab]);
+  }, [isAssignedToCurrentLantanaProject, navMenuItems, activeTab]);
 
   if (loading) return <DashboardLoader message="Loading Lantana bioacoustics..." progress={loadingProgress} />;
 

@@ -8,38 +8,45 @@ import { useRole } from '@/components/layout/RoleContext';
 
 export function AdminNavTabs() {
   const pathname = usePathname();
-  const { currentRole } = useRole();
+  const { currentRole, currentUser, canManageProject } = useRole();
 
   const isPam = pathname.startsWith('/admin/pam');
   const isLive = pathname.startsWith('/admin/live');
   const isVisibility = pathname.startsWith('/admin/visibility');
   const isUsers = pathname.startsWith('/users');
 
+  const hasPamAccess = currentRole === 'Admin' || canManageProject('nilgiri') || canManageProject('tst_lantana') || (currentUser?.assignedProjectType === 'PAM' && (currentUser?.assignedProjects?.length || 0) > 0);
+  const hasLiveAccess = currentRole === 'Admin' || canManageProject('test') || canManageProject('test_custom') || (currentUser?.assignedProjectType === 'Live' && (currentUser?.assignedProjects?.length || 0) > 0);
+
   return (
     <div className="w-full bg-[#f5f6f4] border border-[#dde1dc] rounded-xl p-1.5 flex items-center gap-1.5 font-sans text-xs">
-      <Link
-        href="/admin/pam"
-        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-medium transition-all ${
-          isPam
-            ? 'bg-[#ffffff] text-[#1f4d3a] font-semibold shadow-xs border border-[#dde1dc]'
-            : 'text-[#5a635d] hover:text-[#1a1f1c] hover:bg-[#ffffff]/50'
-        }`}
-      >
-        <Database className="w-3.5 h-3.5 text-[#1f4d3a]" />
-        <span>PAM Projects Console</span>
-      </Link>
+      {hasPamAccess && (
+        <Link
+          href="/admin/pam"
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-medium transition-all ${
+            isPam
+              ? 'bg-[#ffffff] text-[#1f4d3a] font-semibold shadow-xs border border-[#dde1dc]'
+              : 'text-[#5a635d] hover:text-[#1a1f1c] hover:bg-[#ffffff]/50'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5 text-[#1f4d3a]" />
+          <span>PAM Projects Console</span>
+        </Link>
+      )}
 
-      <Link
-        href="/admin/live"
-        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-medium transition-all ${
-          isLive
-            ? 'bg-[#ffffff] text-[#1f4d3a] font-semibold shadow-xs border border-[#dde1dc]'
-            : 'text-[#5a635d] hover:text-[#1a1f1c] hover:bg-[#ffffff]/50'
-        }`}
-      >
-        <Radio className="w-3.5 h-3.5 text-[#1f4d3a]" />
-        <span>Live Detectors Console</span>
-      </Link>
+      {hasLiveAccess && (
+        <Link
+          href="/admin/live"
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-medium transition-all ${
+            isLive
+              ? 'bg-[#ffffff] text-[#1f4d3a] font-semibold shadow-xs border border-[#dde1dc]'
+              : 'text-[#5a635d] hover:text-[#1a1f1c] hover:bg-[#ffffff]/50'
+          }`}
+        >
+          <Radio className="w-3.5 h-3.5 text-[#1f4d3a]" />
+          <span>Live Detectors Console</span>
+        </Link>
+      )}
 
       <Link
         href="/admin/visibility"

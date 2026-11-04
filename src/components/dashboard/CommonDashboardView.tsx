@@ -62,18 +62,7 @@ export default function CommonDashboardView({
   initialSite,
   initialTab
 }: CommonDashboardViewProps = {}) {
-  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
-  const canExportCSV = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings?.allowPublicReports;
-  const canManageDetections = currentRole === 'Admin';
-  const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'trends' | 'diurnal' | 'diversity'>(initialTab || 'summary');
-  const [copiedLinkToast, setCopiedLinkToast] = useState(false);
-  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
-  const [purgeScope, setPurgeScope] = useState<'station' | 'project'>('station');
-  const [purgeConfirmed, setPurgeConfirmed] = useState(false);
-  const [isPurging, setIsPurging] = useState(false);
-  const [purgeToast, setPurgeToast] = useState<string | null>(null);
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  
+  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic, canManageProject, canViewProject } = useRole();
   const { 
     selectedProjectId, 
     selectedStationId, 
@@ -86,6 +75,28 @@ export default function CommonDashboardView({
     setConfidence,
     setSelectedSpecies,
   } = useDashboardStore();
+
+  // Check if the logged-in user is assigned to the currently selected PAM project
+  const isAssignedToCurrentPamProject = useMemo(() => {
+    if (currentRole === 'Admin') return true;
+    if (currentRole !== 'Project Manager' && currentRole !== 'Site Manager') return false;
+    if (selectedProjectId && selectedProjectId !== 'ALL_PROJECTS') {
+      return canManageProject(selectedProjectId);
+    }
+    return canManageProject('nilgiri');
+  }, [currentRole, selectedProjectId, canManageProject]);
+
+  const canExportCSV = isAssignedToCurrentPamProject || visibilitySettings?.allowPublicReports;
+  const canManageDetections = currentRole === 'Admin' || isAssignedToCurrentPamProject;
+
+  const [activeTab, setActiveTab] = useState<'summary' | 'map' | 'heatmap' | 'trends' | 'diurnal' | 'diversity'>(initialTab || 'summary');
+  const [copiedLinkToast, setCopiedLinkToast] = useState(false);
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgeScope, setPurgeScope] = useState<'station' | 'project'>('station');
+  const [purgeConfirmed, setPurgeConfirmed] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeToast, setPurgeToast] = useState<string | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [stationsList, setStationsList] = useState<any[]>([]);
@@ -217,19 +228,17 @@ export default function CommonDashboardView({
         let allProjects = (projectsRes.data || []).filter((p: any) => !p.project_type || p.project_type === 'PAM');
         let allSites = sitesRes.data || [];
 
-        // Apply RBAC filtering
-        if (currentRole === 'Project Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          allProjects = allProjects.filter((p: any) => assigned.includes(p.id));
-          allSites = allSites.filter((s: any) => assigned.includes(s.project_id));
-        } else if (currentRole === 'Site Manager') {
+        // All PAM projects remain visible to everyone (unassigned projects are viewed as Public);
+        // only Site Managers assigned to specific sites within this project have site-level filtering.
+        if (currentRole === 'Site Manager') {
           const assigned = currentUser?.assignedSites || [];
-          allSites = allSites.filter((s: any) => assigned.includes(s.id));
-          const allowedProjIds = new Set(allSites.map((s: any) => s.project_id));
-          allProjects = allProjects.filter((p: any) => allowedProjIds.has(p.id));
+          const matchedSites = allSites.filter((s: any) => assigned.includes(s.id));
+          if (matchedSites.length > 0) {
+            allSites = matchedSites;
+          }
         }
 
-        const pamProjects = allProjects;
+        const pamProjects = allProjects.filter((p: any) => canViewProject(p));
         const pamProjectIds = new Set(pamProjects.map((p: any) => p.id));
         setProjectsList(pamProjects);
 
@@ -763,19 +772,19 @@ export default function CommonDashboardView({
   const scopeKey = selectedStationId !== 'ALL_SITES' ? `${selectedProjectId}:${selectedStationId}` : selectedProjectId;
 
   const navMenuItems = useMemo(() => {
-    if (currentRole !== 'Public') return allNavMenuItems;
+    if (isAssignedToCurrentPamProject) return allNavMenuItems;
     return allNavMenuItems.filter(item => isTabVisibleForPublic('commonPam', item.id, scopeKey));
-  }, [currentRole, isTabVisibleForPublic, scopeKey]);
+  }, [isAssignedToCurrentPamProject, isTabVisibleForPublic, scopeKey]);
 
-  // If activeTab is hidden from public, redirect to first visible tab
+  // If activeTab is hidden from public (or unassigned manager), redirect to first visible tab
   useEffect(() => {
-    if (currentRole === 'Public' && navMenuItems.length > 0) {
+    if (!isAssignedToCurrentPamProject && navMenuItems.length > 0) {
       const isCurrentVisible = navMenuItems.some(item => item.id === activeTab);
       if (!isCurrentVisible) {
         setActiveTab(navMenuItems[0].id as any);
       }
     }
-  }, [currentRole, navMenuItems, activeTab]);
+  }, [isAssignedToCurrentPamProject, navMenuItems, activeTab]);
 
   if (loading) return <DashboardLoader progress={loadingProgress} message="Loading PAM bioacoustics observatory..." />;
 

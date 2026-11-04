@@ -20,10 +20,11 @@ import {
   Edit2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/apiClient';
 import { useRole } from '@/components/layout/RoleContext';
 
 export default function ProjectsPage() {
-  const { currentRole, currentUser } = useRole();
+  const { currentRole, currentUser, canViewProject, canManageProject } = useRole();
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
@@ -82,11 +83,11 @@ export default function ProjectsPage() {
         };
       });
 
-      setProjectsList(withCounts);
+      setProjectsList(withCounts.filter(p => canViewProject(p)));
       setLoading(false);
     }
     loadProjectsWithCounts();
-  }, []);
+  }, [currentRole, currentUser]);
 
   const [editingProj, setEditingProj] = useState<any | null>(null);
   const [editName, setEditName] = useState('');
@@ -115,40 +116,51 @@ export default function ProjectsPage() {
       created_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase.from('projects').insert([newProj]).select().single();
-    if (error) {
-      console.error('Supabase error inserting project:', error);
-      alert('Error creating project: ' + error.message);
-      return;
-    }
+    try {
+      const data = await apiFetch('/api/db/projects', {
+        method: 'POST',
+        body: JSON.stringify(newProj)
+      }, currentUser);
 
-    if (data) {
-      setProjectsList(prev => [data, ...prev]);
-      setCreatedSuccessMsg('Project created successfully!');
-      setTimeout(() => {
-        setIsCreateOpen(false);
-        setCreatedSuccessMsg('');
-        setName('');
-        setDescription('');
-        setImageUrl('');
-      }, 800);
+      if (data) {
+        setProjectsList(prev => [data, ...prev]);
+        setCreatedSuccessMsg('Project created successfully!');
+        setTimeout(() => {
+          setIsCreateOpen(false);
+          setCreatedSuccessMsg('');
+          setName('');
+          setDescription('');
+          setImageUrl('');
+        }, 800);
+      }
+    } catch (error: any) {
+      console.error('Error inserting project:', error);
+      alert('Error creating project: ' + error.message);
     }
   };
 
   const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProj) return;
+    if (!canManageProject(editingProj.id) && !canManageProject(editingProj.name)) {
+      alert('Unauthorized to edit this project.');
+      return;
+    }
 
-    const { error } = await supabase.from('projects').update({
-      name: editName,
-      description: editDesc,
-      organization: editOrg,
-      manager_name: editManager,
-      public_visible: editPublic,
-      image_url: editImage
-    }).eq('id', editingProj.id);
-
-    if (error) {
+    try {
+      await apiFetch('/api/db/projects', {
+        method: 'PUT',
+        body: JSON.stringify({
+          id: editingProj.id,
+          name: editName,
+          description: editDesc,
+          organization: editOrg,
+          manager_name: editManager,
+          public_visible: editPublic,
+          image_url: editImage
+        })
+      }, currentUser);
+    } catch (error: any) {
       alert('Error updating project: ' + error.message);
       return;
     }
@@ -173,9 +185,13 @@ export default function ProjectsPage() {
       return;
     }
     if (!confirm('Delete this project? This cannot be undone.')) return;
-    await supabase.from('projects').delete().eq('id', id);
-    setProjectsList(prev => prev.filter(p => p.id !== id));
-    if (selectedProject?.id === id) setSelectedProject(null);
+    try {
+      await apiFetch(`/api/db/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }, currentUser);
+      setProjectsList(prev => prev.filter(p => p.id !== id));
+      if (selectedProject?.id === id) setSelectedProject(null);
+    } catch (error: any) {
+      alert('Error deleting project: ' + error.message);
+    }
   };
 
 

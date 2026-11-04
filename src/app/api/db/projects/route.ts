@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue, canUserManageProject } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-// POST: Create a new project
+// POST: Create a new project (Admin only)
 export async function POST(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
+  const { user, error: authError } = await authGuard(req, ['Admin']);
   if (authError) return NextResponse.json({ error: authError }, { status: 401 });
 
   try {
@@ -19,19 +19,17 @@ export async function POST(req: NextRequest) {
 
 // PUT: Update an existing project
 export async function PUT(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
-  if (authError) return NextResponse.json({ error: authError }, { status: 401 });
+  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  if (authError || !user) return NextResponse.json({ error: authError || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await req.json();
     const { id, ...updateData } = body;
-    
-    // Non-admins can only edit projects they are assigned to
-    if (user.role !== 'Admin') {
-      const assignedProjects = user.assignedProjects || [];
-      if (!assignedProjects.includes(id)) {
-        return NextResponse.json({ error: 'Unauthorized to edit this project' }, { status: 403 });
-      }
+    if (!id) return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
+
+    // Non-admins can only edit projects they are explicitly assigned to
+    if (user.role !== 'Admin' && !canUserManageProject(user, id)) {
+      return NextResponse.json({ error: 'Unauthorized to edit this project' }, { status: 403 });
     }
 
     const { data, error } = await supabaseAdmin.from('projects').update(updateData).eq('id', id).select().single();

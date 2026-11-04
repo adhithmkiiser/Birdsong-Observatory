@@ -152,6 +152,7 @@ interface LiveProjectItem {
   organization: string;
   stationsCount: number;
   image_url?: string;
+  public_visible?: boolean;
 }
 
 function dedupeLiveDetections(list: any[]) {
@@ -182,8 +183,9 @@ function dedupeLiveDetections(list: any[]) {
 }
 
 export default function LiveAdminPage() {
-  const { currentRole, currentUser } = useRole();
-  const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  const { currentRole, currentUser, canManageProject } = useRole();
+  const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
+  const canDeleteDetections = currentRole === 'Admin' || liveProjects.some(p => canManageProject(p.id) || canManageProject(p.name));
 
   // Navigation Tabs:
   // 'nodes'       -> Field Nodes & Hardware / Solar Telemetry
@@ -241,7 +243,6 @@ export default function LiveAdminPage() {
   // ----------------------------------------------------------------------------
   // State: Projects & Detections
   // ----------------------------------------------------------------------------
-  const [liveProjects, setLiveProjects] = useState<LiveProjectItem[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [liveDetections, setLiveDetections] = useState<any[]>([]);
   const [liveFilterProject, setLiveFilterProject] = useState('All');
@@ -424,33 +425,52 @@ export default function LiveAdminPage() {
     setIsLiveRefreshing(true);
     try {
       // 1. Fetch from server admin API (which uses service role key and bypasses RLS)
-      const res = await fetch('/api/live/admin');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          if (data.projects && data.projects.length > 0) {
-            setLiveProjects(data.projects.map((p: any) => ({
+      const data = await apiFetch('/api/live/admin', {}, currentUser).catch(() => null);
+      if (data && data.success) {
+        {
+          let allowedProjs = data.projects || [];
+          if (currentRole !== 'Admin') {
+            allowedProjs = allowedProjs.filter((p: any) => canManageProject(p.id) || canManageProject(p.name));
+          }
+
+          const allowedProjNames = new Set(allowedProjs.map((p: any) => String(p.name || '').toLowerCase().trim()));
+          const allowedProjIds = new Set(allowedProjs.map((p: any) => String(p.id || '').toLowerCase().trim()));
+
+          if (allowedProjs.length > 0) {
+            setLiveProjects(allowedProjs.map((p: any) => ({
               id: p.id,
               name: p.name,
               description: p.description || '',
               organization: p.organization || 'IISER Tirupati Bird Lab',
               stationsCount: p.stations_count || 0,
-              image_url: p.image_url || ''
+              image_url: p.image_url || '',
+              public_visible: p.public_visible !== false
             })));
           } else {
             setLiveProjects([]);
           }
 
-          if (data.recorders && data.recorders.length > 0) {
-            setRecorders(data.recorders);
+          let allowedRecs = data.recorders || [];
+          if (currentRole !== 'Admin') {
+            allowedRecs = allowedRecs.filter((r: any) => {
+              const rProj = String(r.project_name || '').toLowerCase().trim();
+              return allowedProjNames.has(rProj) || allowedProjIds.has(rProj) || canManageProject(rProj);
+            });
+          }
+
+          if (allowedRecs.length > 0) {
+            setRecorders(allowedRecs);
           } else {
             setRecorders([]);
           }
+
+          const allowedNodeIds = new Set(allowedRecs.map((r: any) => r.recorder_id || r.id));
 
           if (data.telemetry && data.telemetry.length > 0) {
             const map: Record<string, StationTelemetry> = {};
             for (const item of data.telemetry) {
               const nid = item.node_id || item.station_id;
+              if (currentRole !== 'Admin' && nid && !allowedNodeIds.has(nid)) continue;
               if (nid && !map[nid]) map[nid] = item;
               if (item.station_id && !map[item.station_id]) map[item.station_id] = item;
               if (item.node_id && !map[item.node_id]) map[item.node_id] = item;
@@ -460,27 +480,42 @@ export default function LiveAdminPage() {
             setTelemetryMap({});
           }
 
-          if (data.models && data.models.length > 0) {
-            setModelsList(data.models);
+          if (currentRole === 'Admin' || allowedProjs.length > 0) {
+            if (data.models && data.models.length > 0) {
+              setModelsList(data.models);
+            } else {
+              setModelsList([]);
+            }
+
+            if (data.nodeModels && data.nodeModels.length > 0) {
+              setNodeModelAssignments(data.nodeModels
+                .filter((item: any) => currentRole === 'Admin' || allowedNodeIds.has(item.node_id))
+                .map((item: any) => ({
+                  node_id: item.node_id,
+                  model_id: item.model_id,
+                  enabled: item.enabled,
+                  threshold: item.threshold,
+                  model_name: item.models?.name || 'Model',
+                  runtime: item.models?.runtime || 'onnx'
+                })));
+            } else {
+              setNodeModelAssignments([]);
+            }
           } else {
             setModelsList([]);
-          }
-
-          if (data.nodeModels && data.nodeModels.length > 0) {
-            setNodeModelAssignments(data.nodeModels.map((item: any) => ({
-              node_id: item.node_id,
-              model_id: item.model_id,
-              enabled: item.enabled,
-              threshold: item.threshold,
-              model_name: item.models?.name || 'Model',
-              runtime: item.models?.runtime || 'onnx'
-            })));
-          } else {
             setNodeModelAssignments([]);
           }
 
           if (data.detections) {
-            setLiveDetections(dedupeLiveDetections(data.detections));
+            let detList = data.detections;
+            if (currentRole !== 'Admin') {
+              detList = detList.filter((d: any) => {
+                const dProj = String(d.project_name || '').toLowerCase().trim();
+                const dNode = d.recorder_id || d.station_id || d.node_id;
+                return allowedProjNames.has(dProj) || allowedProjIds.has(dProj) || (dNode && allowedNodeIds.has(dNode));
+              });
+            }
+            setLiveDetections(dedupeLiveDetections(detList));
           }
           return;
         }
@@ -495,19 +530,28 @@ export default function LiveAdminPage() {
         supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false })
       ]);
 
-      if (projs && projs.length > 0) {
-        setLiveProjects(projs.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description || '',
-          organization: p.organization || 'IISER Tirupati Bird Lab',
-          stationsCount: p.stations_count || 0,
-          image_url: p.image_url || ''
-        })));
-      }
+      let mappedFallbackProjs = (projs || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description || '',
+        organization: p.organization || 'IISER Tirupati Bird Lab',
+        stationsCount: p.stations_count || 0,
+        image_url: p.image_url || ''
+      }));
 
+      if (currentRole !== 'Admin') {
+        mappedFallbackProjs = mappedFallbackProjs.filter((p: any) => canManageProject(p.id) || canManageProject(p.name));
+      }
+      setLiveProjects(mappedFallbackProjs);
+
+      const allowedFallbackIds = new Set(mappedFallbackProjs.map((p: any) => p.id));
       if (recordersData && recordersData.length > 0) {
-        setRecorders(recordersData);
+        const filteredRecs = currentRole === 'Admin'
+          ? recordersData
+          : recordersData.filter((r: any) => allowedFallbackIds.has(r.project_id) || canManageProject(r.project_id));
+        setRecorders(filteredRecs);
+      } else if (currentRole !== 'Admin') {
+        setRecorders([]);
       }
 
       const { data: teleData } = await supabase
@@ -559,7 +603,7 @@ export default function LiveAdminPage() {
       loadAllLiveAdminData();
     }, STATION_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentRole, currentUser]);
 
   // Set default selected project
   useEffect(() => {
@@ -857,6 +901,37 @@ WantedBy=multi-user.target`;
     });
     return Array.from(set);
   }, [recorders, liveDetections]);
+
+  if (currentRole !== 'Admin' && !isLiveRefreshing && liveProjects.length === 0) {
+    return (
+      <div className="space-y-6 pb-16 font-sans">
+        <AdminNavTabs />
+        <div className="p-10 rounded-2xl bg-white border border-[#dde1dc] text-center space-y-4 max-w-lg mx-auto shadow-xs mt-8">
+          <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold font-serif text-[#1a1f1c]">No Live Detector Projects Assigned</h2>
+          <p className="text-xs text-[#5a635d] leading-relaxed">
+            Your account (<strong className="text-[#1f4d3a]">{currentUser?.name}</strong>) is not assigned as a manager for any Live Detector project. You can still view all Live Detector dashboards as a public visitor.
+          </p>
+          <div className="pt-2 flex items-center justify-center gap-3">
+            <a
+              href="/admin/pam"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1f4d3a] text-white text-xs font-semibold rounded-xl hover:bg-[#173b2c] transition-colors"
+            >
+              Go to PAM Projects Console
+            </a>
+            <a
+              href="/live_dashboard"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f5f6f4] border border-[#dde1dc] text-[#1f4d3a] text-xs font-semibold rounded-xl hover:bg-[#e8eae6] transition-colors"
+            >
+              View Public Live Dashboard
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16 font-sans">
@@ -2446,6 +2521,56 @@ WantedBy=multi-user.target`;
                     </div>
                     <div className="flex-1 space-y-3">
                       <div>
+                        <label className="font-semibold text-[#1a1f1c] block mb-1">Project Visibility (Public vs. Private)</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await apiFetch('/api/db/projects', {
+                                  method: 'PUT',
+                                  body: JSON.stringify({ id: p.id, public_visible: true })
+                                }, currentUser);
+                                setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, public_visible: true } : proj));
+                                showNotification(`"${p.name}" is now PUBLIC (visible to everyone).`);
+                              } catch (err: any) {
+                                alert('Error updating visibility: ' + err.message);
+                              }
+                            }}
+                            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border transition cursor-pointer ${
+                              p.public_visible !== false
+                                ? 'bg-[#1f4d3a] text-white border-[#1f4d3a]'
+                                : 'bg-white text-[#5a635d] border-[#dde1dc] hover:bg-[#f0f7f3]'
+                            }`}
+                          >
+                            <span>🌐 Public (Visible to Everyone)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await apiFetch('/api/db/projects', {
+                                  method: 'PUT',
+                                  body: JSON.stringify({ id: p.id, public_visible: false })
+                                }, currentUser);
+                                setLiveProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, public_visible: false } : proj));
+                                showNotification(`"${p.name}" is now PRIVATE (visible only to Admin & assigned managers).`);
+                              } catch (err: any) {
+                                alert('Error updating visibility: ' + err.message);
+                              }
+                            }}
+                            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border transition cursor-pointer ${
+                              p.public_visible === false
+                                ? 'bg-amber-600 text-white border-amber-600'
+                                : 'bg-white text-[#5a635d] border-[#dde1dc] hover:bg-amber-50'
+                            }`}
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Private (Admin &amp; Managers Only)</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div>
                         <label className="font-semibold text-[#1a1f1c] block mb-1">Image Link (URL)</label>
                         <input
                           type="text"
@@ -2463,6 +2588,30 @@ WantedBy=multi-user.target`;
                           rows={3}
                           className="w-full bg-white border border-[#dde1dc] rounded-xl px-3.5 py-2 text-xs text-[#1a1f1c] outline-none resize-none"
                         />
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await apiFetch('/api/db/projects', {
+                                method: 'PUT',
+                                body: JSON.stringify({
+                                  id: p.id,
+                                  description: p.description,
+                                  image_url: p.image_url,
+                                  public_visible: p.public_visible !== false
+                                })
+                              }, currentUser);
+                              showNotification(`Saved changes for "${p.name}".`);
+                            } catch (err: any) {
+                              alert('Error saving project: ' + err.message);
+                            }
+                          }}
+                          className="px-4 py-2 rounded-xl bg-[#1f4d3a] hover:bg-[#16382a] text-white font-bold text-xs cursor-pointer transition"
+                        >
+                          Save Project Details
+                        </button>
                       </div>
                     </div>
                   </div>

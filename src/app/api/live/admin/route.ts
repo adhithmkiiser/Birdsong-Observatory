@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue, canUserManageProject } from '@/lib/authGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +9,9 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const limitParam = parseInt(url.searchParams.get('limit') || '1000', 10);
     const detsLimit = isNaN(limitParam) ? 1000 : Math.min(Math.max(limitParam, 50), 5000);
+
+    // Check optional authentication to determine if private Live projects can be returned
+    const { user } = await authGuard(req);
 
     const [
       { data: projs, error: projsErr },
@@ -26,14 +29,38 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(detsLimit)
     ]);
 
+    // Filter out private Live projects unless the caller is Admin or an assigned manager
+    const visibleProjects = (projs || []).filter((p: any) => {
+      if (p.public_visible !== false) return true;
+      return Boolean(user) && (canUserManageProject(user, p.id) || canUserManageProject(user, p.name));
+    });
+
+    const visibleProjNames = new Set(visibleProjects.map((p: any) => String(p.name || '').toLowerCase().trim()));
+    const visibleProjIds = new Set(visibleProjects.map((p: any) => String(p.id || '').toLowerCase().trim()));
+    const hasPrivateFilteredOut = (projs || []).length > visibleProjects.length;
+
+    const visibleRecorders = hasPrivateFilteredOut
+      ? (recorders || []).filter((r: any) => {
+          const rp = String(r.project_name || r.project_id || '').toLowerCase().trim();
+          return visibleProjNames.has(rp) || visibleProjIds.has(rp);
+        })
+      : (recorders || []);
+
+    const visibleDetections = hasPrivateFilteredOut
+      ? (liveDets || []).filter((d: any) => {
+          const dp = String(d.project_name || '').toLowerCase().trim();
+          return visibleProjNames.has(dp) || visibleProjIds.has(dp);
+        })
+      : (liveDets || []);
+
     return NextResponse.json({
       success: true,
-      projects: projs || [],
-      recorders: recorders || [],
-      telemetry: teleData || [],
+      projects: visibleProjects,
+      recorders: visibleRecorders,
+      telemetry: hasPrivateFilteredOut && visibleProjects.length === 0 ? [] : (teleData || []),
       models: modelsData || [],
       nodeModels: nodeModelsData || [],
-      detections: liveDets || []
+      detections: visibleDetections
     });
   } catch (error: any) {
     console.error('API /api/live/admin GET error:', error);
@@ -50,6 +77,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action } = body;
+
+    // Non-Admin users must be explicitly assigned to the Live project to perform Live admin mutations
+    if (user.role !== 'Admin') {
+      const targetProj = body.projectId || body.projectName || 'test';
+      if (!canUserManageProject(user, targetProj) && !canUserManageProject(user, 'test_custom')) {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized: You are not assigned to manage this Live Detector project.' },
+          { status: 403 }
+        );
+      }
+    }
 
     if (action === 'update_gps') {
       const { nodeId, lat, long } = body;
@@ -214,9 +252,9 @@ export async function POST(req: NextRequest) {
         const safeRaw = escapePostgrestValue(rawNode);
         const safeClean = escapePostgrestValue(cleanNode);
         if (rawNode !== cleanNode) {
-          q = q.or(`recorder_id.eq.${safeRaw},station_id.eq.${safeRaw},recorder_id.eq.${safeClean},station_id.eq.${safeClean}`);
+          q = q.or(`recorder_id.eq."${safeRaw}",station_id.eq."${safeRaw}",recorder_id.eq."${safeClean}",station_id.eq."${safeClean}"`);
         } else {
-          q = q.or(`recorder_id.eq.${safeRaw},station_id.eq.${safeRaw}`);
+          q = q.or(`recorder_id.eq."${safeRaw}",station_id.eq."${safeRaw}"`);
         }
       }
 
@@ -230,7 +268,7 @@ export async function POST(req: NextRequest) {
             const { data: projRecord } = await supabaseAdmin
               .from('projects')
               .select('name')
-              .or(`id.eq.${safeProjId},name.eq.${safeProjId}`)
+              .or(`id.eq."${safeProjId}",name.eq."${safeProjId}"`)
               .maybeSingle();
             targetName = projRecord?.name || projectId;
           } catch {
@@ -266,7 +304,7 @@ export async function POST(req: NextRequest) {
           const cleanNode = rawNode.includes('::') ? rawNode.split('::').pop()! : rawNode;
           const safeRaw = escapePostgrestValue(rawNode);
           const safeClean = escapePostgrestValue(cleanNode);
-          wq = wq.or(`node_id.eq.${safeRaw},node_id.eq.${safeClean}`);
+          wq = wq.or(`node_id.eq."${safeRaw}",node_id.eq."${safeClean}"`);
         } else {
           wq = wq.not('window_id', 'is', null);
         }

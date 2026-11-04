@@ -20,6 +20,8 @@ interface RoleContextType {
   updateVisibilitySetting: (key: keyof PublicVisibilitySettings, val: boolean) => void;
   updateMenuVisibility: (dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder', tabId: string, visible: boolean, scopeKey?: string) => void;
   isTabVisibleForPublic: (dashboardType: 'commonPam' | 'lantanaPam' | 'liveRecorder', tabId: string, scopeKey?: string) => boolean;
+  canManageProject: (projectIdOrName?: string) => boolean;
+  canViewProject: (project: { id?: string; name?: string; title?: string; public_visible?: boolean | null; publicVisible?: boolean | null }) => boolean;
   refreshUsers: () => Promise<void>;
 }
 
@@ -84,6 +86,7 @@ const mapDbUserToUser = (dbUser: any): User => ({
   password: dbUser.password_hash || dbUser.password || '',
   role: dbUser.role as any,
   organization: dbUser.organization || 'IISER Tirupati Bird Lab',
+  assignedProjectType: dbUser.assigned_project_type || dbUser.assignedProjectType || 'Both',
   projectScopePermissions: dbUser.project_scope_permissions || [],
   assignedProjects: dbUser.assigned_projects || [],
   assignedSites: dbUser.assigned_sites || [],
@@ -125,6 +128,8 @@ const RoleContext = createContext<RoleContextType>({
   updateVisibilitySetting: () => {},
   updateMenuVisibility: () => {},
   isTabVisibleForPublic: () => true,
+  canManageProject: () => false,
+  canViewProject: () => true,
   refreshUsers: async () => {},
 });
 
@@ -414,6 +419,63 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     return defaultMenuVisibility[dashboardType]?.[tabId] ?? true;
   };
 
+  // Determines whether the logged-in user has manager/admin permissions for a specific project.
+  // If false, the user views that project strictly with Public permissions.
+  const canManageProject = (projectIdOrName?: string): boolean => {
+    if (currentRole === 'Admin') return true;
+    if (currentRole !== 'Project Manager' && currentRole !== 'Site Manager') return false;
+
+    const assignedProjs = (currentUser?.assignedProjects || []).map(p => String(p).toLowerCase().trim());
+    const assignedSites = (currentUser?.assignedSites || []).map(s => String(s).toLowerCase().trim());
+
+    if (!projectIdOrName || projectIdOrName === 'ALL' || projectIdOrName === 'ALL_PROJECTS' || projectIdOrName === 'ALL_LANTANA') {
+      return assignedProjs.length > 0 || assignedSites.length > 0;
+    }
+
+    const target = String(projectIdOrName).toLowerCase().trim();
+    if (assignedProjs.includes(target)) return true;
+
+    // Also match common aliases (e.g., 'test' <-> 'test_custom', 'tst_lantana' <-> 'lantana', 'nilgiri' <-> 'studying the role of climate...')
+    if ((target === 'test_custom' || target === 'test') && (assignedProjs.includes('test') || assignedProjs.includes('test_custom'))) {
+      return true;
+    }
+    if (target.includes('lantana') && assignedProjs.some(p => p.includes('lantana'))) {
+      return true;
+    }
+    if ((target === 'nilgiri' || target.includes('climate')) && (assignedProjs.includes('nilgiri') || assignedProjs.some(p => p.includes('climate')))) {
+      return true;
+    }
+
+    // For Site Managers or Project Managers who have assignedSites:
+    if (assignedSites.length > 0) {
+      if (assignedSites.some(s => s.startsWith(`${target}_`))) return true;
+      if (target.includes('lantana') && assignedSites.some(s => s.startsWith('atr_') || s.startsWith('str_') || s.includes('lantana'))) {
+        return true;
+      }
+      if ((target === 'nilgiri' || target.includes('climate')) && assignedSites.some(s => s.startsWith('nilgiri_') || /^a\d{2}_/.test(s))) {
+        return true;
+      }
+      if ((target === 'test' || target === 'test_custom') && assignedSites.some(s => s.startsWith('test_'))) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Determines whether a project is visible to the current viewer:
+  // - If public_visible !== false (i.e. Public), everyone can see it.
+  // - If public_visible === false (i.e. Private), only Admin and the assigned Project/Site Manager can see it.
+  const canViewProject = (project: { id?: string; name?: string; title?: string; public_visible?: boolean | null; publicVisible?: boolean | null }): boolean => {
+    if (!project) return false;
+    const isPrivate = project.public_visible === false || project.publicVisible === false;
+    if (!isPrivate) return true;
+    if (currentRole === 'Admin') return true;
+    const pId = project.id || '';
+    const pName = project.name || project.title || '';
+    return canManageProject(pId) || (Boolean(pName) && canManageProject(pName));
+  };
+
   return (
     <RoleContext.Provider
       value={{
@@ -431,6 +493,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         updateVisibilitySetting,
         updateMenuVisibility,
         isTabVisibleForPublic,
+        canManageProject,
+        canViewProject,
         refreshUsers
       }}
     >

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authGuard, escapePostgrestValue } from '@/lib/authGuard';
+import { authGuard, escapePostgrestValue, canUserManageProject, canUserManageSite } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 // Allowed tables to prevent SQL injection or targeting wrong tables
@@ -8,7 +8,7 @@ const ALLOWED_TABLES = ['sites', 'live_sites', 'lantana_sites'];
 // POST: Upsert a new site
 export async function POST(req: NextRequest) {
   const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
-  if (authError) return NextResponse.json({ error: authError }, { status: 401 });
+  if (authError || !user) return NextResponse.json({ error: authError || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await req.json();
@@ -20,9 +20,8 @@ export async function POST(req: NextRequest) {
     
     // Check project permission for non-admins
     if (user.role !== 'Admin') {
-      const assignedProjects = user.assignedProjects || [];
-      const projectId = siteData.project_id || siteData.projectId; // handles both camelCase and snake_case depending on table
-      if (projectId && !assignedProjects.includes(projectId)) {
+      const projectId = siteData.project_id || siteData.projectId || (table === 'lantana_sites' ? 'tst_lantana' : '');
+      if (!projectId || !canUserManageProject(user, projectId)) {
         return NextResponse.json({ error: 'Unauthorized to add site to this project' }, { status: 403 });
       }
     }
@@ -38,22 +37,27 @@ export async function POST(req: NextRequest) {
 
 // PUT: Update an existing site
 export async function PUT(req: NextRequest) {
-  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager']);
-  if (authError) return NextResponse.json({ error: authError }, { status: 401 });
+  const { user, error: authError } = await authGuard(req, ['Admin', 'Project Manager', 'Site Manager']);
+  if (authError || !user) return NextResponse.json({ error: authError || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await req.json();
     const { table, id, ...updateData } = body;
 
-    if (!ALLOWED_TABLES.includes(table)) {
-      return NextResponse.json({ error: 'Invalid table specified' }, { status: 400 });
+    if (!ALLOWED_TABLES.includes(table) || !id) {
+      return NextResponse.json({ error: 'Invalid table or site ID specified' }, { status: 400 });
     }
 
-    // Check project permission for non-admins
+    // Check project/site permission for non-admins by inspecting existing site if needed
     if (user.role !== 'Admin') {
-      const assignedProjects = user.assignedProjects || [];
-      const projectId = updateData.project_id || updateData.projectId;
-      if (projectId && !assignedProjects.includes(projectId)) {
+      const { data: existingSite } = await supabaseAdmin.from(table).select('*').eq('id', id).maybeSingle();
+      const targetProjId = updateData.project_id || updateData.projectId || existingSite?.project_id || (table === 'lantana_sites' ? 'tst_lantana' : '');
+      const targetSiteName = existingSite?.site_name || existingSite?.name || id;
+
+      if (user.role === 'Project Manager' && !canUserManageProject(user, targetProjId)) {
+        return NextResponse.json({ error: 'Unauthorized to edit this site' }, { status: 403 });
+      }
+      if (user.role === 'Site Manager' && !canUserManageSite(user, targetSiteName, targetProjId) && !canUserManageSite(user, id, targetProjId)) {
         return NextResponse.json({ error: 'Unauthorized to edit this site' }, { status: 403 });
       }
     }

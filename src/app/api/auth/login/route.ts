@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { authGuard, createSessionToken } from '@/lib/authGuard';
+import { authGuard, createSessionToken, isSafeEmailLookup } from '@/lib/authGuard';
 
 // In-memory rate limiter for login attempts (max 8 attempts per 10 minutes per IP/email)
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -63,8 +63,8 @@ export async function POST(req: NextRequest) {
     const email = String(body.email || '').trim();
     const password = String(body.password || '');
 
-    if (!email || !password) {
-      return NextResponse.json({ success: false, message: 'Email and password are required.' }, { status: 400 });
+    if (!email || !password || !isSafeEmailLookup(email)) {
+      return NextResponse.json({ success: false, message: 'Valid email and password are required.' }, { status: 400 });
     }
 
     const rateKey = `${ip}:${email.toLowerCase()}`;
@@ -78,10 +78,10 @@ export async function POST(req: NextRequest) {
     const { data: users, error } = await supabaseAdmin
       .from('users')
       .select('*')
-      .ilike('email', email)
+      .ilike('email', email.replace(/_/g, '\\_'))
       .limit(1);
 
-    if (error || !users || users.length === 0) {
+    if (error || !users || users.length === 0 || String(users[0].email || '').toLowerCase().trim() !== email.toLowerCase()) {
       return NextResponse.json({ success: false, message: 'Invalid email or password.' }, { status: 401 });
     }
 

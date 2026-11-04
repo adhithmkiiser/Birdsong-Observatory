@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { isSafeEmailLookup } from '@/lib/authGuard';
 
 // Rate limiter for OTP password resets (max 3 requests per 10 minutes per email/IP)
 const resetRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -24,8 +25,8 @@ export async function POST(req: NextRequest) {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
     const { email, name } = await req.json();
 
-    if (!email || typeof email !== 'string') {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    if (!email || typeof email !== 'string' || !isSafeEmailLookup(email)) {
+      return NextResponse.json({ error: 'Valid email is required' }, { status: 400 });
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -43,9 +44,9 @@ export async function POST(req: NextRequest) {
     const { data: users, error: findError } = await supabaseAdmin
       .from('users')
       .select('id, email, full_name')
-      .ilike('email', cleanEmail);
+      .ilike('email', cleanEmail.replace(/_/g, '\\_'));
 
-    if (findError || !users || users.length === 0) {
+    if (findError || !users || users.length === 0 || String(users[0].email || '').toLowerCase().trim() !== cleanEmail) {
       // Return generic success to prevent email enumeration
       return NextResponse.json({ success: true, dispatched: false });
     }
@@ -126,7 +127,7 @@ export async function PUT(req: NextRequest) {
   try {
     const { email, currentPassword, newPassword } = await req.json();
 
-    if (!email || !currentPassword || !newPassword) {
+    if (!email || !currentPassword || !newPassword || !isSafeEmailLookup(String(email))) {
       return NextResponse.json(
         { error: 'Email, current/temporary password, and new permanent password are all required.' },
         { status: 400 }
@@ -137,13 +138,15 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
     }
 
+    const cleanTargetEmail = String(email).trim().toLowerCase();
+
     // 1. Locate user via supabaseAdmin
     const { data: users, error: findError } = await supabaseAdmin
       .from('users')
       .select('*')
-      .ilike('email', String(email).trim());
+      .ilike('email', cleanTargetEmail.replace(/_/g, '\\_'));
 
-    if (findError || !users || users.length === 0) {
+    if (findError || !users || users.length === 0 || String(users[0].email || '').toLowerCase().trim() !== cleanTargetEmail) {
       return NextResponse.json({ error: 'Current credentials could not be verified.' }, { status: 401 });
     }
 

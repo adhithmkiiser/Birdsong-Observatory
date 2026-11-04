@@ -8,9 +8,11 @@ import { RavenProSpectrogram } from '@/components/audio/RavenProSpectrogram';
 import { CollaboratorsMarquee } from '@/components/home/CollaboratorsMarquee';
 import WhatWeProvide from './WhatWeProvide';
 import { Footer } from '@/components/Footer';
-import { Database, MapPin, Bird, Radio, Activity, ArrowRight, Layers, Sparkles, CheckCircle2, Loader2, RefreshCw, Clock, Zap } from 'lucide-react';
+import { useRole } from '@/components/layout/RoleContext';
+import { Database, MapPin, Bird, Radio, Activity, ArrowRight, Layers, Sparkles, CheckCircle2, Loader2, RefreshCw, Clock, Zap, Lock, Globe, ShieldCheck } from 'lucide-react';
 
 export default function HomePage() {
+  const { currentRole, currentUser, canManageProject, canViewProject } = useRole();
   const [projects, setProjects] = useState<any[]>([]);
   const [sitesList, setSitesList] = useState<any[]>([]);
   const [projectStatsMap, setProjectStatsMap] = useState<Record<string, { recorders: number; species: number; detections: number }>>({});
@@ -199,13 +201,24 @@ export default function HomePage() {
     return { recorders: projSites.length, species: 0, detections: 0 };
   };
 
-  const pamProjects = projects.filter(p => p.project_type === 'PAM' || p.project_type === 'Lantana');
-  const liveProjects = projects.filter(p => p.project_type === 'Live');
+  // Filter projects:
+  // - If public_visible !== false (Public): visible to everyone.
+  // - If public_visible === false (Private): visible ONLY to Admin and assigned Project/Site Managers.
+  const visibleProjects = projects.filter(p => canViewProject(p));
 
-  // Compute dynamic live aggregated totals across all database projects
-  const totalSitesCount = Object.values(projectStatsMap).reduce((acc, curr) => acc + (curr.recorders || 0), 0) || sitesList.length || 0;
-  const totalSpeciesCount = Object.values(projectStatsMap).reduce((acc, curr) => Math.max(acc, curr.species || 0), 0) || 0;
-  const totalDetectionsCount = Object.values(projectStatsMap).reduce((acc, curr) => acc + (curr.detections || 0), 0) || 0;
+  // Projects assigned to the logged-in Project Manager or Site Manager for the "Your project" subsection
+  const isManager = currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  const myAssignedProjects = isManager
+    ? visibleProjects.filter(p => canManageProject(p.id) || canManageProject(p.name))
+    : [];
+
+  const pamProjects = visibleProjects.filter(p => p.project_type === 'PAM' || p.project_type === 'Lantana');
+  const liveProjects = visibleProjects.filter(p => p.project_type === 'Live');
+
+  // Compute dynamic live aggregated totals across visible database projects
+  const totalSitesCount = visibleProjects.reduce((acc, p) => acc + (projectStatsMap[p.id]?.recorders || 0), 0) || sitesList.length || 0;
+  const totalSpeciesCount = visibleProjects.reduce((acc, p) => Math.max(acc, projectStatsMap[p.id]?.species || 0), 0) || 0;
+  const totalDetectionsCount = visibleProjects.reduce((acc, p) => acc + (projectStatsMap[p.id]?.detections || 0), 0) || 0;
 
   return (
     <main className="w-full bg-[#ffffff] text-[#1a1f1c] font-sans">
@@ -255,7 +268,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="font-serif font-semibold text-3xl text-[#1f4d3a]">
-                  {projects.length > 0 ? projects.length : '—'}
+                  {visibleProjects.length > 0 ? visibleProjects.length : '—'}
                 </div>
                 <div className="text-xs text-[#5a635d]">
                   Active long-term PAM surveys &amp; live canopy arrays
@@ -398,6 +411,128 @@ export default function HomePage() {
             </div>
           </div>
 
+          {/* Subsection for Project Managers & Site Managers: "Your project" */}
+          {isManager && (
+            <div className="space-y-4 p-5 sm:p-6 rounded-2xl border-2 border-[#1f4d3a]/25 bg-gradient-to-br from-[#f0f7f3] via-[#ffffff] to-[#f8faf8] shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-7 h-7 rounded-lg bg-[#1f4d3a] text-white flex items-center justify-center shadow-2xs">
+                    <ShieldCheck className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-serif font-semibold text-xl text-[#1a1f1c]">
+                        Your project
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-md bg-[#1f4d3a] text-white text-[10px] font-mono font-bold uppercase tracking-wider">
+                        {currentRole}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#5a635d]">
+                      Projects explicitly assigned to your account ({currentUser?.name || currentUser?.email}) with full management privileges.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-[#eaf3ee] border border-[#b8dbc8] text-[11px] font-mono font-semibold text-[#1f4d3a] self-start sm:self-auto">
+                  {myAssignedProjects.length} {myAssignedProjects.length === 1 ? 'assigned project' : 'assigned projects'}
+                </span>
+              </div>
+
+              {myAssignedProjects.length > 0 ? (
+                <div className="overflow-x-auto border border-[#b8dbc8] rounded-2xl bg-white shadow-2xs">
+                  <table className="data-table">
+                    <thead>
+                      <tr className="bg-[#f0f7f3]">
+                        <th>Project Name</th>
+                        <th>Type &amp; Visibility</th>
+                        <th>Ecosystem / Organization</th>
+                        <th className="num-cell">Sites / Nodes</th>
+                        <th className="num-cell">Species</th>
+                        <th className="num-cell">Detections</th>
+                        <th className="text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myAssignedProjects.map((p) => {
+                        const stats = getProjectStats(p.id);
+                        const isLive = p.project_type === 'Live';
+                        const isLantana = p.project_type === 'Lantana';
+                        const isPrivate = p.public_visible === false;
+                        const dashboardUrl = isLive
+                          ? `/live_dashboard?project=${p.id}`
+                          : isLantana
+                          ? `/dashboard/lantana?project=${p.id}`
+                          : `/dashboard/common?project=${p.id}`;
+                        const adminUrl = isLive ? '/admin/live' : '/admin/pam';
+
+                        return (
+                          <tr key={`your-proj-${p.id}`} className="hover:bg-[#f8faf8] transition-colors">
+                            <td>
+                              <div className="font-semibold text-[#1a1f1c] flex items-center gap-2 flex-wrap">
+                                <span>{p.name}</span>
+                                {isLantana && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#fef3c7] text-[#b45309] border border-[#fde68a]">
+                                    Restoration
+                                  </span>
+                                )}
+                              </div>
+                              {p.description && (
+                                <div className="text-xs text-[#5a635d] max-w-sm truncate">{p.description}</div>
+                              )}
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                  {p.project_type || 'PAM'}
+                                </span>
+                                {isPrivate ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    <Lock className="w-3 h-3" /> Private
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                    <Globe className="w-3 h-3" /> Public
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="text-xs text-[#5a635d]">
+                              {p.organization || 'IISER Tirupati Bird Lab'}
+                            </td>
+                            <td className="num-cell font-mono font-medium">{stats.recorders}</td>
+                            <td className="num-cell font-mono font-semibold text-[#1f4d3a]">{stats.species}</td>
+                            <td className="num-cell font-mono text-[#5a635d]">{stats.detections.toLocaleString()}</td>
+                            <td className="text-right">
+                              <div className="inline-flex items-center justify-end gap-2">
+                                <Link
+                                  href={adminUrl}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-[#f0f7f3] text-[#1f4d3a] border border-[#b8dbc8] transition-all"
+                                >
+                                  <span>Manage</span>
+                                </Link>
+                                <Link
+                                  href={dashboardUrl}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1f4d3a] hover:bg-[#15382a] text-white transition-all"
+                                >
+                                  <span>Open dashboard</span>
+                                  <span>&rarr;</span>
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-white border border-[#dde1dc] text-xs text-[#5a635d]">
+                  No specific projects are currently assigned to your manager profile. You can still browse all public monitoring datasets below.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Group 1: Passive Acoustic Monitoring */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -428,6 +563,7 @@ export default function HomePage() {
                   {pamProjects.map((p) => {
                     const stats = getProjectStats(p.id);
                     const isLantana = p.project_type === 'Lantana';
+                    const isPrivate = p.public_visible === false;
                     const linkUrl = isLantana
                       ? `/dashboard/lantana?project=${p.id}`
                       : `/dashboard/common?project=${p.id}`;
@@ -435,11 +571,16 @@ export default function HomePage() {
                     return (
                       <tr key={p.id} className="hover:bg-[#f8faf8] transition-colors">
                         <td>
-                          <div className="font-medium text-[#1a1f1c] flex items-center gap-2">
+                          <div className="font-medium text-[#1a1f1c] flex items-center gap-2 flex-wrap">
                             <span>{p.name}</span>
                             {isLantana && (
                               <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#fef3c7] text-[#b45309] border border-[#fde68a]">
                                 Restoration
+                              </span>
+                            )}
+                            {isPrivate && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <Lock className="w-3 h-3" /> Private
                               </span>
                             )}
                           </div>
@@ -503,7 +644,14 @@ export default function HomePage() {
                       return (
                         <tr key={p.id} className="hover:bg-[#f8faf8] transition-colors">
                           <td>
-                            <div className="font-medium text-[#1a1f1c]">{p.name}</div>
+                            <div className="font-medium text-[#1a1f1c] flex items-center gap-2 flex-wrap">
+                              <span>{p.name}</span>
+                              {p.public_visible === false && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  <Lock className="w-3 h-3" /> Private
+                                </span>
+                              )}
+                            </div>
                             <div className="text-xs text-[#5a635d]">{p.description || 'Live acoustic monitoring array'}</div>
                           </td>
                           <td className="font-mono text-xs text-[#5a635d]">

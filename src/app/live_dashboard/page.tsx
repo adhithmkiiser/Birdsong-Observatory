@@ -48,6 +48,7 @@ import { AudioPlayerModal } from '@/components/audio/AudioPlayerModal';
 import { RavenProLiveSpectrogram } from '@/components/audio/RavenProLiveSpectrogram';
 import { Detection } from '@/types/database';
 import { useRole } from '@/components/layout/RoleContext';
+import { apiFetch } from '@/lib/apiClient';
 import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
@@ -144,7 +145,7 @@ export type LiveDashboardTab =
   | 'reports';
 
 export default function LiveDashboardPage() {
-  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic } = useRole();
+  const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic, canManageProject, canViewProject } = useRole();
   const [activeTab, setActiveTab] = useState<LiveDashboardTab>('summary');
   const [copiedLinkToast, setCopiedLinkToast] = useState(false);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
@@ -219,7 +220,18 @@ export default function LiveDashboardPage() {
 
   // Live stream access enabled across observatory visitors and researchers
   const canAccessLiveStream = true;
-  const canDeleteDetections = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  // A user only has manager privileges on this dashboard if they are Admin or explicitly assigned to the selected Live project
+  const isAssignedToCurrentLiveProject = useMemo(() => {
+    if (currentRole === 'Admin') return true;
+    if (currentRole !== 'Project Manager' && currentRole !== 'Site Manager') return false;
+    if (selectedProjectId && selectedProjectId !== 'ALL') {
+      const projObj = liveProjects.find((p: any) => p.id === selectedProjectId);
+      return canManageProject(selectedProjectId) || (projObj ? canManageProject(projObj.name) : false);
+    }
+    return liveProjects.some((p: any) => canManageProject(p.id) || canManageProject(p.name));
+  }, [currentRole, selectedProjectId, liveProjects, canManageProject]);
+
+  const canDeleteDetections = isAssignedToCurrentLiveProject;
 
   // Read initial tab from URL
   useEffect(() => {
@@ -255,14 +267,11 @@ export default function LiveDashboardPage() {
         let adminRecorders: any[] = [];
         let adminProjects: any[] = [];
         try {
-          const adminRes = await fetch('/api/live/admin');
-          if (adminRes.ok) {
-            const adminJson = await adminRes.json();
-            if (adminJson.success) {
-              adminTelemetry = adminJson.telemetry || [];
-              adminRecorders = adminJson.recorders || [];
-              adminProjects = adminJson.projects || [];
-            }
+          const adminJson = await apiFetch('/api/live/admin', {}, currentUser).catch(() => null);
+          if (adminJson && adminJson.success) {
+            adminTelemetry = adminJson.telemetry || [];
+            adminRecorders = adminJson.recorders || [];
+            adminProjects = adminJson.projects || [];
           }
         } catch (e) {
           console.warn('API live admin fetch note:', e);
@@ -318,18 +327,8 @@ export default function LiveDashboardPage() {
         let scopedProjs = combinedProjects;
         let rawSites = sitesData || [];
 
-        // Apply RBAC filters to projects and sites
-        if (currentRole === 'Project Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          scopedProjs = scopedProjs.filter((p: any) => assigned.includes(p.id));
-          rawSites = rawSites.filter((s: any) => assigned.includes(s.project_id));
-        } else if (currentRole === 'Site Manager') {
-          const assignedSites = currentUser?.assignedSites || [];
-          rawSites = rawSites.filter((s: any) => assignedSites.includes(s.id));
-          const allowedProjIds = new Set(rawSites.map((s: any) => s.project_id));
-          scopedProjs = scopedProjs.filter((p: any) => allowedProjIds.has(p.id));
-        }
-
+        // Public projects are visible to everyone; Private projects (public_visible === false) are visible only to Admin & assigned managers.
+        scopedProjs = scopedProjs.filter((p: any) => canViewProject(p));
         const liveProjectIds = new Set(scopedProjs.map((p: any) => p.id));
         const liveSites = rawSites.filter((s: any) => liveProjectIds.has(s.project_id));
         setLiveProjects(scopedProjs);
@@ -337,8 +336,9 @@ export default function LiveDashboardPage() {
         const queryProject = new URLSearchParams(window.location.search).get('project');
         if (queryProject && liveProjectIds.has(queryProject)) {
           setSelectedProjectId(queryProject);
-        } else if ((currentRole === 'Site Manager' || currentRole === 'Project Manager') && scopedProjs.length > 0) {
-          setSelectedProjectId(scopedProjs[0].id);
+        } else if (scopedProjs.length > 0) {
+          const assignedLive = scopedProjs.find((p: any) => (currentUser?.assignedProjects || []).includes(p.id));
+          setSelectedProjectId(assignedLive ? assignedLive.id : scopedProjs[0].id);
         }
 
         // Scope hardware nodes, and auto-link any active nodes from telemetry
@@ -370,11 +370,12 @@ export default function LiveDashboardPage() {
         }
 
         if (currentRole === 'Site Manager') {
-          const siteNames = new Set(liveSites.map((s: any) => s.name));
-          scopedRecorders = scopedRecorders.filter((r: any) => siteNames.has(r.site_name));
-        } else if (currentRole === 'Project Manager') {
-          const projNames = new Set(scopedProjs.map((p: any) => p.name));
-          scopedRecorders = scopedRecorders.filter((r: any) => projNames.has(r.project_name));
+          const assignedSiteIds = new Set(currentUser?.assignedSites || []);
+          const matchedLiveSites = liveSites.filter((s: any) => assignedSiteIds.has(s.id));
+          if (matchedLiveSites.length > 0) {
+            const siteNames = new Set(matchedLiveSites.map((s: any) => s.name));
+            scopedRecorders = scopedRecorders.filter((r: any) => siteNames.has(r.site_name));
+          }
         }
 
         // Deduplicate stations by recorder_id so duplicate DB records never render twice
@@ -874,9 +875,9 @@ export default function LiveDashboardPage() {
     }
   };
 
-  // Role-based visibility flags
-  const canAccessReports = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager' || visibilitySettings.allowPublicReports;
-  const canAccessReview = currentRole === 'Admin' || currentRole === 'Project Manager' || currentRole === 'Site Manager';
+  // Role-based visibility flags (scoped to whether the user is assigned to the active Live project)
+  const canAccessReports = isAssignedToCurrentLiveProject || visibilitySettings.allowPublicReports;
+  const canAccessReview = isAssignedToCurrentLiveProject;
 
   // Acoustic Watchdog Triage Handlers & Filters
   const unreviewedTriageCount = useMemo(() => {
@@ -1126,13 +1127,13 @@ export default function LiveDashboardPage() {
   ];
 
   const navMenuItems = useMemo(() => {
-    if (currentRole !== 'Public') return allNavMenuItems;
+    if (isAssignedToCurrentLiveProject) return allNavMenuItems;
     return allNavMenuItems.filter(item => isTabVisibleForPublic('liveRecorder', item.id, scopeKey));
-  }, [currentRole, isTabVisibleForPublic, scopeKey, canAccessReview, canAccessReports, activeNodesCount]);
+  }, [isAssignedToCurrentLiveProject, isTabVisibleForPublic, scopeKey, canAccessReview, canAccessReports, activeNodesCount]);
 
   // Fallback if activeTab is not permitted or hidden
   useEffect(() => {
-    if (currentRole === 'Public' && navMenuItems.length > 0) {
+    if (!isAssignedToCurrentLiveProject && navMenuItems.length > 0) {
       const isCurrentVisible = navMenuItems.some(item => item.id === activeTab);
       if (!isCurrentVisible) {
         setActiveTab(navMenuItems[0].id as any);
@@ -1146,7 +1147,7 @@ export default function LiveDashboardPage() {
         setActiveTab('summary');
       }
     }
-  }, [activeTab, canAccessReview, canAccessReports, currentRole, navMenuItems]);
+  }, [activeTab, canAccessReview, canAccessReports, currentRole, isAssignedToCurrentLiveProject, navMenuItems]);
 
   if (loading) {
     return <DashboardLoader progress={loadingProgress} message="Loading live bioacoustics feed..." />;

@@ -79,7 +79,8 @@ export default function PublicVisibilityAdminPage() {
     visibilitySettings, 
     updateVisibilitySetting, 
     updateMenuVisibility,
-    isTabVisibleForPublic 
+    isTabVisibleForPublic,
+    canManageProject
   } = useRole();
 
   const [selectedDashboardType, setSelectedDashboardType] = useState<DashboardType>('commonPam');
@@ -111,9 +112,20 @@ export default function PublicVisibilityAdminPage() {
 
         // Role-based filtering
         if (currentRole === 'Project Manager') {
-          const assigned = currentUser?.assignedProjects || [];
-          pList = pList.filter((p: any) => assigned.includes(p.id));
-          sList = sList.filter((s: any) => assigned.includes(s.project_id));
+          pList = pList.filter((p: any) => canManageProject(p.id) || canManageProject(p.name));
+          const allowedProjIds = new Set(pList.map((p: any) => p.id));
+          sList = sList.filter((s: any) => allowedProjIds.has(s.project_id) || canManageProject(s.project_id));
+          if (!canManageProject('tst_lantana') && !canManageProject('lantana_project')) {
+            lList = [];
+          }
+          // Auto-select the first dashboard type that this Project Manager actually owns
+          const hasCommon = pList.some((p: any) => !p.project_type || p.project_type === 'PAM');
+          const hasLantana = pList.some((p: any) => p.project_type === 'Lantana') || canManageProject('tst_lantana');
+          const hasLive = pList.some((p: any) => p.project_type === 'Live') || canManageProject('test');
+          if (!hasCommon) {
+            if (hasLantana) setSelectedDashboardType('lantanaPam');
+            else if (hasLive) setSelectedDashboardType('liveRecorder');
+          }
         }
 
         setProjectsList(pList);
@@ -135,6 +147,10 @@ export default function PublicVisibilityAdminPage() {
       return projectsList.filter((p: any) => p.project_type === 'Live');
     }
   }, [projectsList, selectedDashboardType]);
+
+  const canManageCommonType = currentRole === 'Admin' || projectsList.some((p: any) => !p.project_type || p.project_type === 'PAM') || canManageProject('nilgiri');
+  const canManageLantanaType = currentRole === 'Admin' || projectsList.some((p: any) => p.project_type === 'Lantana') || canManageProject('tst_lantana');
+  const canManageLiveType = currentRole === 'Admin' || projectsList.some((p: any) => p.project_type === 'Live') || canManageProject('test');
 
   // Filter sites by selected project
   const availableSites = useMemo(() => {
@@ -238,71 +254,77 @@ export default function PublicVisibilityAdminPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <button
-            type="button"
-            onClick={() => setSelectedDashboardType('commonPam')}
-            className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
-              selectedDashboardType === 'commonPam'
-                ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
-                : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-              selectedDashboardType === 'commonPam' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
-            }`}>
-              <Database className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-xs">Common PAM Dashboard</div>
-              <div className={`text-[11px] ${selectedDashboardType === 'commonPam' ? 'text-white/80' : 'text-[#5a635d]'}`}>
-                Standard bioacoustic transects
+          {canManageCommonType && (
+            <button
+              type="button"
+              onClick={() => setSelectedDashboardType('commonPam')}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
+                selectedDashboardType === 'commonPam'
+                  ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
+                  : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                selectedDashboardType === 'commonPam' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
+              }`}>
+                <Database className="w-5 h-5" />
               </div>
-            </div>
-          </button>
+              <div>
+                <div className="font-bold text-xs">Common PAM Dashboard</div>
+                <div className={`text-[11px] ${selectedDashboardType === 'commonPam' ? 'text-white/80' : 'text-[#5a635d]'}`}>
+                  Standard bioacoustic transects
+                </div>
+              </div>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setSelectedDashboardType('lantanaPam')}
-            className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
-              selectedDashboardType === 'lantanaPam'
-                ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
-                : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-              selectedDashboardType === 'lantanaPam' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
-            }`}>
-              <Leaf className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-xs">Lantana PAM Dashboard</div>
-              <div className={`text-[11px] ${selectedDashboardType === 'lantanaPam' ? 'text-white/80' : 'text-[#5a635d]'}`}>
-                Restoration &amp; indicator metrics
+          {canManageLantanaType && (
+            <button
+              type="button"
+              onClick={() => setSelectedDashboardType('lantanaPam')}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
+                selectedDashboardType === 'lantanaPam'
+                  ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
+                  : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                selectedDashboardType === 'lantanaPam' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
+              }`}>
+                <Leaf className="w-5 h-5" />
               </div>
-            </div>
-          </button>
+              <div>
+                <div className="font-bold text-xs">Lantana PAM Dashboard</div>
+                <div className={`text-[11px] ${selectedDashboardType === 'lantanaPam' ? 'text-white/80' : 'text-[#5a635d]'}`}>
+                  Restoration &amp; indicator metrics
+                </div>
+              </div>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setSelectedDashboardType('liveRecorder')}
-            className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
-              selectedDashboardType === 'liveRecorder'
-                ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
-                : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-              selectedDashboardType === 'liveRecorder' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
-            }`}>
-              <Radio className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-xs">Live Recorder Dashboard</div>
-              <div className={`text-[11px] ${selectedDashboardType === 'liveRecorder' ? 'text-white/80' : 'text-[#5a635d]'}`}>
-                Realtime streaming field nodes
+          {canManageLiveType && (
+            <button
+              type="button"
+              onClick={() => setSelectedDashboardType('liveRecorder')}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${
+                selectedDashboardType === 'liveRecorder'
+                  ? 'bg-[#1f4d3a] text-white border-[#1f4d3a] shadow-xs'
+                  : 'bg-[#fafbfa] text-[#1a1f1c] border-[#dde1dc] hover:bg-[#f0f7f3]'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                selectedDashboardType === 'liveRecorder' ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
+              }`}>
+                <Radio className="w-5 h-5" />
               </div>
-            </div>
-          </button>
+              <div>
+                <div className="font-bold text-xs">Live Recorder Dashboard</div>
+                <div className={`text-[11px] ${selectedDashboardType === 'liveRecorder' ? 'text-white/80' : 'text-[#5a635d]'}`}>
+                  Realtime streaming field nodes
+                </div>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
