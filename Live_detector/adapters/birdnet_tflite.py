@@ -50,20 +50,28 @@ class BirdNetTFLiteAdapter(ModelAdapter):
             self._load_geo_species_filter(model_path)
 
         # Import TFLite interpreter (supports ai-edge-litert, tflite-runtime or full tensorflow)
+        Interpreter = None
         try:
-            from ai_edge_litert.interpreter import Interpreter
+            from ai_edge_litert.interpreter import Interpreter  # type: ignore
         except ImportError:
             try:
-                from tflite_runtime.interpreter import Interpreter
+                from tflite_runtime.interpreter import Interpreter  # type: ignore
             except ImportError:
                 try:
-                    from tensorflow.lite.python.interpreter import Interpreter
+                    from tensorflow.lite.python.interpreter import Interpreter  # type: ignore
                 except ImportError:
                     raise ImportError("Please install 'tflite-runtime', 'ai-edge-litert', or 'tensorflow' to use BirdNET TFLite models.")
 
+        if Interpreter is None:
+            raise ImportError("Could not initialize TFLite Interpreter engine.")
+
         # Leave 1 core free for ALSA audio capture and live streaming
         threads = min(3, max(1, (os.cpu_count() or 4) - 1))
-        self.interpreter = Interpreter(model_path=model_path, num_threads=threads)
+        try:
+            self.interpreter = Interpreter(model_path=model_path, num_threads=threads)
+        except TypeError:
+            self.interpreter = Interpreter(model_path=model_path)
+
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()
