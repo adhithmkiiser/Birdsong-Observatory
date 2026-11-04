@@ -235,8 +235,6 @@ class LiveAudioStreamServer(threading.Thread):
                                     "project_type": "Live",
                                     "lat": NODE_LATITUDE,
                                     "long": NODE_LONGITUDE,
-                                    "latitude": NODE_LATITUDE,
-                                    "longitude": NODE_LONGITUDE,
                                     "elevation": self.public_stream_url,
                                     "status": "online"
                                 }, on_conflict="id").execute()

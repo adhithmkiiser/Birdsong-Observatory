@@ -130,15 +130,14 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update_gps') {
       const { nodeId, lat, long } = body;
+      const safeNodeId = escapePostgrestValue(String(nodeId || '').trim());
       const { data, error } = await supabaseAdmin
         .from('recorders_registry')
         .update({
-          lat,
-          long,
-          latitude: lat,
-          longitude: long
+          lat: Number(lat),
+          long: Number(long)
         })
-        .eq('recorder_id', nodeId)
+        .or(`recorder_id.eq."${safeNodeId}",id.eq."${safeNodeId}"`)
         .select();
 
       if (error) throw error;

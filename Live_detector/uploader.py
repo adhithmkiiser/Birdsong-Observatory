@@ -78,8 +78,6 @@ class CloudUploaderWorker(threading.Thread):
                     "project_type": "Live",
                     "lat": NODE_LATITUDE,
                     "long": NODE_LONGITUDE,
-                    "latitude": NODE_LATITUDE,
-                    "longitude": NODE_LONGITUDE,
                     "status": "online"
                 }, on_conflict="id").execute()
                 logger.info(f"✨ Auto-registered node '{STATION_NAME}' under project '{PROJECT_NAME}'.")
