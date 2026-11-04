@@ -49,7 +49,7 @@ BIRDNET_USE_LAT_LON_FILTER = os.getenv("BIRDNET_USE_LAT_LON_FILTER", "true").low
 
 # Supabase Credentials (loaded from Live_detector/.env or environment)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ktihcjfxxxazohimtiav.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "")
 
 # Audio Capture Settings
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "48000"))  # 48 kHz standard

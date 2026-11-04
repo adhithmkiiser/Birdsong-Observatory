@@ -82,6 +82,31 @@ class ControlManager:
             res = self.supabase.table("node_models").select("model_id, enabled, threshold, models(*)").eq("node_id", STATION_NAME).execute()
             assignments = res.data or []
 
+            # Auto-provision default BirdNET model in node_models for newly deployed Pi nodes
+            if not assignments:
+                try:
+                    models_res = self.supabase.table("models").select("*").eq("runtime", "birdnet_tflite").limit(1).execute()
+                    default_models = models_res.data or []
+                    if default_models:
+                        def_model = default_models[0]
+                        def_mid = str(def_model.get("id") or "")
+                        if def_mid:
+                            self.supabase.table("node_models").upsert({
+                                "node_id": STATION_NAME,
+                                "model_id": def_mid,
+                                "enabled": True,
+                                "threshold": 0.25
+                            }, on_conflict="node_id,model_id").execute()
+                            assignments = [{
+                                "model_id": def_mid,
+                                "enabled": True,
+                                "threshold": 0.25,
+                                "models": def_model
+                            }]
+                            logger.info(f"🌿 Auto-assigned default model '{def_model.get('name')}' to new node '{STATION_NAME}'.")
+                except Exception as auto_err:
+                    logger.debug(f"Auto model assignment note: {auto_err}")
+
             current_assigned_ids = set()
 
             for item in assignments:

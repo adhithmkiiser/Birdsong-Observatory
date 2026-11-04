@@ -23,8 +23,9 @@ from pathlib import Path
 from supabase import create_client, Client
 from outbox import OutboxDatabase
 from config import (
-    SUPABASE_URL, SUPABASE_KEY, CLIPS_DIR,
-    STATION_NAME, PROJECT_NAME, SITE_NAME, SAMPLE_RATE, SYNC_INTERVAL_SECONDS
+    SUPABASE_URL, SUPABASE_KEY, CLIPS_DIR, DATA_DIR,
+    STATION_NAME, PROJECT_NAME, SITE_NAME, NODE_LATITUDE, NODE_LONGITUDE,
+    SAMPLE_RATE, SYNC_INTERVAL_SECONDS
 )
 
 logger = logging.getLogger("CloudUploader")
@@ -41,9 +42,49 @@ class CloudUploaderWorker(threading.Thread):
         try:
             self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             logger.info("Connected to Supabase successfully.")
+            self._ensure_project_and_node_registered()
         except Exception as e:
             logger.warning(f"Could not connect to Supabase yet: {e}")
             self.supabase = None
+
+    def _ensure_project_and_node_registered(self):
+        """Ensures the configured PROJECT_NAME and STATION_NAME exist in Supabase on startup."""
+        if not self.supabase:
+            return
+        try:
+            proj_id = PROJECT_NAME.lower().strip().replace(" ", "_")
+            existing_proj = self.supabase.table("projects").select("id").or_(f"id.eq.{proj_id},name.eq.{PROJECT_NAME}").execute()
+            if not existing_proj.data:
+                self.supabase.table("projects").upsert({
+                    "id": proj_id,
+                    "name": PROJECT_NAME,
+                    "description": f"Autonomous Live Edge Bioacoustic Array ({SITE_NAME})",
+                    "organization": "IISER Tirupati Bird Lab",
+                    "project_type": "Live",
+                    "stations_count": 1
+                }, on_conflict="id").execute()
+                logger.info(f"✨ Auto-created Live project '{PROJECT_NAME}' in Supabase.")
+        except Exception as e:
+            logger.debug(f"Project auto-registration note: {e}")
+
+        try:
+            existing_rec = self.supabase.table("recorders_registry").select("recorder_id").eq("recorder_id", STATION_NAME).execute()
+            if not existing_rec.data:
+                self.supabase.table("recorders_registry").upsert({
+                    "id": f"{PROJECT_NAME.lower()}::{SITE_NAME.lower()}::{STATION_NAME}",
+                    "recorder_id": STATION_NAME,
+                    "project_name": PROJECT_NAME,
+                    "site_name": SITE_NAME,
+                    "project_type": "Live",
+                    "lat": NODE_LATITUDE,
+                    "long": NODE_LONGITUDE,
+                    "latitude": NODE_LATITUDE,
+                    "longitude": NODE_LONGITUDE,
+                    "status": "online"
+                }, on_conflict="id").execute()
+                logger.info(f"✨ Auto-registered node '{STATION_NAME}' under project '{PROJECT_NAME}'.")
+        except Exception as e:
+            logger.debug(f"Node auto-registration note: {e}")
 
     def encode_to_opus(self, audio_data: np.ndarray, output_path: str) -> bool:
         """Encodes float32 48kHz audio array to compact Opus file using FFmpeg."""

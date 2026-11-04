@@ -233,7 +233,7 @@ export default function LiveAdminPage() {
   const [genProjectName, setGenProjectName] = useState('Test_custom');
   const [genRecorderId, setGenRecorderId] = useState('Test_01');
   const [genSupabaseUrl, setGenSupabaseUrl] = useState('https://ktihcjfxxxazohimtiav.supabase.co');
-  const [genSupabaseKey, setGenSupabaseKey] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0aWhjamZ4eHhhem9oaW10aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjA1ODYsImV4cCI6MjEwMDgzNjU4Nn0.T9C9Io9dBIiEPlIeLWLEHguAG--PO1US8qKDD0Dhzw4');
+  const [genSupabaseKey, setGenSupabaseKey] = useState('');
   const [genAudioDevice, setGenAudioDevice] = useState('plughw:CARD=Audio,DEV=0');
   const [genHopSeconds, setGenHopSeconds] = useState('3.0');
   const [genLatitude, setGenLatitude] = useState('13.6288');
@@ -781,8 +781,9 @@ export default function LiveAdminPage() {
     }
   };
 
-  // Generated `.env` configuration
-  const generatedEnvScript = `# ==============================================================================
+  // Generated `.env` configuration (wrapped in cat << 'EOF' so pasting directly into SSH creates the file)
+  const generatedEnvScript = `cat << 'EOF' > /home/${genPiUser}/Live_detector/.env
+# ==============================================================================
 # BIRDSONG OBSERVATORY - EDGE DETECTOR ENVIRONMENT CONFIGURATION
 # Location: /home/${genPiUser}/Live_detector/.env
 # ==============================================================================
@@ -793,6 +794,7 @@ SITE_NAME="${genStationName}"
 # Supabase Cloud Synchronization Credentials
 SUPABASE_URL="${genSupabaseUrl}"
 SUPABASE_KEY="${genSupabaseKey}"
+SUPABASE_SERVICE_ROLE_KEY="${genSupabaseKey}"
 
 # Audio Ingestion & Microphones (Check: arecord -l)
 AUDIO_INPUT_DEVICE="${genAudioDevice}"
@@ -811,10 +813,12 @@ BIRDNET_USE_LAT_LON_FILTER=true
 STREAM_PORT=8888
 HEARTBEAT_INTERVAL_SECONDS=30
 TELEMETRY_INTERVAL_SECONDS=60
-DB_SYNC_INTERVAL_SECONDS=10`;
+DB_SYNC_INTERVAL_SECONDS=10
+EOF`;
 
-  // Generated `live-detector.service` unit file
-  const generatedSystemdService = `[Unit]
+  // Generated `live-detector.service` unit file (wrapped in sudo tee so pasting directly into SSH installs & starts it)
+  const generatedSystemdService = `sudo tee /etc/systemd/system/live-detector.service > /dev/null << 'EOF'
+[Unit]
 Description=BirdSong Observatory - Live Detector Edge Agent (Multi-Model & Solar Telemetry)
 After=network-online.target sound.target
 Wants=network-online.target sound.target
@@ -823,8 +827,8 @@ Wants=network-online.target sound.target
 Type=simple
 User=${genPiUser}
 WorkingDirectory=/home/${genPiUser}/Live_detector
-EnvironmentFile=/home/${genPiUser}/Live_detector/.env
-ExecStart=/home/${genPiUser}/Live_detector/venv/bin/python3 main.py
+EnvironmentFile=-/home/${genPiUser}/Live_detector/.env
+ExecStart=/home/${genPiUser}/Live_detector/venv/bin/python3 /home/${genPiUser}/Live_detector/main.py
 
 # Automatic restart on powerbank dips or transient failure
 Restart=always
@@ -834,7 +838,9 @@ RestartSec=5
 SupplementaryGroups=audio video
 
 [Install]
-WantedBy=multi-user.target`;
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload && sudo systemctl enable --now live-detector`;
 
   // ----------------------------------------------------------------------------
   // Detections Database: Derived Data & Memos
@@ -2061,7 +2067,7 @@ WantedBy=multi-user.target`;
                   <span className="font-bold text-sm text-emerald-400">Step 4: Download Live_detector from GitHub (Sparse Checkout)</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`rm -rf /home/${genPiUser}/Live_detector && git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory && cd ~/Birdsong-Observatory && git sparse-checkout set Live_detector && ln -s ~/Birdsong-Observatory/Live_detector /home/${genPiUser}/Live_detector && cd /home/${genPiUser}/Live_detector`);
+                      navigator.clipboard.writeText(`rm -rf /home/${genPiUser}/Live_detector ~/Birdsong-Observatory && git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory && cd ~/Birdsong-Observatory && git sparse-checkout set Live_detector && ln -s ~/Birdsong-Observatory/Live_detector /home/${genPiUser}/Live_detector && cd /home/${genPiUser}/Live_detector`);
                       showNotification('GitHub sparse-checkout command copied!');
                     }}
                     className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
@@ -2073,7 +2079,7 @@ WantedBy=multi-user.target`;
                   Downloads <strong>only</strong> the lightweight <code className="text-emerald-400">Live_detector</code> engine directly onto your Pi without cloning the rest of the web app:
                 </p>
                 <pre className="p-3.5 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-xs text-emerald-300 select-all overflow-x-auto">
-                  rm -rf /home/{genPiUser}/Live_detector &amp;&amp; git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory &amp;&amp; cd ~/Birdsong-Observatory &amp;&amp; git sparse-checkout set Live_detector &amp;&amp; ln -s ~/Birdsong-Observatory/Live_detector /home/{genPiUser}/Live_detector &amp;&amp; cd /home/{genPiUser}/Live_detector
+                  rm -rf /home/{genPiUser}/Live_detector ~/Birdsong-Observatory &amp;&amp; git clone --depth 1 --filter=blob:none --sparse https://github.com/adhithmkiiser/Birdsong-Observatory.git ~/Birdsong-Observatory &amp;&amp; cd ~/Birdsong-Observatory &amp;&amp; git sparse-checkout set Live_detector &amp;&amp; ln -s ~/Birdsong-Observatory/Live_detector /home/{genPiUser}/Live_detector &amp;&amp; cd /home/{genPiUser}/Live_detector
                 </pre>
               </div>
 
@@ -2191,19 +2197,56 @@ WantedBy=multi-user.target`;
               </div>
 
               {/* Step 7: Create .env File */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-sm text-amber-400">Step 7: Write Configuration to .env</span>
                   <button
                     onClick={() => {
+                      if (!genSupabaseKey.trim()) {
+                        alert('Please paste your SUPABASE_SERVICE_ROLE_KEY in the Step 7 input box first!');
+                        return;
+                      }
                       navigator.clipboard.writeText(generatedEnvScript);
-                      showNotification('.env content copied to clipboard!');
+                      showNotification('.env command copied to clipboard! Paste directly into your Pi terminal.');
                     }}
-                    className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                    className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Copy className="w-3.5 h-3.5" /> Copy .env
+                    <Copy className="w-3.5 h-3.5" /> Copy .env Command
                   </button>
                 </div>
+
+                {/* Supabase Key Input Box inside Step 7 */}
+                <div className="p-3.5 rounded-xl bg-[#181d1a] border border-amber-500/30 space-y-2">
+                  <label className="text-xs font-semibold text-amber-300 block">
+                    🔑 Paste Your Supabase Service Role / Secret Key Before Copying Step 7:
+                  </label>
+                  <p className="text-[11px] text-[#a0aba3] leading-relaxed">
+                    For security, your secret Supabase key is never hardcoded in the public web bundle. Paste your <code className="text-amber-300">SUPABASE_SERVICE_ROLE_KEY</code> below (from your Supabase Dashboard &rarr; Project Settings &rarr; API) and it will automatically populate into the <code className="text-emerald-300">.env</code> command below:
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                    <div>
+                      <span className="text-[10px] font-mono text-[#a0aba3] block mb-1">SUPABASE_URL</span>
+                      <input
+                        type="text"
+                        value={genSupabaseUrl}
+                        onChange={(e) => setGenSupabaseUrl(e.target.value)}
+                        placeholder="https://your-project.supabase.co"
+                        className="w-full bg-[#121614] border border-[#2d3630] rounded-lg px-3 py-2 text-xs font-mono text-white outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-[10px] font-mono text-amber-300 block mb-1">SUPABASE_SERVICE_ROLE_KEY (Paste Secret Key Here)</span>
+                      <input
+                        type="text"
+                        value={genSupabaseKey}
+                        onChange={(e) => setGenSupabaseKey(e.target.value)}
+                        placeholder="Paste your Supabase secret / service_role key here..."
+                        className="w-full bg-[#121614] border border-amber-500/50 rounded-lg px-3 py-2 text-xs font-mono text-amber-200 outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <pre className="p-4 rounded-xl bg-[#121614] border border-[#2d3630] font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed">
                   {generatedEnvScript}
                 </pre>

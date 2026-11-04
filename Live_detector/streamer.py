@@ -161,7 +161,12 @@ class LiveAudioStreamServer(threading.Thread):
             logger.info(f"🌐 [AutoTunnel] Configured stream target: {self.public_stream_url}")
             return
 
-        cloudflared_bin = shutil.which("cloudflared")
+        cloudflared_bin = (
+            shutil.which("cloudflared")
+            or ("/usr/local/bin/cloudflared" if os.path.exists("/usr/local/bin/cloudflared") else None)
+            or (str(Path(__file__).resolve().parent / "venv/bin/cloudflared") if (Path(__file__).resolve().parent / "venv/bin/cloudflared").exists() else None)
+            or (str(Path.home() / ".local/bin/cloudflared") if (Path.home() / ".local/bin/cloudflared").exists() else None)
+        )
         if not cloudflared_bin:
             logger.info("ℹ️ cloudflared binary not found on PATH. Remote auto-tunnel skipped.")
             return
@@ -196,8 +201,25 @@ class LiveAudioStreamServer(threading.Thread):
                         logger.info("=" * 65)
                         try:
                             from supabase import create_client
-                            from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME, PROJECT_NAME, SITE_NAME
+                            from config import SUPABASE_URL, SUPABASE_KEY, STATION_NAME, PROJECT_NAME, SITE_NAME, NODE_LATITUDE, NODE_LONGITUDE
                             sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+                            # Ensure the Live project exists in the `projects` table so it appears automatically on the dashboard
+                            try:
+                                proj_id = PROJECT_NAME.lower().strip().replace(" ", "_")
+                                existing_proj = sb.table("projects").select("id").or_(f"id.eq.{proj_id},name.eq.{PROJECT_NAME}").execute()
+                                if not existing_proj.data:
+                                    sb.table("projects").upsert({
+                                        "id": proj_id,
+                                        "name": PROJECT_NAME,
+                                        "description": f"Autonomous Live Edge Bioacoustic Array ({SITE_NAME})",
+                                        "organization": "IISER Tirupati Bird Lab",
+                                        "project_type": "Live",
+                                        "stations_count": 1,
+                                        "public_visible": True
+                                    }, on_conflict="id").execute()
+                            except Exception:
+                                pass
+
                             # First update any existing record with this recorder_id to avoid duplicate rows
                             up_res = sb.table("recorders_registry").update({
                                 "elevation": self.public_stream_url,
@@ -212,6 +234,10 @@ class LiveAudioStreamServer(threading.Thread):
                                     "project_name": PROJECT_NAME,
                                     "site_name": SITE_NAME,
                                     "project_type": "Live",
+                                    "lat": NODE_LATITUDE,
+                                    "long": NODE_LONGITUDE,
+                                    "latitude": NODE_LATITUDE,
+                                    "longitude": NODE_LONGITUDE,
                                     "elevation": self.public_stream_url,
                                     "status": "online"
                                 }, on_conflict="id").execute()

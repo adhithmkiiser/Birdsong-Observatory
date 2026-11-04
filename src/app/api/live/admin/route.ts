@@ -29,15 +29,44 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('live_detections').select('*').order('timestamp', { ascending: false }).limit(detsLimit)
     ]);
 
+    // Auto-create a 'Live' project in `projects` if a Pi registered a new `project_name` in `recorders_registry`
+    const allProjs = [...(projs || [])];
+    const existingProjKeys = new Set(
+      allProjs.flatMap((p: any) => [
+        String(p.id || '').toLowerCase().trim(),
+        String(p.name || '').toLowerCase().trim()
+      ])
+    );
+
+    for (const rec of (recorders || [])) {
+      const pName = String(rec.project_name || '').trim();
+      if (pName && !existingProjKeys.has(pName.toLowerCase())) {
+        existingProjKeys.add(pName.toLowerCase());
+        const newProj = {
+          id: pName.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+          name: pName,
+          description: `Autonomous Live Edge Bioacoustic Array (${rec.site_name || 'Field Observatory'})`,
+          organization: 'IISER Tirupati Bird Lab',
+          project_type: 'Live',
+          stations_count: 1,
+          public_visible: true
+        };
+        allProjs.unshift(newProj);
+        try {
+          await supabaseAdmin.from('projects').upsert(newProj, { onConflict: 'id' });
+        } catch {}
+      }
+    }
+
     // Filter out private Live projects unless the caller is Admin or an assigned manager
-    const visibleProjects = (projs || []).filter((p: any) => {
+    const visibleProjects = allProjs.filter((p: any) => {
       if (p.public_visible !== false) return true;
       return Boolean(user) && (canUserManageProject(user, p.id) || canUserManageProject(user, p.name));
     });
 
     const visibleProjNames = new Set(visibleProjects.map((p: any) => String(p.name || '').toLowerCase().trim()));
     const visibleProjIds = new Set(visibleProjects.map((p: any) => String(p.id || '').toLowerCase().trim()));
-    const hasPrivateFilteredOut = (projs || []).length > visibleProjects.length;
+    const hasPrivateFilteredOut = allProjs.length > visibleProjects.length;
 
     const visibleRecorders = hasPrivateFilteredOut
       ? (recorders || []).filter((r: any) => {
