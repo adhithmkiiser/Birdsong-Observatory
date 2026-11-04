@@ -14,6 +14,23 @@ export interface MasterSpecies {
   detections_count: number;
 }
 
+
+export function normalizeSpeciesKey(name?: string | null): string {
+  if (!name) return '';
+  return name.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function normalizeSpeciesImageUrl(url?: string | null): string {
+  if (!url) return '';
+  let clean = url.trim();
+  if (clean.includes('upload.wikimedia.org/wikipedia/commons/thumb/')) {
+    clean = clean.replace(/\/(\d{4,})px-/, '/800px-');
+  }
+  return clean;
+}
+
+export const DEFAULT_AVIAN_PLACEHOLDER = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%"><defs><linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0a120e"/><stop offset="60%" stop-color="#14211a"/><stop offset="100%" stop-color="#070d0a"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#bgGrad)"/><circle cx="400" cy="270" r="90" fill="#1f4d3a" opacity="0.35"/><circle cx="400" cy="270" r="140" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="6 6" opacity="0.3"/><g transform="translate(360, 220) scale(3.5)" fill="#4ade80" opacity="0.85"><path d="M16 7h.01M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 18z"/></g><text x="400" y="420" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="22" font-weight="700" fill="#f8fafc" text-anchor="middle" letter-spacing="2">BIOACOUSTIC DETECTION</text><text x="400" y="452" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="14" fill="#94a3b8" text-anchor="middle">Photo in Curation • Free Creative Commons / Wikimedia</text></svg>');
+
 export const SPECIES_MASTER_LIST: MasterSpecies[] = [
   {
     "id": "spc-001",

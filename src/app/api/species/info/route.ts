@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SPECIES_MASTER_LIST } from '@/lib/speciesMasterData';
-
-function normalizeBirdImageUrl(url?: string | null): string {
-  if (!url) return '';
-  let clean = url.trim();
-  // Convert Wikimedia Commons 3840px/huge thumbs to 800px or direct file URLs to avoid HTTP 429 rate-limiting
-  if (clean.includes('upload.wikimedia.org/wikipedia/commons/thumb/')) {
-    clean = clean.replace(/\/(\d{4,})px-/, '/800px-');
-  }
-  return clean;
-}
+import { 
+  SPECIES_MASTER_LIST, 
+  normalizeSpeciesKey, 
+  normalizeSpeciesImageUrl, 
+  DEFAULT_AVIAN_PLACEHOLDER 
+} from '@/lib/speciesMasterData';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,36 +15,95 @@ export async function GET(request: NextRequest) {
   }
 
   const cleanName = name.trim();
-  const lowerName = cleanName.toLowerCase();
+  const normKey = normalizeSpeciesKey(cleanName);
 
-  // Check curated SPECIES_MASTER_LIST first for instant ecological & taxonomy metadata
+  // 1. Check curated SPECIES_MASTER_LIST first with normalized key (handles hyphens, spaces, underscores)
+  // All images in SPECIES_MASTER_LIST are verified Wikimedia Commons photos under free Creative Commons licenses
   const masterMatch = SPECIES_MASTER_LIST.find(
     (s) =>
-      s.common_name.toLowerCase() === lowerName ||
-      s.scientific_name.toLowerCase() === lowerName
+      normalizeSpeciesKey(s.common_name) === normKey ||
+      normalizeSpeciesKey(s.scientific_name) === normKey ||
+      (s.birdnet_label && normalizeSpeciesKey(s.birdnet_label) === normKey)
   );
 
+  if (masterMatch && masterMatch.image_url) {
+    const masterImg = normalizeSpeciesImageUrl(masterMatch.image_url);
+    return NextResponse.json({
+      found: true,
+      common_name: masterMatch.common_name,
+      scientific_name: masterMatch.scientific_name,
+      photo: {
+        square: masterImg,
+        medium: masterImg,
+        large: masterImg,
+        attribution: 'Wikimedia Commons (Free Creative Commons / Public Domain)'
+      },
+      conservation_status: masterMatch.iucn_status || 'Least Concern',
+      wikipedia_summary: '',
+      wikipedia_url: `https://en.wikipedia.org/wiki/${encodeURIComponent(masterMatch.scientific_name)}`
+    });
+  }
+
   try {
-    // Query iNaturalist Taxa API (taxon_id=3 = Aves)
-    const url = `https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(cleanName)}&taxon_id=3&rank=species`;
-    const response = await fetch(url, {
+    // 2. Wikipedia REST Summary API (strictly Wikimedia Commons free CC/Public Domain photos)
+    const wikiQueries = [
+      masterMatch?.scientific_name,
+      masterMatch?.common_name,
+      cleanName
+    ].filter(Boolean) as string[];
+
+    for (const query of wikiQueries) {
+      try {
+        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query.replace(/ /g, '_'))}`;
+        const wikiRes = await fetch(wikiUrl, {
+          headers: { 'User-Agent': 'BirdSong-Observatory/1.0' },
+          next: { revalidate: 86400 }
+        });
+
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          const thumb = normalizeSpeciesImageUrl(wikiData.thumbnail?.source || wikiData.originalimage?.source || '');
+          const orig = normalizeSpeciesImageUrl(wikiData.originalimage?.source || thumb);
+          if (thumb) {
+            return NextResponse.json({
+              found: true,
+              common_name: masterMatch?.common_name || cleanName,
+              scientific_name: masterMatch?.scientific_name || wikiData.title || cleanName,
+              photo: {
+                square: thumb,
+                medium: thumb,
+                large: orig,
+                attribution: 'Wikimedia Commons (Free Creative Commons / Public Domain)'
+              },
+              conservation_status: masterMatch?.iucn_status || 'Least Concern',
+              wikipedia_summary: wikiData.extract || '',
+              wikipedia_url: wikiData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(query)}`
+            });
+          }
+        }
+      } catch {
+        // try next
+      }
+    }
+
+    // 3. iNaturalist Taxa API (taxon_id=3 = Aves) - Open Data observations under Creative Commons
+    const inatUrl = `https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(cleanName)}&taxon_id=3&rank=species`;
+    const inatRes = await fetch(inatUrl, {
       headers: {
         'User-Agent': 'BirdSong-Observatory/1.0 (https://birdsong-observatory.onrender.com)',
       },
-      next: { revalidate: 86400 } // Cache API results for 24 hours
+      next: { revalidate: 86400 }
     });
 
-    if (response.ok) {
-      const data = await response.json();
+    if (inatRes.ok) {
+      const data = await inatRes.json();
       const results = data.results || [];
 
       if (results.length > 0) {
-        // Prefer exact common_name or scientific_name match if present in top results
         const exactMatch = results.find(
           (r: any) =>
-            (r.preferred_common_name && r.preferred_common_name.toLowerCase() === lowerName) ||
-            (r.name && r.name.toLowerCase() === lowerName) ||
-            (masterMatch && r.name && r.name.toLowerCase() === masterMatch.scientific_name.toLowerCase())
+            normalizeSpeciesKey(r.preferred_common_name) === normKey ||
+            normalizeSpeciesKey(r.name) === normKey
         );
         const taxa = exactMatch || results[0];
         const defaultPhoto = taxa.default_photo || {};
@@ -66,7 +120,7 @@ export async function GET(request: NextRequest) {
               square: defaultPhoto.square_url || mediumUrl,
               medium: mediumUrl || largeUrl,
               large: largeUrl || mediumUrl,
-              attribution: defaultPhoto.attribution
+              attribution: defaultPhoto.attribution || 'iNaturalist Open Data (Creative Commons)'
             },
             conservation_status: taxa.conservation_status?.status_name || masterMatch?.iucn_status || 'Least Concern',
             wikipedia_summary: taxa.wikipedia_summary || '',
@@ -76,58 +130,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fallback 2: Wikipedia REST Summary API (by common name or master scientific name)
-    const wikiQuery = masterMatch?.scientific_name || cleanName;
-    const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiQuery.replace(/ /g, '_'))}`;
-    const wikiRes = await fetch(wikiUrl, {
-      headers: { 'User-Agent': 'BirdSong-Observatory/1.0' },
-      next: { revalidate: 86400 }
+    // 4. Clean SVG fallback placeholder (never a misleading bird photo like a green parrot)
+    return NextResponse.json({
+      found: false,
+      common_name: masterMatch?.common_name || cleanName,
+      scientific_name: masterMatch?.scientific_name || cleanName,
+      photo: {
+        square: DEFAULT_AVIAN_PLACEHOLDER,
+        medium: DEFAULT_AVIAN_PLACEHOLDER,
+        large: DEFAULT_AVIAN_PLACEHOLDER,
+        attribution: 'Bioacoustic Detection (Photo in curation)'
+      },
+      message: 'Photo in curation'
     });
-
-    if (wikiRes.ok) {
-      const wikiData = await wikiRes.json();
-      const thumb = wikiData.thumbnail?.source || wikiData.originalimage?.source || '';
-      const orig = wikiData.originalimage?.source || thumb;
-      if (thumb) {
-        return NextResponse.json({
-          found: true,
-          common_name: masterMatch?.common_name || cleanName,
-          scientific_name: masterMatch?.scientific_name || cleanName,
-          photo: {
-            square: thumb,
-            medium: thumb,
-            large: orig,
-            attribution: 'Wikipedia / Wikimedia Commons'
-          },
-          conservation_status: masterMatch?.iucn_status || 'Least Concern',
-          wikipedia_summary: wikiData.extract || '',
-          wikipedia_url: wikiData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiQuery)}`
-        });
-      }
-    }
-
-    // Fallback 3: Curated SPECIES_MASTER_LIST image if available
-    if (masterMatch) {
-      const masterImg = normalizeBirdImageUrl(masterMatch.image_url);
-      return NextResponse.json({
-        found: true,
-        common_name: masterMatch.common_name,
-        scientific_name: masterMatch.scientific_name,
-        photo: {
-          square: masterImg,
-          medium: masterImg,
-          large: masterImg,
-          attribution: 'Wikimedia Commons'
-        },
-        conservation_status: masterMatch.iucn_status || 'Least Concern',
-        wikipedia_summary: '',
-        wikipedia_url: `https://en.wikipedia.org/wiki/${encodeURIComponent(masterMatch.scientific_name)}`
-      });
-    }
-
-    return NextResponse.json({ found: false, message: 'No species match found' });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Failed to fetch species details' }, { status: 500 });
   }
 }
+
 

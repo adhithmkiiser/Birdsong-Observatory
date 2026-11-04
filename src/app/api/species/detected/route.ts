@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { DEFAULT_AVIAN_PLACEHOLDER } from '@/lib/speciesMasterData';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -142,9 +143,9 @@ export async function GET(request: NextRequest) {
       taxa_id: 0,
       common_name: master.common_name || s.common_name,
       scientific_name: master.scientific_name || s.scientific_name,
-      square_url: master.image_url || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=200&auto=format&fit=crop',
-      image_url: master.image_url || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop',
-      attribution: 'IISER Tirupati Bird Lab',
+      square_url: master.image_url || DEFAULT_AVIAN_PLACEHOLDER,
+      image_url: master.image_url || DEFAULT_AVIAN_PLACEHOLDER,
+      attribution: master.image_url ? 'Wikimedia Commons' : 'Bioacoustic Detection',
       iucn_status: (master.iucn_status || 'Least Concern').toUpperCase().replace(/_/g, ' '),
       guild: master.guild || 'Unknown',
       habitat: master.habitat || 'Unknown',

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Bird, Search, RefreshCw, TreePine, ArrowUpDown } from 'lucide-react';
+import { DEFAULT_AVIAN_PLACEHOLDER } from '@/lib/speciesMasterData';
 
 interface APISpecies {
   id: string;
@@ -250,7 +251,7 @@ export default function SpeciesPage() {
                     alt={spc.common_name}
                     className="w-full h-full object-cover group-hover:scale-110 transition duration-700 ease-out"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                      (e.target as HTMLImageElement).src = DEFAULT_AVIAN_PLACEHOLDER;
                     }}
                   />
                   <div className="absolute top-3.5 right-3.5 flex items-center gap-2">

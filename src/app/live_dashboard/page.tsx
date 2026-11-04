@@ -53,16 +53,12 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 import DashboardLoader from '@/components/ui/DashboardLoader';
-import { SPECIES_MASTER_LIST } from '@/lib/speciesMasterData';
-
-function normalizeSpeciesImageUrl(url?: string | null): string {
-  if (!url) return '';
-  let clean = url.trim();
-  if (clean.includes('upload.wikimedia.org/wikipedia/commons/thumb/')) {
-    clean = clean.replace(/\/(\d{4,})px-/, '/800px-');
-  }
-  return clean;
-}
+import { 
+  SPECIES_MASTER_LIST, 
+  normalizeSpeciesKey, 
+  normalizeSpeciesImageUrl, 
+  DEFAULT_AVIAN_PLACEHOLDER 
+} from '@/lib/speciesMasterData';
 
 export interface WindowSummaryItem {
   id: string;
@@ -408,7 +404,7 @@ export default function LiveDashboardPage() {
         scopedRecorders = Array.from(uniqueRecordersMap.values());
 
         const ecoMap: Record<string, any> = {};
-        // 1. Seed with all 129 curated species from SPECIES_MASTER_LIST (with Wikimedia photos & scientific names)
+        // 1. Seed with all 129 curated species from SPECIES_MASTER_LIST (with verified Wikimedia Commons photos & scientific names)
         SPECIES_MASTER_LIST.forEach((m: any) => {
           if (m.common_name) {
             const normImg = normalizeSpeciesImageUrl(m.image_url);
@@ -419,13 +415,22 @@ export default function LiveDashboardPage() {
             };
             ecoMap[m.common_name.toLowerCase().trim()] = entry;
             ecoMap[m.common_name.trim()] = entry;
+            ecoMap[normalizeSpeciesKey(m.common_name)] = entry;
+            if (m.scientific_name) {
+              ecoMap[m.scientific_name.toLowerCase().trim()] = entry;
+              ecoMap[normalizeSpeciesKey(m.scientific_name)] = entry;
+            }
+            if (m.birdnet_label) {
+              ecoMap[normalizeSpeciesKey(m.birdnet_label)] = entry;
+            }
           }
         });
         // 2. Overlay Supabase lantana_species_ecology rows while preserving master image_url if DB row lacks one
         (ecologyData || []).forEach((e: any) => {
           if (e.common_name) {
             const keyLower = e.common_name.toLowerCase().trim();
-            const existing = ecoMap[keyLower] || {};
+            const keyNorm = normalizeSpeciesKey(e.common_name);
+            const existing = ecoMap[keyNorm] || ecoMap[keyLower] || {};
             const dbImg = normalizeSpeciesImageUrl(e.image_link || e.image_url || e.square_url);
             const merged = {
               ...existing,
@@ -436,6 +441,10 @@ export default function LiveDashboardPage() {
             };
             ecoMap[keyLower] = merged;
             ecoMap[e.common_name.trim()] = merged;
+            ecoMap[keyNorm] = merged;
+            if (e.scientific_name) {
+              ecoMap[normalizeSpeciesKey(e.scientific_name)] = merged;
+            }
           }
         });
         setSpeciesEcologyMap(ecoMap);
@@ -625,8 +634,9 @@ export default function LiveDashboardPage() {
 
     const missingSpecies = uniqueSpecies.filter(spName => {
       const key = spName.toLowerCase().trim();
-      if (fetchedSpeciesInfoRef.current.has(key)) return false;
-      const eco = speciesEcologyMap[key] || speciesEcologyMap[spName.trim()];
+      const normKey = normalizeSpeciesKey(spName);
+      if (fetchedSpeciesInfoRef.current.has(normKey)) return false;
+      const eco = speciesEcologyMap[normKey] || speciesEcologyMap[key] || speciesEcologyMap[spName.trim()];
       const hasImage = Boolean(eco?.image_link || eco?.image_url || eco?.square_url);
       const hasRealScientific = Boolean(
         eco?.scientific_name &&
@@ -643,29 +653,32 @@ export default function LiveDashboardPage() {
       for (const spName of missingSpecies) {
         if (cancelled) break;
         const key = spName.toLowerCase().trim();
+        const normKey = normalizeSpeciesKey(spName);
+        fetchedSpeciesInfoRef.current.add(normKey);
         fetchedSpeciesInfoRef.current.add(key);
         try {
           const res = await fetch(`/api/species/info?name=${encodeURIComponent(spName)}`);
           if (!res.ok) continue;
           const info = await res.json();
-          if (info && info.found && !cancelled) {
-            const photoUrl = info.photo?.large || info.photo?.medium || info.photo?.square || '';
+          if (info && !cancelled) {
+            const photoUrl = info.photo?.large || info.photo?.medium || info.photo?.square || DEFAULT_AVIAN_PLACEHOLDER;
             setSpeciesEcologyMap(prev => {
-              const existing = prev[key] || prev[spName.trim()] || {};
+              const existing = prev[normKey] || prev[key] || prev[spName.trim()] || {};
               const updated = {
                 ...existing,
-                common_name: existing.common_name || spName,
+                common_name: existing.common_name || info.common_name || spName,
                 scientific_name:
-                  (existing.scientific_name && existing.scientific_name.toLowerCase().trim() !== key)
+                  (existing.scientific_name && existing.scientific_name.toLowerCase().trim() !== key && existing.scientific_name.toLowerCase().trim() !== 'aves')
                     ? existing.scientific_name
                     : (info.scientific_name || existing.scientific_name || spName),
-                image_link: existing.image_link || photoUrl,
-                image_url: existing.image_url || photoUrl,
-                square_url: existing.square_url || info.photo?.square || photoUrl,
+                image_link: photoUrl,
+                image_url: photoUrl,
+                square_url: photoUrl,
                 iucn_status: existing.iucn_status || info.conservation_status || 'Least Concern',
               };
               return {
                 ...prev,
+                [normKey]: updated,
                 [key]: updated,
                 [spName.trim()]: updated,
               };
@@ -2618,7 +2631,8 @@ export default function LiveDashboardPage() {
                 let list = uniqueNames.map(spName => {
                   const spDetections = filteredDetections.filter(d => d.common_name === spName);
                   const sample = spDetections[0];
-                  const eco = speciesEcologyMap[spName.toLowerCase().trim()] || speciesEcologyMap[spName.trim()] || {};
+                  const normKey = normalizeSpeciesKey(spName);
+                  const eco = speciesEcologyMap[normKey] || speciesEcologyMap[spName.toLowerCase().trim()] || speciesEcologyMap[spName.trim()] || {};
                   return {
                     spName,
                     count: spDetections.length,
@@ -2656,11 +2670,11 @@ export default function LiveDashboardPage() {
 
                 return list.map(({ spName, count, sample, eco, avgConf }) => {
                   const rawImg = eco.image_link || eco.image_url || eco.square_url || '';
-                  const imageUrl = normalizeSpeciesImageUrl(rawImg) || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                  const imageUrl = normalizeSpeciesImageUrl(rawImg) || DEFAULT_AVIAN_PLACEHOLDER;
                   const sampleSci = sample?.scientific_name && sample.scientific_name.toLowerCase().trim() !== spName.toLowerCase().trim()
                     ? sample.scientific_name
                     : '';
-                  const scientific = eco.scientific_name || sampleSci || 'Aves';
+                  const scientific = (eco.scientific_name && eco.scientific_name.toLowerCase() !== 'aves') ? eco.scientific_name : (sampleSci || 'Aves');
                   const iucn = eco.iucn_status || 'Least Concern';
                   const isEndemic = eco.endemic_status && String(eco.endemic_status).trim().toLowerCase() === 'yes';
                   const habitat = eco.habitat || eco.preferred_habitat || 'Wet Evergreen & Forest Canopy';
@@ -2698,7 +2712,7 @@ export default function LiveDashboardPage() {
                             onError={async (e) => {
                               const imgEl = e.currentTarget;
                               if (imgEl.dataset.fallbackAttempted === 'true') {
-                                imgEl.src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                                imgEl.src = DEFAULT_AVIAN_PLACEHOLDER;
                                 return;
                               }
                               imgEl.dataset.fallbackAttempted = 'true';
@@ -2710,8 +2724,10 @@ export default function LiveDashboardPage() {
                                   if (fallbackPhoto) {
                                     imgEl.src = fallbackPhoto;
                                     const key = spName.toLowerCase().trim();
+                                    const normKey = normalizeSpeciesKey(spName);
                                     setSpeciesEcologyMap(prev => ({
                                       ...prev,
+                                      [normKey]: { ...(prev[normKey] || {}), image_link: fallbackPhoto, image_url: fallbackPhoto, scientific_name: prev[normKey]?.scientific_name || info.scientific_name },
                                       [key]: { ...(prev[key] || {}), image_link: fallbackPhoto, image_url: fallbackPhoto, scientific_name: prev[key]?.scientific_name || info.scientific_name },
                                       [spName.trim()]: { ...(prev[spName.trim()] || {}), image_link: fallbackPhoto, image_url: fallbackPhoto, scientific_name: prev[spName.trim()]?.scientific_name || info.scientific_name }
                                     }));
@@ -2721,7 +2737,7 @@ export default function LiveDashboardPage() {
                               } catch {
                                 // fall through
                               }
-                              imgEl.src = 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
+                              imgEl.src = DEFAULT_AVIAN_PLACEHOLDER;
                             }}
                           />
                           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-20 pointer-events-none" />

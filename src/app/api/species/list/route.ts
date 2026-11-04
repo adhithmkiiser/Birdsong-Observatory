@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEcologicalTraits } from '@/lib/birdEcologicalTraits';
+import { DEFAULT_AVIAN_PLACEHOLDER } from '@/lib/speciesMasterData';
 
 // In-memory cache to guarantee sub-10ms response times (bounded to prevent memory exhaustion)
 const memoryCache = new Map<string, any>();
@@ -50,9 +51,9 @@ export async function GET(request: NextRequest) {
     const results = rawResults.map((item: any) => {
       const t = item.taxon ? item.taxon : item;
       const p = t.default_photo || {};
-      const squareUrl = p.square_url || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=200&auto=format&fit=crop';
-      const mediumUrl = p.medium_url || 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?q=80&w=800&auto=format&fit=crop';
-      const largeUrl = mediumUrl.replace('medium', 'large');
+      const squareUrl = p.square_url || DEFAULT_AVIAN_PLACEHOLDER;
+      const mediumUrl = p.medium_url || DEFAULT_AVIAN_PLACEHOLDER;
+      const largeUrl = mediumUrl.includes('data:image') ? mediumUrl : mediumUrl.replace('medium', 'large');
 
       const commonName = t.preferred_common_name || t.name;
       const scientificName = t.name;
