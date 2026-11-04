@@ -48,7 +48,15 @@ export default function HomePage() {
         supabase.from('recorders_registry').select('project_name, status, last_ping').eq('project_type', 'Live')
       ]);
 
-      const projData = projRes.data || [];
+      const projData = (projRes.data || []).map((p: any) => {
+        const rawDesc = String(p.description || '');
+        const isPrivate = p.public_visible === false || rawDesc.startsWith('<!--PRIVATE-->');
+        return {
+          ...p,
+          description: rawDesc.replace(/^<!--PRIVATE-->\s*/, ''),
+          public_visible: !isPrivate
+        };
+      });
       const sitesData = sitesRes.data || [];
       const liveRecorders = recordersRes.data || [];
 

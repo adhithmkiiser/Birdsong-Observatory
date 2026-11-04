@@ -48,7 +48,15 @@ export default function ProjectsPage() {
         supabase.from('live_detections').select('project_name, common_name, scientific_name, recorder_id, timestamp')
       ]);
 
-      const projects = projs || [];
+      const projects = (projs || []).map((p: any) => {
+        const rawDesc = String(p.description || '');
+        const isPrivate = p.public_visible === false || rawDesc.startsWith('<!--PRIVATE-->');
+        return {
+          ...p,
+          description: rawDesc.replace(/^<!--PRIVATE-->\s*/, ''),
+          public_visible: !isPrivate
+        };
+      });
       const projectNames = new Set(projects.map(p => p.name));
 
       const recordersByProject: Record<string, number> = {};

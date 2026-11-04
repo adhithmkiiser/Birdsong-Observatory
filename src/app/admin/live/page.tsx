@@ -437,15 +437,19 @@ export default function LiveAdminPage() {
           const allowedProjIds = new Set(allowedProjs.map((p: any) => String(p.id || '').toLowerCase().trim()));
 
           if (allowedProjs.length > 0) {
-            setLiveProjects(allowedProjs.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              description: p.description || '',
-              organization: p.organization || 'IISER Tirupati Bird Lab',
-              stationsCount: p.stations_count || 0,
-              image_url: p.image_url || '',
-              public_visible: p.public_visible !== false
-            })));
+            setLiveProjects(allowedProjs.map((p: any) => {
+              const rawDesc = String(p.description || '');
+              const isPrivate = p.public_visible === false || rawDesc.startsWith('<!--PRIVATE-->');
+              return {
+                id: p.id,
+                name: p.name,
+                description: rawDesc.replace(/^<!--PRIVATE-->\s*/, ''),
+                organization: p.organization || 'IISER Tirupati Bird Lab',
+                stationsCount: p.stations_count || 0,
+                image_url: p.image_url || '',
+                public_visible: !isPrivate
+              };
+            }));
           } else {
             setLiveProjects([]);
           }
@@ -530,14 +534,19 @@ export default function LiveAdminPage() {
         supabase.from('recorders_registry').select('*').eq('project_type', 'Live').order('created_at', { ascending: false })
       ]);
 
-      let mappedFallbackProjs = (projs || []).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description || '',
-        organization: p.organization || 'IISER Tirupati Bird Lab',
-        stationsCount: p.stations_count || 0,
-        image_url: p.image_url || ''
-      }));
+      let mappedFallbackProjs = (projs || []).map((p: any) => {
+        const rawDesc = String(p.description || '');
+        const isPrivate = p.public_visible === false || rawDesc.startsWith('<!--PRIVATE-->');
+        return {
+          id: p.id,
+          name: p.name,
+          description: rawDesc.replace(/^<!--PRIVATE-->\s*/, ''),
+          organization: p.organization || 'IISER Tirupati Bird Lab',
+          stationsCount: p.stations_count || 0,
+          image_url: p.image_url || '',
+          public_visible: !isPrivate
+        };
+      });
 
       if (currentRole !== 'Admin') {
         mappedFallbackProjs = mappedFallbackProjs.filter((p: any) => canManageProject(p.id) || canManageProject(p.name));

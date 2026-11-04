@@ -214,8 +214,7 @@ class LiveAudioStreamServer(threading.Thread):
                                         "description": f"Autonomous Live Edge Bioacoustic Array ({SITE_NAME})",
                                         "organization": "IISER Tirupati Bird Lab",
                                         "project_type": "Live",
-                                        "stations_count": 1,
-                                        "public_visible": True
+                                        "stations_count": 1
                                     }, on_conflict="id").execute()
                             except Exception:
                                 pass

@@ -466,9 +466,12 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   // Determines whether a project is visible to the current viewer:
   // - If public_visible !== false (i.e. Public), everyone can see it.
   // - If public_visible === false (i.e. Private), only Admin and the assigned Project/Site Manager can see it.
-  const canViewProject = (project: { id?: string; name?: string; title?: string; public_visible?: boolean | null; publicVisible?: boolean | null }): boolean => {
+  const canViewProject = (project: { id?: string; name?: string; title?: string; description?: string | null; public_visible?: boolean | null; publicVisible?: boolean | null }): boolean => {
     if (!project) return false;
-    const isPrivate = project.public_visible === false || project.publicVisible === false;
+    const isPrivate =
+      project.public_visible === false ||
+      project.publicVisible === false ||
+      String(project.description || '').startsWith('<!--PRIVATE-->');
     if (!isPrivate) return true;
     if (currentRole === 'Admin') return true;
     const pId = project.id || '';

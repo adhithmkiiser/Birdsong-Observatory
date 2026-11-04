@@ -48,8 +48,7 @@ export async function GET(req: NextRequest) {
           description: `Autonomous Live Edge Bioacoustic Array (${rec.site_name || 'Field Observatory'})`,
           organization: 'IISER Tirupati Bird Lab',
           project_type: 'Live',
-          stations_count: 1,
-          public_visible: true
+          stations_count: 1
         };
         allProjs.unshift(newProj);
         try {
@@ -58,8 +57,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Normalize public_visible and strip any internal <!--PRIVATE--> marker from description
+    const normalizedProjs = allProjs.map((p: any) => {
+      const rawDesc = String(p.description || '');
+      const isPrivate = p.public_visible === false || rawDesc.startsWith('<!--PRIVATE-->');
+      return {
+        ...p,
+        description: rawDesc.replace(/^<!--PRIVATE-->\s*/, ''),
+        public_visible: !isPrivate
+      };
+    });
+
     // Filter out private Live projects unless the caller is Admin or an assigned manager
-    const visibleProjects = allProjs.filter((p: any) => {
+    const visibleProjects = normalizedProjs.filter((p: any) => {
       if (p.public_visible !== false) return true;
       return Boolean(user) && (canUserManageProject(user, p.id) || canUserManageProject(user, p.name));
     });

@@ -61,9 +61,9 @@ const mapDbProjectToItem = (p: any): ProjectItem => ({
   title: p.name,
   tag: 'Bioacoustic Survey',
   collaboration: p.organization || 'IISER Tirupati Bird Lab',
-  description: p.description || '',
+  description: String(p.description || '').replace(/^<!--PRIVATE-->\s*/, ''),
   image: p.image_url || '',
-  publicVisible: p.public_visible !== false
+  publicVisible: p.public_visible !== false && !String(p.description || '').startsWith('<!--PRIVATE-->')
 });
 
 const mapDbSiteToItem = (s: any): SiteItem => ({

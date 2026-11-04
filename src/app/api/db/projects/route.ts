@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authGuard, escapePostgrestValue, canUserManageProject } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+const PRIVATE_MARKER = '<!--PRIVATE-->';
+
+function stripPrivateMarker(desc?: string | null): string {
+  return String(desc || '').replace(/^<!--PRIVATE-->\s*/, '');
+}
+
+function hasPrivateMarker(desc?: string | null): boolean {
+  return String(desc || '').startsWith(PRIVATE_MARKER);
+}
+
 // POST: Create a new project (Admin only)
 export async function POST(req: NextRequest) {
   const { user, error: authError } = await authGuard(req, ['Admin']);
@@ -9,7 +19,31 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const isPublic = body.public_visible !== false;
+    const cleanDesc = stripPrivateMarker(body.description);
+
     const { data, error } = await supabaseAdmin.from('projects').insert([body]).select().single();
+    if (!error && data) {
+      return NextResponse.json({
+        ...data,
+        description: stripPrivateMarker(data.description),
+        public_visible: data.public_visible !== false && !hasPrivateMarker(data.description)
+      });
+    }
+
+    // Fallback if `public_visible` column does not exist in Supabase `projects` schema yet
+    if (error && String(error.message || '').includes('public_visible')) {
+      const { public_visible: _ignored, ...fallbackBody } = body;
+      fallbackBody.description = isPublic ? cleanDesc : `${PRIVATE_MARKER}${cleanDesc}`;
+      const { data: fbData, error: fbErr } = await supabaseAdmin.from('projects').insert([fallbackBody]).select().single();
+      if (fbErr) throw fbErr;
+      return NextResponse.json({
+        ...fbData,
+        description: cleanDesc,
+        public_visible: isPublic
+      });
+    }
+
     if (error) throw error;
     return NextResponse.json(data);
   } catch (error: any) {
@@ -32,7 +66,52 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized to edit this project' }, { status: 403 });
     }
 
+    // Fetch existing row so we can preserve or update its visibility marker cleanly
+    const { data: existingProj } = await supabaseAdmin
+      .from('projects')
+      .select('description')
+      .eq('id', id)
+      .maybeSingle();
+
+    const currentlyPrivate = hasPrivateMarker(existingProj?.description);
+    const targetPrivate =
+      updateData.public_visible !== undefined
+        ? updateData.public_visible === false
+        : currentlyPrivate;
+
+    const rawDesc =
+      updateData.description !== undefined
+        ? updateData.description
+        : existingProj?.description || '';
+    const cleanDesc = stripPrivateMarker(rawDesc);
+
     const { data, error } = await supabaseAdmin.from('projects').update(updateData).eq('id', id).select().single();
+    if (!error && data) {
+      return NextResponse.json({
+        ...data,
+        description: stripPrivateMarker(data.description),
+        public_visible: !targetPrivate
+      });
+    }
+
+    // Fallback if `public_visible` column does not exist in Supabase `projects` schema yet
+    if (error && String(error.message || '').includes('public_visible')) {
+      const { public_visible: _ignored, ...fallbackUpdate } = updateData;
+      fallbackUpdate.description = targetPrivate ? `${PRIVATE_MARKER}${cleanDesc}` : cleanDesc;
+      const { data: fbData, error: fbErr } = await supabaseAdmin
+        .from('projects')
+        .update(fallbackUpdate)
+        .eq('id', id)
+        .select()
+        .single();
+      if (fbErr) throw fbErr;
+      return NextResponse.json({
+        ...fbData,
+        description: cleanDesc,
+        public_visible: !targetPrivate
+      });
+    }
+
     if (error) throw error;
     return NextResponse.json(data);
   } catch (error: any) {
