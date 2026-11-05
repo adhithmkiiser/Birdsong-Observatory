@@ -66,18 +66,22 @@ const mapDbProjectToItem = (p: any): ProjectItem => ({
   publicVisible: p.public_visible !== false && !String(p.description || '').startsWith('<!--PRIVATE-->')
 });
 
-const mapDbSiteToItem = (s: any): SiteItem => ({
-  id: s.id,
-  projectId: s.project_id,
-  name: s.name,
-  elevation: s.elevation || '',
-  status: s.status || 'Active',
-  latitude: s.latitude != null ? Number(s.latitude) : undefined,
-  longitude: s.longitude != null ? Number(s.longitude) : undefined,
-  expectedFiles: s.expected_files || 0,
-  recorderId: s.recorder_id,
-  source: 'common'
-});
+const mapDbSiteToItem = (s: any): SiteItem => {
+  const idParts = String(s.id || '').split('_');
+  const derivedRecorderId = idParts.length >= 3 ? idParts.slice(2).join('_') : (s.recorder_id || '');
+  return {
+    id: s.id,
+    projectId: s.project_id,
+    name: s.name,
+    elevation: s.elevation || '',
+    status: s.status || 'Active',
+    latitude: s.latitude != null ? Number(s.latitude) : undefined,
+    longitude: s.longitude != null ? Number(s.longitude) : undefined,
+    expectedFiles: s.expected_files || 0,
+    recorderId: s.recorder_id || derivedRecorderId,
+    source: 'common'
+  };
+};
 
 export default function PamAdminPage() {
   const { currentRole, currentUser, canManageProject } = useRole();
@@ -1070,7 +1074,17 @@ export default function PamAdminPage() {
       lantanaSitesList.forEach(s => { if (currentUser?.assignedProjects?.includes(s.project_id || String(s.id).split('_')[0])) set.add(s.id); });
       return set;
     }
-    if (currentRole === 'Site Manager') return new Set(currentUser?.assignedSites || []);
+    if (currentRole === 'Site Manager') {
+      const assigned = new Set((currentUser?.assignedSites || []).map((x: string) => x.toLowerCase().trim()));
+      const set = new Set<string>();
+      sitesList.forEach(s => {
+        if (assigned.has(s.id.toLowerCase()) || assigned.has(s.name.toLowerCase())) set.add(s.id);
+      });
+      lantanaSitesList.forEach(s => {
+        if (assigned.has(String(s.id).toLowerCase()) || assigned.has(String(s.site_name).toLowerCase())) set.add(s.id);
+      });
+      return set;
+    }
     return new Set<string>();
   }, [currentRole, currentUser, sitesList, lantanaSitesList]);
 
@@ -1450,9 +1464,10 @@ export default function PamAdminPage() {
       number_of_hours: 0,
       total_size_bytes: 0
     } : {
-      id: `${targetProjId}_${siteName}`,
+      id: `${targetProjId}_${siteName}_${normalizedRecorderId}`,
       project_id: targetProjId,
       name: siteName,
+      recorder_id: normalizedRecorderId,
       elevation: newSiteElev || '',
       status: 'Active',
       latitude: siteLatitude,
@@ -1480,7 +1495,7 @@ export default function PamAdminPage() {
       });
     } else {
       setSitesList(prev => {
-        const scopedSiteId = `${targetProjId}_${siteName}`;
+        const scopedSiteId = `${targetProjId}_${siteName}_${normalizedRecorderId}`;
         const filtered = prev.filter(s => s.id !== scopedSiteId);
         return [...filtered, {
           id: scopedSiteId,
@@ -1597,7 +1612,7 @@ export default function PamAdminPage() {
     const isLantana = editingSite.source === 'Lantana';
     const siteUpdate = isLantana
       ? { site_name: editSiteName, lat: latitude, long: longitude }
-      : { name: editSiteName, elevation: editSiteElev, latitude, longitude, project_id: editSiteProjId };
+      : { name: editSiteName, elevation: editSiteElev, latitude, longitude, project_id: editSiteProjId, recorder_id: editRecorderId || null };
 
     try {
       await apiFetch('/api/db/sites', {

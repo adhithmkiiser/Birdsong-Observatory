@@ -26,7 +26,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { data, error } = await supabaseAdmin.from(table).upsert([siteData], { onConflict: 'id' }).select().single();
+    let { data, error } = await supabaseAdmin.from(table).upsert([siteData], { onConflict: 'id' }).select().single();
+    if (error && String(error.message || '').includes('recorder_id')) {
+      const { recorder_id: _ignored, ...fallbackData } = siteData;
+      const retry = await supabaseAdmin.from(table).upsert([fallbackData], { onConflict: 'id' }).select().single();
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) throw error;
     
     return NextResponse.json(data);
@@ -62,7 +68,13 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    const { data, error } = await supabaseAdmin.from(table).update(updateData).eq('id', id).select().single();
+    let { data, error } = await supabaseAdmin.from(table).update(updateData).eq('id', id).select().single();
+    if (error && String(error.message || '').includes('recorder_id')) {
+      const { recorder_id: _ignored, ...fallbackData } = updateData;
+      const retry = await supabaseAdmin.from(table).update(fallbackData).eq('id', id).select().single();
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) throw error;
     
     return NextResponse.json(data);

@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- BIRDSONG OBSERVATORY - SCHEMA FIX: COLUMNS & POLICIES
--- Adds missing columns (public_visible, lat, long, latitude, longitude)
+-- Adds missing columns (public_visible, lat, long, latitude, longitude, recorder_id)
 -- and ensures station_telemetry public read RLS policy
 -- ==============================================================================
 
@@ -24,3 +24,8 @@ UPDATE public.recorders_registry SET long = longitude WHERE long IS NULL AND lon
 ALTER TABLE public.station_telemetry ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on station_telemetry" ON public.station_telemetry;
 CREATE POLICY "Allow public read on station_telemetry" ON public.station_telemetry FOR SELECT USING (true);
+
+-- 5. Ensure sites table supports recorder_id for multi-recorder deployment per site
+ALTER TABLE public.sites ADD COLUMN IF NOT EXISTS recorder_id TEXT;
+ALTER TABLE public.sites ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+ALTER TABLE public.sites ADD COLUMN IF NOT EXISTS long DOUBLE PRECISION;
