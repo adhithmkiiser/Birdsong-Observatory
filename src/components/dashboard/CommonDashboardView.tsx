@@ -264,8 +264,9 @@ export default function CommonDashboardView({
             id: s.id,
             station_name: s.name,
             project_id: s.project_id,
-            latitude: s.latitude,
-            longitude: s.longitude
+            latitude: s.latitude != null ? s.latitude : s.lat,
+            longitude: s.longitude != null ? s.longitude : s.long,
+            recorder_id: s.recorder_id
           }));
 
         setStationsList(pamSites);
@@ -354,12 +355,51 @@ export default function CommonDashboardView({
     window.history.replaceState(null, '', currentUrl.pathname + currentUrl.search);
   }, [selectedProjectId, selectedStationId, activeTab, stationsList, loading]);
 
-  // Derived filter params for RPC queries
+  // Filtered survey sites strictly scoped to selected project
+  const visibleStations = useMemo(() => {
+    if (selectedProjectId === 'ALL_PROJECTS') return stationsList;
+    return stationsList.filter(s => s.project_id === selectedProjectId);
+  }, [selectedProjectId, stationsList]);
+
+  // Filtered recorder units strictly scoped to selected project
+  const visibleRecorders = useMemo(() => {
+    if (selectedProjectId === 'ALL_PROJECTS') return recordersRegistryList;
+    const projectSiteNames = new Set(visibleStations.map(s => String(s.station_name || '').toLowerCase()));
+    return recordersRegistryList.filter(r => 
+      r.project_name === selectedProjectId || 
+      r.project_id === selectedProjectId || 
+      (r.site_name && projectSiteNames.has(String(r.site_name).toLowerCase()))
+    );
+  }, [selectedProjectId, visibleStations, recordersRegistryList]);
+
+  // Auto-reset station and recorder selection when project changes if they belong to another project
+  useEffect(() => {
+    if (selectedStationId !== 'ALL_SITES') {
+      const exists = visibleStations.some(s => s.id === selectedStationId);
+      if (!exists) {
+        setStation('ALL_SITES');
+      }
+    }
+    if (selectedRecorderId !== 'ALL_RECORDERS') {
+      const exists = visibleRecorders.some(r => r.recorder_id === selectedRecorderId);
+      if (!exists) {
+        setRecorder('ALL_RECORDERS');
+      }
+    }
+  }, [selectedProjectId, visibleStations, visibleRecorders]);
+
+  // Derived filter params for RPC queries - include project ID, title, and station names
   const p_project_names = useMemo(() => {
     if (selectedProjectId === 'ALL_PROJECTS') return null;
-    const projectSites = stationsList.filter(s => s.project_id === selectedProjectId);
-    return projectSites.length > 0 ? projectSites.map(s => s.station_name) : ['NONE'];
-  }, [selectedProjectId, stationsList]);
+    const proj = projectsList.find(p => p.id === selectedProjectId);
+    const names = [selectedProjectId];
+    if (proj?.name) names.push(proj.name);
+    if (proj?.title) names.push(proj.title);
+    visibleStations.forEach(s => {
+      if (s.station_name) names.push(s.station_name);
+    });
+    return Array.from(new Set(names.filter(Boolean)));
+  }, [selectedProjectId, visibleStations, projectsList]);
 
   const p_site_name = useMemo(() => {
     if (selectedStationId === 'ALL_SITES') return 'ALL_SITES';
@@ -569,23 +609,27 @@ export default function CommonDashboardView({
   const { mapSites, minSpecies, maxSpecies } = useMemo(() => {
     const dataMap = new Map((mapSitesData || []).map((d: any) => [d.site_name, d]));
     
-    const validStations = stationsList
-      .filter(s => s.latitude != null && s.longitude != null && Number(s.latitude) !== 0 && Number(s.longitude) !== 0)
-      .map(s => {
-        const siteStat = dataMap.get(s.station_name);
-        const speciesCount = siteStat ? Number(siteStat.species_count || 0) : 0;
-        const detectionsCount = siteStat ? Number(siteStat.detections_count || 0) : 0;
-        return {
-          id: s.id,
-          name: s.station_name,
-          site_group: s.station_name,
-          recorder_id: 'Rec_01',
-          lat: Number(s.latitude),
-          lng: Number(s.longitude),
-          detectionsCount,
-          speciesCount
-        };
-      });
+    // STRICTLY SCOPE MAP STATIONS TO THE CURRENTLY SELECTED PROJECT & STATION!
+    const targetStations = (selectedStationId === 'ALL_SITES'
+      ? visibleStations
+      : visibleStations.filter(s => s.id === selectedStationId || s.station_name === selectedStationId)
+    ).filter(s => s.latitude != null && s.longitude != null && Number(s.latitude) !== 0 && Number(s.longitude) !== 0);
+
+    const validStations = targetStations.map(s => {
+      const siteStat = dataMap.get(s.station_name);
+      const speciesCount = siteStat ? Number(siteStat.species_count || 0) : 0;
+      const detectionsCount = siteStat ? Number(siteStat.detections_count || 0) : 0;
+      return {
+        id: s.id,
+        name: s.station_name,
+        site_group: s.station_name,
+        recorder_id: s.recorder_id || 'Rec_01',
+        lat: Number(s.latitude),
+        lng: Number(s.longitude),
+        detectionsCount,
+        speciesCount
+      };
+    });
 
     const countsWithData = validStations.map(s => s.speciesCount).filter(c => c > 0);
     const min = countsWithData.length > 0 ? Math.min(...countsWithData) : 0;
@@ -597,7 +641,16 @@ export default function CommonDashboardView({
     }));
 
     return { mapSites: styledSites, minSpecies: min, maxSpecies: max };
-  }, [stationsList, mapSitesData]);
+  }, [visibleStations, mapSitesData, selectedStationId]);
+
+  const dynamicMapCenter: [number, number] = useMemo(() => {
+    if (mapSites.length > 0) {
+      const avgLat = mapSites.reduce((sum, s) => sum + s.lat, 0) / mapSites.length;
+      const avgLng = mapSites.reduce((sum, s) => sum + s.lng, 0) / mapSites.length;
+      return [avgLat, avgLng];
+    }
+    return [11.41, 76.69];
+  }, [mapSites]);
 
   // ── Trend Chart Option (Daily / Weekly / Monthly / Yearly) ───────────────
   const trendOption = useMemo(() => {
@@ -841,7 +894,7 @@ export default function CommonDashboardView({
           <div className="p-3 bg-white rounded-xl border border-[#dde1dc] flex flex-col gap-2 shadow-xs">
             <div className="flex items-center justify-between text-[11px] font-mono">
               <span className="text-[#5a635d]">MONITORED STATIONS</span>
-              <span className="font-bold text-[#1f4d3a] bg-[#eaf2ed] px-2 py-0.5 rounded">{stationsList.length} Sites</span>
+              <span className="font-bold text-[#1f4d3a] bg-[#eaf2ed] px-2 py-0.5 rounded">{visibleStations.length} Sites</span>
             </div>
             <div className="flex items-center justify-between text-[11px] font-mono">
               <span className="text-[#5a635d]">AVIAN RICHNESS</span>
@@ -966,7 +1019,7 @@ export default function CommonDashboardView({
               <label className="filter-label">Survey Site / Station</label>
               <select className="select-input" value={selectedStationId} onChange={e => setStation(e.target.value)}>
                 <option value="ALL_SITES">All Survey Sites</option>
-                {stationsList.map((s: any) => <option key={s.id} value={s.id}>{s.station_name}</option>)}
+                {visibleStations.map((s: any) => <option key={s.id} value={s.id}>{s.station_name}</option>)}
               </select>
             </div>
 
@@ -974,7 +1027,7 @@ export default function CommonDashboardView({
               <label className="filter-label">Recorder Unit</label>
               <select className="select-input" value={selectedRecorderId} onChange={e => setRecorder(e.target.value)}>
                 <option value="ALL_RECORDERS">All Recorders</option>
-                {recordersRegistryList.map((r: any) => <option key={r.id} value={r.recorder_id}>{r.recorder_id}</option>)}
+                {visibleRecorders.map((r: any) => <option key={r.id} value={r.recorder_id}>{r.recorder_id}</option>)}
               </select>
             </div>
 
@@ -1012,7 +1065,7 @@ export default function CommonDashboardView({
               </div>
               <div className="kpi-card">
                 <span className="kpi-label">Survey Stations</span>
-                <span className="kpi-value">{stationsList.length}</span>
+                <span className="kpi-value">{visibleStations.length}</span>
                 <span className="kpi-subtext">Active monitoring stations</span>
               </div>
             </div>
@@ -1073,7 +1126,7 @@ export default function CommonDashboardView({
             <div className="h-[520px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
               <LantanaMap
                 sites={mapSites}
-                center={[11.41, 76.69]}
+                center={dynamicMapCenter}
                 zoom={12}
                 showRichnessLegend={true}
                 minSpecies={minSpecies}

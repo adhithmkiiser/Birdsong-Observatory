@@ -280,43 +280,46 @@ export default function LantanaMap({
     return loadedShapefiles.filter((shape) => {
       const tId = String(shape.targetId || shape.id || '').toLowerCase().trim();
       const tType = shape.targetType || 'site';
-      const shapeProj = String((shape as any).projectId || '').toLowerCase().trim();
+      const shapeProj = String((shape as any).projectId || (shape as any).project_id || '').toLowerCase().trim();
 
       // 1. Explicit Project match
       if (normProj && normProj !== 'all' && normProj !== 'all_lantana') {
-        if (tId === normProj || tId.startsWith(normProj + '_') || shapeProj === normProj) {
+        const matchesProj = tId === normProj || tId.startsWith(normProj + '_') || shapeProj === normProj;
+        if (matchesProj) {
           return true;
         }
-        // If the shapefile is explicitly for another project (e.g. nilgiri vs tst_lantana), reject
-        if (tType === 'project' && (tId.includes('nilgiri') || shapeProj.includes('nilgiri')) && !normProj.includes('nilgiri')) {
+        // If the shapefile is a project boundary or explicitly tied to another project, reject it
+        if (tType === 'project' || shapeProj) {
           return false;
         }
       }
 
       // 2. Explicit Site match
-      if (normSite && normSite !== 'all' && (tId === normSite || tId.startsWith(normSite + '_'))) {
-        return true;
+      if (normSite && normSite !== 'all') {
+        if (tId === normSite || tId.startsWith(normSite + '_') || currentSiteKeys.has(tId)) {
+          return true;
+        }
+        return false;
       }
       if (currentSiteKeys.has(tId)) {
         return true;
       }
 
-      // 3. Geographic proximity check:
-      // If shapefile has a centroid, verify it is within geographic range of the map's sites (~60 km)
+      // If a specific project is selected, do NOT fall through to geographic proximity
+      // to avoid showing neighboring projects' boundary shapefiles (e.g. Nilgiri on Gudalur)
+      if (normProj && normProj !== 'all' && normProj !== 'all_lantana') {
+        return false;
+      }
+
+      // 3. Geographic proximity check (only when viewing ALL projects/unscoped):
       if (shape.centroid && Array.isArray(shape.centroid) && shape.centroid.length === 2) {
         const [sLat, sLng] = shape.centroid;
         const dLat = (sLat - mapCenterLat) * 111;
         const dLng = (sLng - mapCenterLng) * 111 * Math.cos((mapCenterLat * Math.PI) / 180);
         const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-
-        // If distance > 60 km, it belongs to another region (e.g. Nilgiris ~11.34° is 100km from Anamalai ~10.47°)
-        if (distKm > 60) {
-          return false;
-        }
-        return true;
+        return distKm <= 60;
       }
 
-      // If shapefile has no centroid and doesn't match current project/site, do not show
       return false;
     });
   }, [propShapefiles, loadedShapefiles, projectId, selectedSiteId, sites, center]);

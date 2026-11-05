@@ -252,7 +252,7 @@ export default function LantanaDashboardPage() {
         if (projectsList.length === 0 && metaLoaded) {
           siteQuery = siteQuery.eq('id', 'NONE');
         } else if (selectedProjectId !== 'ALL_LANTANA') {
-          siteQuery = siteQuery.eq('project_id', selectedProjectId);
+          siteQuery = siteQuery.or(`project_id.eq."${selectedProjectId}",id.like."${selectedProjectId}_%"`);
         }
         
         if (currentRole === 'Site Manager') {
@@ -1403,7 +1403,7 @@ export default function LantanaDashboardPage() {
             <div className="h-[520px] w-full rounded-xl overflow-hidden border border-[#dde1dc]">
               <LantanaMap 
                 sites={mapSites} 
-                center={[10.47, 76.87]} 
+                center={mapSites.length > 0 ? [mapSites.reduce((sum: number, s: any) => sum + s.lat, 0) / mapSites.length, mapSites.reduce((sum: number, s: any) => sum + s.lng, 0) / mapSites.length] : [10.47, 76.87]} 
                 zoom={13} 
                 projectId={selectedProjectId}
                 selectedSiteId={selectedSiteGroup !== 'All' ? selectedSiteGroup : undefined}
