@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
       found: true,
       common_name: masterMatch.common_name,
       scientific_name: masterMatch.scientific_name,
+      habitat: masterMatch.habitat,
+      guild: masterMatch.guild,
+      foraging_stratum: masterMatch.foraging_stratum,
+      vocal_activity: masterMatch.vocal_activity,
+      indicator_group: masterMatch.indicator_group,
       photo: {
         square: masterImg,
         medium: masterImg,
@@ -86,7 +91,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. iNaturalist Taxa API (taxon_id=3 = Aves) - Open Data observations under Creative Commons
+    // 3. iNaturalist Taxa API (taxon_id=3 = Aves) - Strictly require exact/confident name matching
+    // Never fall back to an arbitrary results[0] to prevent showing a wrong bird
     const inatUrl = `https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(cleanName)}&taxon_id=3&rank=species`;
     const inatRes = await fetch(inatUrl, {
       headers: {
@@ -100,37 +106,42 @@ export async function GET(request: NextRequest) {
       const results = data.results || [];
 
       if (results.length > 0) {
-        const exactMatch = results.find(
-          (r: any) =>
-            normalizeSpeciesKey(r.preferred_common_name) === normKey ||
-            normalizeSpeciesKey(r.name) === normKey
-        );
-        const taxa = exactMatch || results[0];
-        const defaultPhoto = taxa.default_photo || {};
-        const mediumUrl = defaultPhoto.medium_url || '';
-        const largeUrl = mediumUrl ? mediumUrl.replace('medium', 'large') : '';
+        const exactMatch = results.find((r: any) => {
+          const normCommon = normalizeSpeciesKey(r.preferred_common_name);
+          const normSci = normalizeSpeciesKey(r.name);
+          return normCommon === normKey || normSci === normKey ||
+            (normCommon && (normCommon.startsWith(normKey) || normKey.startsWith(normCommon))) ||
+            (normSci && (normSci.startsWith(normKey) || normKey.startsWith(normSci)));
+        });
 
-        if (mediumUrl || largeUrl) {
-          return NextResponse.json({
-            found: true,
-            id: taxa.id,
-            common_name: taxa.preferred_common_name || masterMatch?.common_name || cleanName,
-            scientific_name: taxa.name || masterMatch?.scientific_name || cleanName,
-            photo: {
-              square: defaultPhoto.square_url || mediumUrl,
-              medium: mediumUrl || largeUrl,
-              large: largeUrl || mediumUrl,
-              attribution: defaultPhoto.attribution || 'iNaturalist Open Data (Creative Commons)'
-            },
-            conservation_status: taxa.conservation_status?.status_name || masterMatch?.iucn_status || 'Least Concern',
-            wikipedia_summary: taxa.wikipedia_summary || '',
-            wikipedia_url: taxa.wikipedia_url || `https://en.wikipedia.org/wiki/${encodeURIComponent(taxa.name)}`
-          });
+        if (exactMatch) {
+          const taxa = exactMatch;
+          const defaultPhoto = taxa.default_photo || {};
+          const mediumUrl = defaultPhoto.medium_url || '';
+          const largeUrl = mediumUrl ? mediumUrl.replace('medium', 'large') : '';
+
+          if (mediumUrl || largeUrl) {
+            return NextResponse.json({
+              found: true,
+              id: taxa.id,
+              common_name: taxa.preferred_common_name || masterMatch?.common_name || cleanName,
+              scientific_name: taxa.name || masterMatch?.scientific_name || cleanName,
+              photo: {
+                square: defaultPhoto.square_url || mediumUrl,
+                medium: mediumUrl || largeUrl,
+                large: largeUrl || mediumUrl,
+                attribution: defaultPhoto.attribution || 'iNaturalist Open Data (Creative Commons)'
+              },
+              conservation_status: taxa.conservation_status?.status_name || masterMatch?.iucn_status || 'Least Concern',
+              wikipedia_summary: taxa.wikipedia_summary || '',
+              wikipedia_url: taxa.wikipedia_url || `https://en.wikipedia.org/wiki/${encodeURIComponent(taxa.name)}`
+            });
+          }
         }
       }
     }
 
-    // 4. Clean SVG fallback placeholder (never a misleading bird photo like a green parrot)
+    // 4. Clean SVG fallback placeholder (never a misleading bird photo)
     return NextResponse.json({
       found: false,
       common_name: masterMatch?.common_name || cleanName,
@@ -147,5 +158,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: err.message || 'Failed to fetch species details' }, { status: 500 });
   }
 }
-
-

@@ -229,6 +229,10 @@ class LiveDetectorAgent:
 
     def stop(self):
         self.running = False
+        try:
+            self.uploader_worker.supabase.table("recorders_registry").update({"status": "offline"}).eq("recorder_id", STATION_NAME).execute()
+        except Exception:
+            pass
         self.ring_buffer.stop()
         self.capture_worker.stop()
         self.uploader_worker.stop()

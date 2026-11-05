@@ -131,17 +131,46 @@ export async function POST(req: NextRequest) {
     if (action === 'update_gps') {
       const { nodeId, lat, long } = body;
       const safeNodeId = escapePostgrestValue(String(nodeId || '').trim());
-      const { data, error } = await supabaseAdmin
+      const numLat = Number(lat);
+      const numLong = Number(long);
+
+      // Attempt update with standard lat & long columns first
+      let res = await supabaseAdmin
         .from('recorders_registry')
         .update({
-          lat: Number(lat),
-          long: Number(long)
+          lat: numLat,
+          long: numLong
         })
         .or(`recorder_id.eq."${safeNodeId}",id.eq."${safeNodeId}"`)
         .select();
 
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
+      // If lat/long column is missing in schema, fallback to latitude & longitude
+      if (res.error && (res.error.message.includes('lat') || res.error.message.includes('long'))) {
+        res = await supabaseAdmin
+          .from('recorders_registry')
+          .update({
+            latitude: numLat,
+            longitude: numLong
+          })
+          .or(`recorder_id.eq."${safeNodeId}",id.eq."${safeNodeId}"`)
+          .select();
+      }
+
+      // Also sync latitude & longitude columns if they exist in schema
+      if (!res.error) {
+        try {
+          await supabaseAdmin
+            .from('recorders_registry')
+            .update({
+              latitude: numLat,
+              longitude: numLong
+            })
+            .or(`recorder_id.eq."${safeNodeId}",id.eq."${safeNodeId}"`);
+        } catch {}
+      }
+
+      if (res.error) throw res.error;
+      return NextResponse.json({ success: true, data: res.data });
     }
 
     if (action === 'toggle_node_model') {

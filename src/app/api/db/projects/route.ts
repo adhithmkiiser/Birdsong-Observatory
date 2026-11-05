@@ -22,30 +22,26 @@ export async function POST(req: NextRequest) {
     const isPublic = body.public_visible !== false;
     const cleanDesc = stripPrivateMarker(body.description);
 
-    const { data, error } = await supabaseAdmin.from('projects').insert([body]).select().single();
-    if (!error && data) {
-      return NextResponse.json({
-        ...data,
-        description: stripPrivateMarker(data.description),
-        public_visible: data.public_visible !== false && !hasPrivateMarker(data.description)
-      });
-    }
+    // Save description with private marker so visibility works on all databases
+    const safeBody = { ...body };
+    delete safeBody.public_visible;
+    safeBody.description = isPublic ? cleanDesc : `${PRIVATE_MARKER}${cleanDesc}`;
 
-    // Fallback if `public_visible` column does not exist in Supabase `projects` schema yet
-    if (error && String(error.message || '').includes('public_visible')) {
-      const { public_visible: _ignored, ...fallbackBody } = body;
-      fallbackBody.description = isPublic ? cleanDesc : `${PRIVATE_MARKER}${cleanDesc}`;
-      const { data: fbData, error: fbErr } = await supabaseAdmin.from('projects').insert([fallbackBody]).select().single();
-      if (fbErr) throw fbErr;
-      return NextResponse.json({
-        ...fbData,
-        description: cleanDesc,
-        public_visible: isPublic
-      });
-    }
-
+    const { data, error } = await supabaseAdmin.from('projects').insert([safeBody]).select().single();
     if (error) throw error;
-    return NextResponse.json(data);
+
+    // Also attempt to set public_visible column if the DB schema has it
+    if (body.public_visible !== undefined && data?.id) {
+      try {
+        await supabaseAdmin.from('projects').update({ public_visible: isPublic }).eq('id', data.id);
+      } catch {}
+    }
+
+    return NextResponse.json({
+      ...data,
+      description: cleanDesc,
+      public_visible: isPublic
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
@@ -61,16 +57,18 @@ export async function PUT(req: NextRequest) {
     const { id, ...updateData } = body;
     if (!id) return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
 
+    const safeId = escapePostgrestValue(String(id).trim());
+
     // Non-admins can only edit projects they are explicitly assigned to
     if (user.role !== 'Admin' && !canUserManageProject(user, id)) {
       return NextResponse.json({ error: 'Unauthorized to edit this project' }, { status: 403 });
     }
 
-    // Fetch existing row so we can preserve or update its visibility marker cleanly
+    // Fetch existing row by id or name so we can preserve or update its visibility marker cleanly
     const { data: existingProj } = await supabaseAdmin
       .from('projects')
-      .select('description')
-      .eq('id', id)
+      .select('id, name, description')
+      .or(`id.eq."${safeId}",name.eq."${safeId}",id.ilike."${safeId}"`)
       .maybeSingle();
 
     const currentlyPrivate = hasPrivateMarker(existingProj?.description);
@@ -85,35 +83,39 @@ export async function PUT(req: NextRequest) {
         : existingProj?.description || '';
     const cleanDesc = stripPrivateMarker(rawDesc);
 
-    const { data, error } = await supabaseAdmin.from('projects').update(updateData).eq('id', id).select().single();
-    if (!error && data) {
-      return NextResponse.json({
-        ...data,
-        description: stripPrivateMarker(data.description),
-        public_visible: !targetPrivate
-      });
-    }
+    // Build update payload without public_visible to guarantee zero PostgREST schema errors
+    const safeUpdate = { ...updateData };
+    delete safeUpdate.public_visible;
+    safeUpdate.description = targetPrivate ? `${PRIVATE_MARKER}${cleanDesc}` : cleanDesc;
 
-    // Fallback if `public_visible` column does not exist in Supabase `projects` schema yet
-    if (error && String(error.message || '').includes('public_visible')) {
-      const { public_visible: _ignored, ...fallbackUpdate } = updateData;
-      fallbackUpdate.description = targetPrivate ? `${PRIVATE_MARKER}${cleanDesc}` : cleanDesc;
-      const { data: fbData, error: fbErr } = await supabaseAdmin
-        .from('projects')
-        .update(fallbackUpdate)
-        .eq('id', id)
-        .select()
-        .single();
-      if (fbErr) throw fbErr;
-      return NextResponse.json({
-        ...fbData,
-        description: cleanDesc,
-        public_visible: !targetPrivate
-      });
-    }
+    const targetId = existingProj?.id || id;
+    const safeTargetId = escapePostgrestValue(String(targetId).trim());
+
+    const { data, error } = await supabaseAdmin
+      .from('projects')
+      .update(safeUpdate)
+      .or(`id.eq."${safeTargetId}",name.eq."${safeTargetId}"`)
+      .select()
+      .maybeSingle();
 
     if (error) throw error;
-    return NextResponse.json(data);
+
+    // Also attempt updating public_visible column if the database table has it
+    if (updateData.public_visible !== undefined) {
+      try {
+        await supabaseAdmin
+          .from('projects')
+          .update({ public_visible: !targetPrivate })
+          .or(`id.eq."${safeTargetId}",name.eq."${safeTargetId}"`);
+      } catch {}
+    }
+
+    return NextResponse.json({
+      ...(data || {}),
+      id: targetId,
+      description: cleanDesc,
+      public_visible: !targetPrivate
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

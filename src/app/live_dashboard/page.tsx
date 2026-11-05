@@ -2,29 +2,29 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { 
-  LayoutDashboard, 
-  MapPin, 
-  LineChart, 
-  Clock, 
-  Radio, 
-  Cpu, 
-  Bird, 
-  CheckSquare, 
-  FileText, 
-  ChevronRight, 
-  Activity, 
-  Sparkles, 
-  Filter, 
-  ShieldCheck, 
-  Search, 
-  Calendar, 
-  Play, 
-  Check, 
-  X, 
-  Download, 
-  Share2, 
-  Volume2, 
+import {
+  LayoutDashboard,
+  MapPin,
+  LineChart,
+  Clock,
+  Radio,
+  Cpu,
+  Bird,
+  CheckSquare,
+  FileText,
+  ChevronRight,
+  Activity,
+  Sparkles,
+  Filter,
+  ShieldCheck,
+  Search,
+  Calendar,
+  Play,
+  Check,
+  X,
+  Download,
+  Share2,
+  Volume2,
   VolumeX,
   AlertTriangle,
   RotateCcw,
@@ -53,11 +53,11 @@ import { formatPercent } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { ReportGeneratorModal } from '@/components/reports/ReportGeneratorModal';
 import DashboardLoader from '@/components/ui/DashboardLoader';
-import { 
-  SPECIES_MASTER_LIST, 
-  normalizeSpeciesKey, 
-  normalizeSpeciesImageUrl, 
-  DEFAULT_AVIAN_PLACEHOLDER 
+import {
+  SPECIES_MASTER_LIST,
+  normalizeSpeciesKey,
+  normalizeSpeciesImageUrl,
+  DEFAULT_AVIAN_PLACEHOLDER
 } from '@/lib/speciesMasterData';
 
 export interface WindowSummaryItem {
@@ -120,8 +120,8 @@ function dedupeDetections(list: any[]) {
     const ts = new Date(d.timestamp || d.created_at || 0).getTime();
 
     // 1. Exact audio URL or exact timestamp deduplication
-    const exactKey = d.audio_url 
-      ? `${station}|${d.audio_url}|${species}` 
+    const exactKey = d.audio_url
+      ? `${station}|${d.audio_url}|${species}`
       : `${station}|${d.timestamp}|${species}`;
     if (seenExact.has(exactKey)) return false;
     seenExact.add(exactKey);
@@ -138,22 +138,34 @@ function dedupeDetections(list: any[]) {
   });
 }
 
-export type LiveDashboardTab = 
-  | 'summary' 
-  | 'map' 
-  | 'accumulation' 
-  | 'diurnal' 
-  | 'live' 
+export type LiveDashboardTab =
+  | 'summary'
+  | 'map'
+  | 'accumulation'
+  | 'diurnal'
+  | 'live'
   | 'triage'
-  | 'stations' 
-  | 'species' 
-  | 'review' 
+  | 'stations'
+  | 'species'
+  | 'review'
   | 'reports';
+
+const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes (Raspberry Pi reports telemetry every 60s)
 
 export default function LiveDashboardPage() {
   const { currentRole, currentUser, visibilitySettings, isTabVisibleForPublic, canManageProject, canViewProject } = useRole();
+  const [now, setNow] = useState(Date.now());
+  const lastTelemetryPollRef = useRef(Date.now());
   const [activeTab, setActiveTab] = useState<LiveDashboardTab>('summary');
   const [copiedLinkToast, setCopiedLinkToast] = useState(false);
+  // Dynamically update 'now' every 15s so offline station status flips without page refresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
 
   // 3-Level Scope Toolbar States
@@ -540,6 +552,29 @@ export default function LiveDashboardPage() {
         if (latestDets && latestDets.length > 0 && isCurrent) {
           setDetections(prev => dedupeDetections([...latestDets, ...prev]));
         }
+
+        // Every 30 seconds, also refresh station telemetry & node online heartbeat
+        const nowTs = Date.now();
+        if (nowTs - lastTelemetryPollRef.current > 30000) {
+          lastTelemetryPollRef.current = nowTs;
+          const res = await fetch('/api/live/admin?limit=1');
+          if (res.ok && isCurrent) {
+            const adminData = await res.json();
+            if (adminData.recorders) setStationsList(adminData.recorders);
+            if (adminData.telemetry) {
+              setTelemetryMap(prev => {
+                const updated = { ...prev };
+                for (const t of adminData.telemetry) {
+                  const nId = t.node_id || t.station_id;
+                  if (nId) updated[nId] = t;
+                  if (t.station_id) updated[t.station_id] = t;
+                  if (t.node_id) updated[t.node_id] = t;
+                }
+                return updated;
+              });
+            }
+          }
+        }
       } catch (err) {
         // silent fallback
       }
@@ -605,7 +640,7 @@ export default function LiveDashboardPage() {
       const sci = det.scientific_name || '';
 
       const matchesSearch = common.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            sci.toLowerCase().includes(searchQuery.toLowerCase());
+        sci.toLowerCase().includes(searchQuery.toLowerCase());
 
       let matchesStation = true;
       if (selectedStationId !== 'ALL') {
@@ -826,13 +861,17 @@ export default function LiveDashboardPage() {
     return Object.entries(groupedBuckets).map(([day, species]) => ({ day, species }));
   }, [filteredDetections, accumulationInterval, accumulationYear, accumulationMonth]);
 
-  // Active Nodes calculation (status === 'online' or pinged recently within 30 mins)
-  const activeNodesCount = availableStations.filter((s: any) => {
-    if (s.status === 'online') return true;
-    if (!s.last_ping) return false;
-    const diffMins = (Date.now() - new Date(s.last_ping).getTime()) / 60000;
-    return diffMins <= 30;
-  }).length;
+  const isStationOnline = (stn: any) => {
+    const tel = telemetryMap[stn.recorder_id] || telemetryMap[stn.id] || telemetryMap[stn.station_id];
+    const pingStr = stn.last_ping || tel?.ping_time;
+    if (!pingStr) return false;
+    const pingTime = new Date(pingStr).getTime();
+    if (isNaN(pingTime)) return false;
+    return (now - pingTime) < OFFLINE_THRESHOLD_MS;
+  };
+
+  // Active Nodes calculation strictly based on recent heartbeat (< 2 mins)
+  const activeNodesCount = availableStations.filter((s: any) => isStationOnline(s)).length;
 
   // Copy share URL
   const handleCopyShareLink = () => {
@@ -870,9 +909,9 @@ export default function LiveDashboardPage() {
     setVerifyingId(id);
 
     // 1. Optimistic state update so UI responds INSTANTLY
-    setDetections(prev => prev.map(d => 
-      String(d.id) === String(id) 
-        ? { ...d, verification_status: status, reviewed: true, verified: verified } 
+    setDetections(prev => prev.map(d =>
+      String(d.id) === String(id)
+        ? { ...d, verification_status: status, reviewed: true, verified: verified }
         : d
     ));
 
@@ -1219,7 +1258,7 @@ export default function LiveDashboardPage() {
         setLastLiveDetectionId(newest.id);
         if (newest.audio_url && liveAudioElementRef.current) {
           liveAudioElementRef.current.src = newest.audio_url;
-          liveAudioElementRef.current.play().catch(() => {});
+          liveAudioElementRef.current.play().catch(() => { });
           setIsLiveAudioPlaying(true);
         }
       }
@@ -1235,11 +1274,11 @@ export default function LiveDashboardPage() {
     { id: 'accumulation', label: 'Species Accumulation Curve', icon: LineChart },
     { id: 'diurnal', label: 'Diurnal Activity Pattern', icon: Clock },
     { id: 'live', label: 'Live Audio & Detections', icon: Radio, badge: 'LIVE' },
-    ...(currentRole === 'Admin' ? [{ 
-      id: 'triage', 
-      label: 'Acoustic Watchdog & Triage', 
-      icon: Activity, 
-      badge: unreviewedTriageCount > 0 ? `${unreviewedTriageCount} REVIEW` : undefined 
+    ...(currentRole === 'Admin' ? [{
+      id: 'triage',
+      label: 'Acoustic Watchdog & Triage',
+      icon: Activity,
+      badge: unreviewedTriageCount > 0 ? `${unreviewedTriageCount} REVIEW` : undefined
     }] : []),
     { id: 'stations', label: 'Stations & Nodes', icon: Cpu, count: activeNodesCount },
     { id: 'species', label: 'Species Catalog', icon: Bird },
@@ -1281,7 +1320,7 @@ export default function LiveDashboardPage() {
       {/* ─── 1. LEFT SIDEBAR NAVIGATION (10 ORDERED TABS) ────────────────────── */}
       <aside className="w-full md:w-72 lg:w-80 bg-white border-r border-[#dde1dc] flex flex-col justify-between shrink-0 h-full overflow-y-auto shadow-sm">
         <div className="p-4 space-y-4">
-          
+
           {/* Observatory Header Badge */}
           <div className="p-3.5 bg-[#f0f7f3] border border-[#dde1dc] rounded-xl">
             <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#1f4d3a]">Live Observatory</div>
@@ -1302,16 +1341,14 @@ export default function LiveDashboardPage() {
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id as LiveDashboardTab)}
-                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left transition-all ${
-                      isActive
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left transition-all ${isActive
                         ? 'bg-[#1f4d3a] text-white font-semibold shadow-sm'
                         : 'text-[#374151] hover:bg-[#f0f7f3] hover:text-[#1f4d3a]'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                        isActive ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
-                      }`}>
+                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${isActive ? 'bg-white/20 text-white' : 'bg-[#eaf2ed] text-[#1f4d3a]'
+                        }`}>
                         {idx + 1}
                       </span>
                       <span className={`text-xs ${isActive ? 'font-bold' : 'font-medium'} leading-snug truncate`}>
@@ -1321,9 +1358,8 @@ export default function LiveDashboardPage() {
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {item.badge && (
-                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${
-                          isActive ? 'bg-white text-[#1f4d3a]' : 'bg-emerald-600 text-white'
-                        }`}>
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${isActive ? 'bg-white text-[#1f4d3a]' : 'bg-emerald-600 text-white'
+                          }`}>
                           {item.badge}
                         </span>
                       )}
@@ -1557,9 +1593,9 @@ export default function LiveDashboardPage() {
 
         {/* ─── TAB 2: SPATIAL MAP ──────────────────────────────────────────────── */}
         {activeTab === 'map' && (() => {
-          const activeStation = availableStations.find((s: any) => s.recorder_id === selectedStationId) || 
-                                availableStations.find((s: any) => s.status === 'online') || 
-                                availableStations[0];
+          const activeStation = availableStations.find((s: any) => s.recorder_id === selectedStationId) ||
+            availableStations.find((s: any) => s.status === 'online') ||
+            availableStations[0];
           const primaryLat = Number(activeStation?.lat ?? activeStation?.latitude ?? 13.6288);
           const primaryLong = Number(activeStation?.long ?? activeStation?.longitude ?? 79.4192);
           const mapCenter: [number, number] = [primaryLat, primaryLong];
@@ -1656,11 +1692,10 @@ export default function LiveDashboardPage() {
                     key={interval}
                     type="button"
                     onClick={() => setAccumulationInterval(interval)}
-                    className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all capitalize ${
-                      accumulationInterval === interval
+                    className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all capitalize ${accumulationInterval === interval
                         ? 'bg-[#1f4d3a] text-white shadow-xs'
                         : 'text-[#5a635d] hover:text-[#1a1f1c]'
-                    }`}
+                      }`}
                   >
                     {interval}
                   </button>
@@ -1851,9 +1886,8 @@ export default function LiveDashboardPage() {
                     </div>
                   </div>
 
-                  <div className={`p-3.5 bg-white border rounded-xl shadow-2xs space-y-1 ${
-                    activeTel?.under_voltage_flag ? 'border-amber-400 bg-amber-50/50' : 'border-[#dde1dc]'
-                  }`}>
+                  <div className={`p-3.5 bg-white border rounded-xl shadow-2xs space-y-1 ${activeTel?.under_voltage_flag ? 'border-amber-400 bg-amber-50/50' : 'border-[#dde1dc]'
+                    }`}>
                     <span className="text-[10px] font-mono text-[#5a635d] uppercase flex items-center gap-1">
                       <Sun className={`w-3 h-3 ${activeTel?.under_voltage_flag ? 'text-rose-500 animate-pulse' : 'text-amber-500'}`} /> Power Source
                     </span>
@@ -2024,11 +2058,10 @@ export default function LiveDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setLiveFeedFilter('session')}
-                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                        liveFeedFilter === 'session'
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${liveFeedFilter === 'session'
                           ? 'bg-[#1f4d3a] text-white shadow-2xs'
                           : 'text-[#5a635d] hover:text-[#1a1f1c]'
-                      }`}
+                        }`}
                       title="Only calls detected during the current live session"
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreamActive ? 'bg-emerald-400 animate-pulse' : 'bg-gray-400'}`} />
@@ -2037,11 +2070,10 @@ export default function LiveDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setLiveFeedFilter('recent')}
-                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                        liveFeedFilter === 'recent'
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${liveFeedFilter === 'recent'
                           ? 'bg-[#1f4d3a] text-white shadow-2xs'
                           : 'text-[#5a635d] hover:text-[#1a1f1c]'
-                      }`}
+                        }`}
                       title="Recent bird calls detected by this node"
                     >
                       <span>Recent Feed</span>
@@ -2049,11 +2081,10 @@ export default function LiveDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setLiveFeedFilter('all')}
-                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                        liveFeedFilter === 'all'
+                      className={`px-2.5 py-1 rounded-md font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 ${liveFeedFilter === 'all'
                           ? 'bg-[#1f4d3a] text-white shadow-2xs'
                           : 'text-[#5a635d] hover:text-[#1a1f1c]'
-                      }`}
+                        }`}
                       title="View all permanent detections saved in the database"
                     >
                       <span>All Saved ({filteredDetections.length})</span>
@@ -2130,20 +2161,18 @@ export default function LiveDashboardPage() {
                     return (
                       <div
                         key={det.id}
-                        className={`p-4 bg-white border rounded-xl flex items-center justify-between transition-all shadow-2xs hover:border-[#1f4d3a] ${
-                          isRecent ? 'border-emerald-500/80 bg-emerald-50/20' : 'border-[#dde1dc]'
-                        }`}
+                        className={`p-4 bg-white border rounded-xl flex items-center justify-between transition-all shadow-2xs hover:border-[#1f4d3a] ${isRecent ? 'border-emerald-500/80 bg-emerald-50/20' : 'border-[#dde1dc]'
+                          }`}
                       >
                         <div className="space-y-1.5 min-w-0 pr-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-sm text-[#1a1f1c] truncate">{det.common_name}</span>
-                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md ${
-                              isHigh
+                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md ${isHigh
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : isMed
-                                ? 'bg-teal-100 text-teal-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
+                                  ? 'bg-teal-100 text-teal-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
                               {formatPercent(det.confidence || 0)}
                             </span>
                             {isRecent && (
@@ -2321,11 +2350,10 @@ export default function LiveDashboardPage() {
                         <div className="flex items-center gap-2.5 flex-wrap">
                           <button
                             onClick={() => handlePlayTriageClip(win.clip_path)}
-                            className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition text-xs ${
-                              isPlaying
+                            className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition text-xs ${isPlaying
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-[#1f4d3a] hover:bg-[#16382a] text-white'
-                            }`}
+                              }`}
                             title="Play 3s deduplicated Opus clip"
                           >
                             {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-white" />}
@@ -2346,29 +2374,27 @@ export default function LiveDashboardPage() {
                           {win.review_flags.map((flag) => (
                             <span
                               key={flag}
-                              className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                                flag === 'UNDER_DETECTED'
+                              className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${flag === 'UNDER_DETECTED'
                                   ? 'bg-amber-100 text-amber-900 border-amber-300'
                                   : flag === 'MODEL_DISAGREEMENT'
-                                  ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
-                                  : flag === 'BAND_MISMATCH'
-                                  ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
-                                  : 'bg-rose-100 text-rose-900 border-rose-300'
-                              }`}
+                                    ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                    : flag === 'BAND_MISMATCH'
+                                      ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
+                                      : 'bg-rose-100 text-rose-900 border-rose-300'
+                                }`}
                             >
                               {flag}
                             </span>
                           ))}
                           <span
-                            className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase border ${
-                              win.review_status === 'confirmed'
+                            className={`font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase border ${win.review_status === 'confirmed'
                                 ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                 : win.review_status === 'corrected'
-                                ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
-                                : win.review_status === 'discarded'
-                                ? 'bg-gray-100 text-gray-700 border-gray-300'
-                                : 'bg-yellow-50 text-yellow-800 border-yellow-300'
-                            }`}
+                                  ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                                  : win.review_status === 'discarded'
+                                    ? 'bg-gray-100 text-gray-700 border-gray-300'
+                                    : 'bg-yellow-50 text-yellow-800 border-yellow-300'
+                              }`}
                           >
                             {win.review_status}
                           </span>
@@ -2394,8 +2420,8 @@ export default function LiveDashboardPage() {
                         <div>
                           <span className="text-[#5a635d] text-[10px] block">AI Species Detected</span>
                           <strong className="text-emerald-800 font-bold truncate block">
-                            {win.species_detected && win.species_detected.length > 0 
-                              ? win.species_detected.join(', ') 
+                            {win.species_detected && win.species_detected.length > 0
+                              ? win.species_detected.join(', ')
                               : '0 Species (Missed Call!)'}
                           </strong>
                         </div>
@@ -2473,7 +2499,7 @@ export default function LiveDashboardPage() {
                 </div>
               ) : (
                 availableStations.map((stn: any) => {
-                  const isOnline = stn.status === 'online' || true;
+                  const isOnline = isStationOnline(stn);
                   const tel = telemetryMap[stn.recorder_id] || telemetryMap[stn.id] || telemetryMap[stn.station_id] || null;
                   const hasTel = !!tel;
                   const cpuTemp = tel?.cpu_temp_c ?? tel?.cpu_temperature ?? (stn.cpu_temperature != null ? Number(stn.cpu_temperature) : null);
@@ -2498,9 +2524,8 @@ export default function LiveDashboardPage() {
                             {stn.recorder_id} {stn.project_name && <>&bull; <span className="text-[#1f4d3a]">{stn.project_name}</span></>}
                           </div>
                         </div>
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase border ${
-                          isOnline ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}>
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase border ${isOnline ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                          }`}>
                           {isOnline ? '● Online' : 'Offline'}
                         </span>
                       </div>
@@ -2627,7 +2652,7 @@ export default function LiveDashboardPage() {
                 ]);
                 const uniqueNames = Array.from(new Set(filteredDetections.map(d => d.common_name).filter(Boolean)))
                   .filter(name => !NON_AVIAN_CLASSES.has(name.toLowerCase().trim()));
-                
+
                 let list = uniqueNames.map(spName => {
                   const spDetections = filteredDetections.filter(d => d.common_name === spName);
                   const sample = spDetections[0];
@@ -2644,7 +2669,7 @@ export default function LiveDashboardPage() {
 
                 if (catalogSearch.trim()) {
                   const q = catalogSearch.toLowerCase().trim();
-                  list = list.filter(item => 
+                  list = list.filter(item =>
                     item.spName.toLowerCase().includes(q) ||
                     (item.eco.scientific_name && item.eco.scientific_name.toLowerCase().includes(q)) ||
                     (item.eco.habitat && item.eco.habitat.toLowerCase().includes(q)) ||
@@ -2669,19 +2694,33 @@ export default function LiveDashboardPage() {
                 }
 
                 return list.map(({ spName, count, sample, eco, avgConf }) => {
-                  const rawImg = eco.image_link || eco.image_url || eco.square_url || '';
+                  const normKey = normalizeSpeciesKey(spName);
+                  const masterMatch = SPECIES_MASTER_LIST.find(
+                    s => normalizeSpeciesKey(s.common_name) === normKey ||
+                         normalizeSpeciesKey(s.scientific_name) === normKey ||
+                         (s.birdnet_label && normalizeSpeciesKey(s.birdnet_label) === normKey)
+                  );
+
+                  const rawImg = eco.image_link || eco.image_url || eco.square_url || masterMatch?.image_url || '';
                   const imageUrl = normalizeSpeciesImageUrl(rawImg) || DEFAULT_AVIAN_PLACEHOLDER;
-                  const sampleSci = sample?.scientific_name && sample.scientific_name.toLowerCase().trim() !== spName.toLowerCase().trim()
+                  
+                  const sampleSci = sample?.scientific_name && 
+                    sample.scientific_name.toLowerCase().trim() !== spName.toLowerCase().trim() &&
+                    sample.scientific_name.toLowerCase().trim() !== 'aves'
                     ? sample.scientific_name
                     : '';
-                  const scientific = (eco.scientific_name && eco.scientific_name.toLowerCase() !== 'aves') ? eco.scientific_name : (sampleSci || 'Aves');
-                  const iucn = eco.iucn_status || 'Least Concern';
-                  const isEndemic = eco.endemic_status && String(eco.endemic_status).trim().toLowerCase() === 'yes';
-                  const habitat = eco.habitat || eco.preferred_habitat || 'Wet Evergreen & Forest Canopy';
-                  const guild = eco.guild || 'Insectivore / Frugivore';
-                  const stratum = eco.foraging_stratum || 'Canopy & Understory';
-                  const vocal = eco.vocal_activity || 'High at Dawn';
-                  const indicator = eco.indicator_group || 'Forest Specialist';
+
+                  const scientific = (eco.scientific_name && eco.scientific_name.toLowerCase().trim() !== 'aves' && eco.scientific_name.toLowerCase().trim() !== spName.toLowerCase().trim())
+                    ? eco.scientific_name
+                    : (masterMatch?.scientific_name || sampleSci || 'Bioacoustic Avian Taxon');
+
+                  const iucn = eco.iucn_status || masterMatch?.iucn_status || 'Least Concern';
+                  const isEndemic = ((eco.endemic_status || masterMatch?.endemic_status) || '').toString().trim().toLowerCase() === 'yes';
+                  const habitat = eco.habitat || eco.preferred_habitat || masterMatch?.habitat || 'Wetlands & Forest Habitats';
+                  const guild = eco.guild || masterMatch?.guild || 'Insectivore / Frugivore';
+                  const stratum = eco.foraging_stratum || masterMatch?.foraging_stratum || 'Arboreal & Wetland';
+                  const vocal = eco.vocal_activity || masterMatch?.vocal_activity || 'Diurnal Vocalizations';
+                  const indicator = eco.indicator_group || masterMatch?.indicator_group || 'Regional Avifauna';
 
                   return (
                     <div
@@ -2690,7 +2729,7 @@ export default function LiveDashboardPage() {
                     >
                       <div>
                         {/* Photo Banner with Badges & Full-View Support */}
-                        <div 
+                        <div
                           onClick={() => setSelectedFullImage({ url: imageUrl, title: spName, scientific })}
                           className="h-48 relative bg-slate-950 overflow-hidden cursor-pointer group"
                           title="Click to view full uncropped photo"
@@ -2741,7 +2780,7 @@ export default function LiveDashboardPage() {
                             }}
                           />
                           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-20 pointer-events-none" />
-                          
+
                           <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-30">
                             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/90 text-[#1a1f1c] shadow-xs backdrop-blur-xs">
                               {iucn}
@@ -2843,48 +2882,43 @@ export default function LiveDashboardPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => setReviewStatusFilter('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        reviewStatusFilter === 'all'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reviewStatusFilter === 'all'
                           ? 'bg-[#1f4d3a] text-white shadow-xs'
                           : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
-                      }`}
+                        }`}
                     >
                       All ({filteredDetections.length})
                     </button>
                     <button
                       onClick={() => setReviewStatusFilter('pending')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                        reviewStatusFilter === 'pending'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${reviewStatusFilter === 'pending'
                           ? 'bg-[#1f4d3a] text-white shadow-xs'
                           : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
-                      }`}
+                        }`}
                     >
                       <span>Pending</span>
                       {pendingCount > 0 && (
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                          reviewStatusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                        }`}>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${reviewStatusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                          }`}>
                           {pendingCount}
                         </span>
                       )}
                     </button>
                     <button
                       onClick={() => setReviewStatusFilter('verified')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        reviewStatusFilter === 'verified'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reviewStatusFilter === 'verified'
                           ? 'bg-emerald-700 text-white shadow-xs'
                           : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
-                      }`}
+                        }`}
                     >
                       Approved ({approvedCount})
                     </button>
                     <button
                       onClick={() => setReviewStatusFilter('rejected')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        reviewStatusFilter === 'rejected'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reviewStatusFilter === 'rejected'
                           ? 'bg-rose-700 text-white shadow-xs'
                           : 'bg-white border border-[#dde1dc] text-[#5a635d] hover:bg-[#f0f7f3]'
-                      }`}
+                        }`}
                     >
                       Rejected ({rejectedCount})
                     </button>
@@ -2920,7 +2954,7 @@ export default function LiveDashboardPage() {
 
                 if (reviewSearch.trim()) {
                   const q = reviewSearch.toLowerCase().trim();
-                  list = list.filter(d => 
+                  list = list.filter(d =>
                     (d.common_name && d.common_name.toLowerCase().includes(q)) ||
                     (d.scientific_name && d.scientific_name.toLowerCase().includes(q))
                   );
@@ -2945,9 +2979,8 @@ export default function LiveDashboardPage() {
                   return (
                     <div
                       key={det.id}
-                      className={`p-3.5 bg-white border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs transition-all ${
-                        isApproved ? 'border-emerald-300 bg-emerald-50/20' : isRejected ? 'border-rose-300 bg-rose-50/20' : 'border-[#dde1dc]'
-                      }`}
+                      className={`p-3.5 bg-white border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs transition-all ${isApproved ? 'border-emerald-300 bg-emerald-50/20' : isRejected ? 'border-rose-300 bg-rose-50/20' : 'border-[#dde1dc]'
+                        }`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -2990,11 +3023,10 @@ export default function LiveDashboardPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() => handleVerify(det.id, true)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${
-                            isApproved
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${isApproved
                               ? 'bg-emerald-800 text-white ring-2 ring-emerald-500'
                               : 'bg-emerald-700 text-white hover:bg-emerald-800'
-                          }`}
+                            }`}
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>{isApproved ? 'Approved' : 'Approve'}</span>
@@ -3003,11 +3035,10 @@ export default function LiveDashboardPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() => handleVerify(det.id, false)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${
-                            isRejected
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-2xs ${isRejected
                               ? 'bg-rose-800 text-white ring-2 ring-rose-500'
                               : 'bg-rose-600 text-white hover:bg-rose-700'
-                          }`}
+                            }`}
                         >
                           <X className="w-3.5 h-3.5" />
                           <span>{isRejected ? 'Rejected' : 'Reject'}</span>
@@ -3260,11 +3291,11 @@ export default function LiveDashboardPage() {
 
       {/* ─── FULL UNCROPPED SPECIES PHOTO LIGHTBOX MODAL ───────────────────────── */}
       {selectedFullImage && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
           onClick={() => setSelectedFullImage(null)}
         >
-          <div 
+          <div
             className="relative max-w-4xl w-full max-h-[92vh] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
             onClick={e => e.stopPropagation()}
           >
@@ -3291,10 +3322,10 @@ export default function LiveDashboardPage() {
             </div>
             <div className="p-3 text-center text-xs text-slate-400 bg-slate-950 border-t border-slate-800 flex justify-between items-center px-4">
               <span>High-Resolution Ecological Photo</span>
-              <a 
-                href={selectedFullImage.url} 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href={selectedFullImage.url}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-semibold"
               >
                 Open original in new tab <ExternalLink className="w-3.5 h-3.5" />

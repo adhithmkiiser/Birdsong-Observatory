@@ -24,7 +24,15 @@ export function normalizeSpeciesImageUrl(url?: string | null): string {
   if (!url) return '';
   let clean = url.trim();
   if (clean.includes('upload.wikimedia.org/wikipedia/commons/thumb/')) {
-    clean = clean.replace(/\/(\d{4,})px-/, '/800px-');
+    clean = clean.replace(/\/(\d{3,4})px-/, '/800px-');
+  } else if (clean.includes('upload.wikimedia.org/wikipedia/commons/')) {
+    // Automatically convert raw full-res Wikimedia URLs to 800px thumbnail URLs to avoid 403 Forbidden CDN blocks
+    const match = clean.match(/^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/([0-9a-f]\/[0-9a-f]{2}\/([^\/]+))$/i);
+    if (match) {
+      const fullPath = match[1];
+      const filename = match[2];
+      clean = `https://upload.wikimedia.org/wikipedia/commons/thumb/${fullPath}/800px-${filename}`;
+    }
   }
   return clean;
 }
@@ -44,7 +52,7 @@ export const SPECIES_MASTER_LIST: MasterSpecies[] = [
     "foraging_stratum": "Aquatic / Wetland vegetation",
     "indicator_group": "Wetland Specialist",
     "birdnet_label": "Dendrocygna_javanica",
-    "image_url": "https://upload.wikimedia.org/wikipedia/commons/8/87/Dendrocygna_javanica_-_Chiang_Mai.jpg",
+    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Dendrocygna_javanica_-_Gardens_By_the_Bay.jpg/800px-Dendrocygna_javanica_-_Gardens_By_the_Bay.jpg",
     "detections_count": 120
   },
   {
@@ -293,14 +301,14 @@ export const SPECIES_MASTER_LIST: MasterSpecies[] = [
     "common_name": "Black-crowned Night-Heron",
     "scientific_name": "Nycticorax nycticorax",
     "endemic_status": "No",
-    "habitat": "Forest, woodlands, and secondary growth",
-    "guild": "Carnivore",
-    "vocal_activity": "Moderate",
+    "habitat": "Freshwater marshes, swamps, mangroves, lake margins, rivers",
+    "guild": "Carnivore / Piscivore",
+    "vocal_activity": "Crepuscular / Nocturnal croaking",
     "iucn_status": "Least Concern",
-    "foraging_stratum": "Primarily arboreal",
-    "indicator_group": "General",
+    "foraging_stratum": "Water edge and emergent vegetation",
+    "indicator_group": "Wetland Specialist",
     "birdnet_label": "Nycticorax_nycticorax",
-    "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Nycticorax_nycticorax_457953189.jpg",
+    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Nycticorax-nycticorax.jpg/800px-Nycticorax-nycticorax.jpg",
     "detections_count": 11220
   },
   {

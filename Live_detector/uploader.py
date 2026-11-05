@@ -324,12 +324,19 @@ class CloudUploaderWorker(threading.Thread):
                         except Exception:
                             pass
 
+                    last_telem = telem_records[-1]
+                    disk_usage_val = last_telem.get("disk_usage")
+                    if disk_usage_val is None and last_telem.get("disk_percent_free") is not None:
+                        disk_usage_val = round(100.0 - float(last_telem["disk_percent_free"]), 1)
+
                     reg_update = {
-                        "last_ping": telem_records[-1]["ping_time"],
+                        "last_ping": last_telem["ping_time"],
                         "status": "online",
-                        "battery_level": telem_records[-1]["battery_level"],
-                        "cpu_temperature": telem_records[-1]["cpu_temperature"]
+                        "battery_level": last_telem["battery_level"],
+                        "cpu_temperature": last_telem["cpu_temperature"]
                     }
+                    if disk_usage_val is not None:
+                        reg_update["storage_used_percent"] = disk_usage_val
                     if stream_url and stream_url.startswith("http"):
                         reg_update["elevation"] = stream_url  # Instant compatibility with existing schema
                     self.supabase.table("recorders_registry").update(reg_update).eq("recorder_id", STATION_NAME).execute()
