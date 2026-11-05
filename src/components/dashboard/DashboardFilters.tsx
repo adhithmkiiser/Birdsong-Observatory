@@ -31,9 +31,27 @@ export function DashboardFilters({
   const availableStations = selectedProjectId === 'ALL_PROJECTS'
     ? stationsList
     : stationsList.filter(s => s.project_id === selectedProjectId);
+
+  const uniqueStations = React.useMemo(() => {
+    const siteMap = new Map<string, { station_name: string; count: number }>();
+    availableStations.forEach((s: any) => {
+      const name = String(s.station_name || '').trim();
+      if (!name) return;
+      if (!siteMap.has(name)) {
+        siteMap.set(name, { station_name: name, count: 1 });
+      } else {
+        siteMap.get(name)!.count += 1;
+      }
+    });
+    return Array.from(siteMap.values()).sort((a, b) => a.station_name.localeCompare(b.station_name));
+  }, [availableStations]);
     
   const selectedProject = selectedProjectId !== 'ALL_PROJECTS' ? projectsList.find(p => p.id === selectedProjectId) : null;
-  const selectedStation = selectedStationId !== 'ALL_SITES' ? stationsList.find(s => s.id === selectedStationId) : null;
+  const activeStationName = React.useMemo(() => {
+    if (!selectedStationId || selectedStationId === 'ALL_SITES') return 'ALL_SITES';
+    const s = stationsList.find(s => s.id === selectedStationId || s.station_name?.toLowerCase() === selectedStationId.toLowerCase());
+    return s ? s.station_name : selectedStationId;
+  }, [selectedStationId, stationsList]);
 
   return (
     <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4 font-sans">
@@ -65,14 +83,14 @@ export function DashboardFilters({
         <div>
           <label className="font-extrabold text-slate-700 block mb-1.5">2. Select Site Node</label>
           <select
-            value={selectedStationId}
+            value={activeStationName}
             onChange={(e) => setStation(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
           >
-            <option value="ALL_SITES">All Sites in Chosen Project ({availableStations.length})</option>
-            {availableStations.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.station_name}
+            <option value="ALL_SITES">All Sites in Chosen Project ({uniqueStations.length})</option>
+            {uniqueStations.map((s) => (
+              <option key={s.station_name} value={s.station_name}>
+                {s.station_name} {s.count > 1 ? `(${s.count} Recorders)` : ''}
               </option>
             ))}
           </select>
@@ -85,22 +103,30 @@ export function DashboardFilters({
             onChange={(e) => setRecorder(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
           >
-            <option value="ALL_RECORDERS">All Recorders in Site</option>
-            {recordersRegistryList
-              .filter(r => {
-                if (selectedProjectId !== 'ALL_PROJECTS') {
-                  const isRecorderInProjectSites = availableStations.some(s => s.station_name.includes(r.site_name));
-                  if (!isRecorderInProjectSites) return false;
-                }
-                if (selectedStation && !selectedStation.station_name.includes(r.site_name)) return false;
-                return true;
-              })
-              .map(r => (
-                <option key={r.id || r.recorder_id} value={r.recorder_id}>
-                  {r.recorder_id} ({r.site_name})
-                </option>
-              ))
-            }
+            <option value="ALL_RECORDERS">
+              {activeStationName !== 'ALL_SITES' ? 'All Recorders in Site' : 'All Recorders'}
+            </option>
+            {Array.from(new Set([
+              ...availableStations
+                .filter(s => activeStationName === 'ALL_SITES' || s.station_name?.toLowerCase() === activeStationName.toLowerCase())
+                .map(s => s.recorder_id)
+                .filter(Boolean),
+              ...recordersRegistryList
+                .filter(r => {
+                  if (selectedProjectId !== 'ALL_PROJECTS') {
+                    const isRecorderInProjectSites = availableStations.some(s => s.station_name.includes(r.site_name));
+                    if (!isRecorderInProjectSites) return false;
+                  }
+                  if (activeStationName !== 'ALL_SITES' && !r.site_name?.toLowerCase().includes(activeStationName.toLowerCase())) return false;
+                  return true;
+                })
+                .map(r => r.recorder_id)
+                .filter(Boolean)
+            ])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(rId => (
+              <option key={rId} value={rId}>
+                {rId}
+              </option>
+            ))}
           </select>
         </div>
 

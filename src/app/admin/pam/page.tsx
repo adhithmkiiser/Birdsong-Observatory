@@ -212,8 +212,22 @@ export default function PamAdminPage() {
       }
       return uniqueSites;
     } else {
-      // sitesList is already mapped via mapDbSiteToItem
-      return sitesList.filter(s => s.projectId === pamSelectedProject);
+      // Deduplicate common PAM sites by name so multi-recorder sites (e.g. 27TH_MILE with REC_01..08)
+      // appear as a single clean site entry in the dropdown
+      const filtered = sitesList.filter(s => s.projectId === pamSelectedProject);
+      const uniqueSites = [];
+      const seenNames = new Set();
+      for (const s of filtered) {
+        if (!seenNames.has(s.name)) {
+          seenNames.add(s.name);
+          uniqueSites.push({
+            id: s.id,
+            name: s.name,
+            projectId: s.projectId
+          });
+        }
+      }
+      return uniqueSites;
     }
   }, [sitesList, lantanaSitesList, detectionsTabScope, pamSelectedProject]);
 
@@ -251,14 +265,21 @@ export default function PamAdminPage() {
       }
       
       setIsRecordersLoading(true);
-      const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+      const siteItem = scopedSites.find(s => s.id === pamSelectedSite || s.name === pamSelectedSite);
       if (!siteItem) {
         setIsRecordersLoading(false);
         return;
       }
 
-      // Fetch distinct recorders by paginating in parallel (up to 100,000 rows to be safe and extremely fast)
+      // Collect recorders from registered sites list and pam_detections
       let allRecorders = new Set<string>();
+
+      // 1. Immediately include all registered hardware recorder IDs for this site
+      sitesList
+        .filter(s => s.projectId === pamSelectedProject && s.name === siteItem.name)
+        .forEach(s => {
+          if (s.recorderId) allRecorders.add(s.recorderId);
+        });
       const limit = 1000;
       const pagesToFetch = 100; // 100,000 rows max
 

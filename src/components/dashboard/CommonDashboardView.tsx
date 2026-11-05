@@ -282,8 +282,13 @@ export default function CommonDashboardView({
                  (qNorm.length >= 3 && s.station_name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(qNorm))
           );
           if (matched) {
-            setStation(matched.id);
+            setStation(matched.station_name);
           }
+        }
+
+        const queryRecorder = urlParams.get('recorder');
+        if (queryRecorder) {
+          setRecorder(queryRecorder);
         }
 
         const pamSiteNames = Array.from(new Set(pamSites.map((s: any) => s.station_name)));
@@ -291,16 +296,30 @@ export default function CommonDashboardView({
           (r: any) => r.project_type === 'PAM' && pamSiteNames.some(name => name.includes(r.site_name))
         );
 
-        const syntheticRecorders = pamSites.map((s: any) => ({
-          id: `synth_${s.id}_Rec_01`,
-          project_type: 'PAM',
-          project_name: s.project_id,
-          site_name: s.station_name,
-          recorder_id: 'Rec_01'
-        }));
+        const siteRegisteredRecorders = pamSites
+          .filter((s: any) => s.recorder_id)
+          .map((s: any) => ({
+            id: `site_${s.id}_${s.recorder_id}`,
+            project_type: 'PAM',
+            project_name: s.project_id,
+            project_id: s.project_id,
+            site_name: s.station_name,
+            recorder_id: s.recorder_id
+          }));
+
+        const syntheticRecorders = pamSites
+          .filter((s: any) => !s.recorder_id)
+          .map((s: any) => ({
+            id: `synth_${s.id}_Rec_01`,
+            project_type: 'PAM',
+            project_name: s.project_id,
+            project_id: s.project_id,
+            site_name: s.station_name,
+            recorder_id: 'Rec_01'
+          }));
 
         if (!isCurrent) return;
-        setRecordersRegistryList([...actualRecorders, ...syntheticRecorders]);
+        setRecordersRegistryList([...actualRecorders, ...siteRegisteredRecorders, ...syntheticRecorders]);
         setLoadingProgress(100);
       } catch (err) {
         console.error('Error loading projects/sites:', err);
@@ -316,6 +335,83 @@ export default function CommonDashboardView({
     };
   }, [currentRole, currentUser, initialProject, initialSite, initialTab]);
 
+  // Filtered survey sites strictly scoped to selected project
+  const visibleStations = useMemo(() => {
+    if (selectedProjectId === 'ALL_PROJECTS') return stationsList;
+    return stationsList.filter(s => s.project_id === selectedProjectId);
+  }, [selectedProjectId, stationsList]);
+
+  // Unique survey site groups (deduplicated by site name)
+  const uniqueSites = useMemo(() => {
+    const siteMap = new Map<string, { station_name: string; project_id: string; ids: string[]; count: number }>();
+    visibleStations.forEach((s: any) => {
+      const name = String(s.station_name || '').trim();
+      if (!name) return;
+      if (!siteMap.has(name)) {
+        siteMap.set(name, { station_name: name, project_id: s.project_id, ids: [s.id], count: 1 });
+      } else {
+        const item = siteMap.get(name)!;
+        item.ids.push(s.id);
+        item.count += 1;
+      }
+    });
+    return Array.from(siteMap.values()).sort((a, b) => a.station_name.localeCompare(b.station_name));
+  }, [visibleStations]);
+
+  // Active station name resolved from ID or name string
+  const activeStationName = useMemo(() => {
+    if (!selectedStationId || selectedStationId === 'ALL_SITES') return 'ALL_SITES';
+    const s = stationsList.find(s => s.id === selectedStationId || s.station_name.toLowerCase() === selectedStationId.toLowerCase());
+    return s ? s.station_name : selectedStationId;
+  }, [selectedStationId, stationsList]);
+
+  // Filtered recorder units scoped to selected project AND active selected site
+  const visibleRecorders = useMemo(() => {
+    const candidateRecorders = new Set<string>();
+
+    if (activeStationName !== 'ALL_SITES') {
+      const normSite = activeStationName.toLowerCase();
+      // 1. Recorders registered directly on matching site entries
+      visibleStations
+        .filter(s => String(s.station_name || '').toLowerCase() === normSite)
+        .forEach(s => {
+          if (s.recorder_id) candidateRecorders.add(String(s.recorder_id).toUpperCase());
+        });
+
+      // 2. Recorders from recorders_registry matching site
+      recordersRegistryList
+        .filter(r => String(r.site_name || '').toLowerCase() === normSite)
+        .forEach(r => {
+          if (r.recorder_id) candidateRecorders.add(String(r.recorder_id).toUpperCase());
+        });
+
+      // 3. Fallback to Rec_01 if none registered
+      if (candidateRecorders.size === 0) {
+        candidateRecorders.add('Rec_01');
+      }
+    } else {
+      // All survey sites: collect all recorders in the project
+      visibleStations.forEach(s => {
+        if (s.recorder_id) candidateRecorders.add(String(s.recorder_id).toUpperCase());
+      });
+      recordersRegistryList
+        .filter(r => {
+          if (selectedProjectId === 'ALL_PROJECTS') return true;
+          const rProj = r.project_name || r.project_id;
+          if (rProj && rProj === selectedProjectId) return true;
+          const projectSiteNames = new Set(visibleStations.map(s => String(s.station_name || '').toLowerCase()));
+          return r.site_name && projectSiteNames.has(String(r.site_name).toLowerCase());
+        })
+        .forEach(r => {
+          if (r.recorder_id) candidateRecorders.add(String(r.recorder_id).toUpperCase());
+        });
+    }
+
+    return Array.from(candidateRecorders).sort((a, b) => 
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [selectedProjectId, visibleStations, recordersRegistryList, activeStationName]);
+
   // Two-way URL parameter synchronization
   useEffect(() => {
     if (typeof window === 'undefined' || loading) return;
@@ -323,11 +419,10 @@ export default function CommonDashboardView({
     const currentUrl = new URL(window.location.href);
 
     const isDynamicPath = currentPath.startsWith('/dashboard/') && currentPath !== '/dashboard/common' && currentPath !== '/dashboard/lantana';
-    const activeStationObj = stationsList.find(s => s.id === selectedStationId);
 
     if (isDynamicPath) {
       const projSlug = (selectedProjectId && selectedProjectId !== 'ALL_PROJECTS') ? selectedProjectId : 'nilgiri';
-      const siteSlug = (activeStationObj && selectedStationId !== 'ALL_SITES') ? encodeURIComponent(activeStationObj.station_name) : '';
+      const siteSlug = (activeStationName !== 'ALL_SITES') ? encodeURIComponent(activeStationName) : '';
       
       currentUrl.pathname = siteSlug ? `/dashboard/${projSlug}/${siteSlug}` : `/dashboard/${projSlug}`;
       currentUrl.searchParams.delete('project');
@@ -339,11 +434,17 @@ export default function CommonDashboardView({
         currentUrl.searchParams.delete('project');
       }
 
-      if (activeStationObj && selectedStationId !== 'ALL_SITES') {
-        currentUrl.searchParams.set('site', activeStationObj.station_name);
+      if (activeStationName !== 'ALL_SITES') {
+        currentUrl.searchParams.set('site', activeStationName);
       } else {
         currentUrl.searchParams.delete('site');
       }
+    }
+
+    if (selectedRecorderId && selectedRecorderId !== 'ALL_RECORDERS') {
+      currentUrl.searchParams.set('recorder', selectedRecorderId);
+    } else {
+      currentUrl.searchParams.delete('recorder');
     }
 
     if (activeTab && activeTab !== 'summary') {
@@ -353,40 +454,23 @@ export default function CommonDashboardView({
     }
 
     window.history.replaceState(null, '', currentUrl.pathname + currentUrl.search);
-  }, [selectedProjectId, selectedStationId, activeTab, stationsList, loading]);
+  }, [selectedProjectId, activeStationName, selectedRecorderId, activeTab, loading]);
 
-  // Filtered survey sites strictly scoped to selected project
-  const visibleStations = useMemo(() => {
-    if (selectedProjectId === 'ALL_PROJECTS') return stationsList;
-    return stationsList.filter(s => s.project_id === selectedProjectId);
-  }, [selectedProjectId, stationsList]);
-
-  // Filtered recorder units strictly scoped to selected project
-  const visibleRecorders = useMemo(() => {
-    if (selectedProjectId === 'ALL_PROJECTS') return recordersRegistryList;
-    const projectSiteNames = new Set(visibleStations.map(s => String(s.station_name || '').toLowerCase()));
-    return recordersRegistryList.filter(r => 
-      r.project_name === selectedProjectId || 
-      r.project_id === selectedProjectId || 
-      (r.site_name && projectSiteNames.has(String(r.site_name).toLowerCase()))
-    );
-  }, [selectedProjectId, visibleStations, recordersRegistryList]);
-
-  // Auto-reset station and recorder selection when project changes if they belong to another project
+  // Auto-reset station and recorder selection when project or site changes if they belong to another scope
   useEffect(() => {
     if (selectedStationId !== 'ALL_SITES') {
-      const exists = visibleStations.some(s => s.id === selectedStationId);
+      const exists = uniqueSites.some(s => s.station_name.toLowerCase() === selectedStationId.toLowerCase() || s.ids.includes(selectedStationId));
       if (!exists) {
         setStation('ALL_SITES');
       }
     }
     if (selectedRecorderId !== 'ALL_RECORDERS') {
-      const exists = visibleRecorders.some(r => r.recorder_id === selectedRecorderId);
+      const exists = visibleRecorders.some(r => r.toUpperCase() === selectedRecorderId.toUpperCase());
       if (!exists) {
         setRecorder('ALL_RECORDERS');
       }
     }
-  }, [selectedProjectId, visibleStations, visibleRecorders]);
+  }, [selectedProjectId, uniqueSites, visibleRecorders]);
 
   // Derived filter params for RPC queries - include project ID, title, and station names
   const p_project_names = useMemo(() => {
@@ -401,11 +485,7 @@ export default function CommonDashboardView({
     return Array.from(new Set(names.filter(Boolean)));
   }, [selectedProjectId, visibleStations, projectsList]);
 
-  const p_site_name = useMemo(() => {
-    if (selectedStationId === 'ALL_SITES') return 'ALL_SITES';
-    const s = stationsList.find(s => s.id === selectedStationId);
-    return s ? s.station_name : 'ALL_SITES';
-  }, [selectedStationId, stationsList]);
+  const p_site_name = activeStationName;
 
   const p_recorder_name = selectedRecorderId;
 
@@ -609,21 +689,29 @@ export default function CommonDashboardView({
   const { mapSites, minSpecies, maxSpecies } = useMemo(() => {
     const dataMap = new Map((mapSitesData || []).map((d: any) => [d.site_name, d]));
     
-    // STRICTLY SCOPE MAP STATIONS TO THE CURRENTLY SELECTED PROJECT & STATION!
-    const targetStations = (selectedStationId === 'ALL_SITES'
+    // STRICTLY SCOPE MAP STATIONS TO CURRENT PROJECT, SITE & RECORDER!
+    const targetStations = (activeStationName === 'ALL_SITES'
       ? visibleStations
-      : visibleStations.filter(s => s.id === selectedStationId || s.station_name === selectedStationId)
-    ).filter(s => s.latitude != null && s.longitude != null && Number(s.latitude) !== 0 && Number(s.longitude) !== 0);
+      : visibleStations.filter(s => s.station_name.toLowerCase() === activeStationName.toLowerCase() || s.id === selectedStationId)
+    ).filter(s => {
+      if (s.latitude == null || s.longitude == null || Number(s.latitude) === 0 || Number(s.longitude) === 0) return false;
+      if (selectedRecorderId !== 'ALL_RECORDERS') {
+        const rId = s.recorder_id || 'Rec_01';
+        return rId.toUpperCase() === selectedRecorderId.toUpperCase();
+      }
+      return true;
+    });
 
     const validStations = targetStations.map(s => {
       const siteStat = dataMap.get(s.station_name);
       const speciesCount = siteStat ? Number(siteStat.species_count || 0) : 0;
       const detectionsCount = siteStat ? Number(siteStat.detections_count || 0) : 0;
+      const recLabel = s.recorder_id || 'Rec_01';
       return {
         id: s.id,
-        name: s.station_name,
+        name: s.recorder_id ? `${s.station_name} (${recLabel})` : s.station_name,
         site_group: s.station_name,
-        recorder_id: s.recorder_id || 'Rec_01',
+        recorder_id: recLabel,
         lat: Number(s.latitude),
         lng: Number(s.longitude),
         detectionsCount,
@@ -641,7 +729,7 @@ export default function CommonDashboardView({
     }));
 
     return { mapSites: styledSites, minSpecies: min, maxSpecies: max };
-  }, [visibleStations, mapSitesData, selectedStationId]);
+  }, [visibleStations, mapSitesData, activeStationName, selectedStationId, selectedRecorderId]);
 
   const dynamicMapCenter: [number, number] = useMemo(() => {
     if (mapSites.length > 0) {
@@ -1017,17 +1105,31 @@ export default function CommonDashboardView({
 
             <div className="flex flex-col gap-1">
               <label className="filter-label">Survey Site / Station</label>
-              <select className="select-input" value={selectedStationId} onChange={e => setStation(e.target.value)}>
-                <option value="ALL_SITES">All Survey Sites</option>
-                {visibleStations.map((s: any) => <option key={s.id} value={s.id}>{s.station_name}</option>)}
+              <select 
+                className="select-input" 
+                value={activeStationName === 'ALL_SITES' ? 'ALL_SITES' : activeStationName} 
+                onChange={e => setStation(e.target.value)}
+              >
+                <option value="ALL_SITES">All Survey Sites ({uniqueSites.length})</option>
+                {uniqueSites.map((s: any) => (
+                  <option key={s.station_name} value={s.station_name}>
+                    {s.station_name} {s.count > 1 ? `(${s.count} Recorders)` : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="filter-label">Recorder Unit</label>
               <select className="select-input" value={selectedRecorderId} onChange={e => setRecorder(e.target.value)}>
-                <option value="ALL_RECORDERS">All Recorders</option>
-                {visibleRecorders.map((r: any) => <option key={r.id} value={r.recorder_id}>{r.recorder_id}</option>)}
+                <option value="ALL_RECORDERS">
+                  {activeStationName !== 'ALL_SITES' 
+                    ? `All Recorders in Site (${visibleRecorders.length})` 
+                    : `All Recorders (${visibleRecorders.length})`}
+                </option>
+                {visibleRecorders.map((rId: string) => (
+                  <option key={rId} value={rId}>{rId}</option>
+                ))}
               </select>
             </div>
 
@@ -1065,8 +1167,16 @@ export default function CommonDashboardView({
               </div>
               <div className="kpi-card">
                 <span className="kpi-label">Survey Stations</span>
-                <span className="kpi-value">{visibleStations.length}</span>
-                <span className="kpi-subtext">Active monitoring stations</span>
+                <span className="kpi-value">
+                  {uniqueSites.length} {visibleStations.length > uniqueSites.length && (
+                    <span className="text-xs font-semibold text-slate-500">({visibleStations.length} nodes)</span>
+                  )}
+                </span>
+                <span className="kpi-subtext">
+                  {visibleStations.length > uniqueSites.length 
+                    ? `${visibleStations.length} active recorder hardware nodes` 
+                    : 'Active monitoring stations'}
+                </span>
               </div>
             </div>
 
@@ -1132,11 +1242,14 @@ export default function CommonDashboardView({
                 minSpecies={minSpecies}
                 maxSpecies={maxSpecies}
                 projectId={selectedProjectId !== 'ALL' ? selectedProjectId : undefined}
-                selectedSiteId={selectedStationId !== 'ALL' ? selectedStationId : undefined}
+                selectedSiteId={activeStationName !== 'ALL_SITES' ? activeStationName : undefined}
                 onSelectSite={(siteName, siteId) => {
-                  const matched = stationsList.find(s => s.station_name === siteName || s.id === siteId);
+                  const matched = visibleStations.find(s => s.id === siteId || s.station_name === siteName);
                   if (matched) {
-                    setStation(matched.id);
+                    setStation(matched.station_name);
+                    if (matched.recorder_id) {
+                      setRecorder(matched.recorder_id);
+                    }
                   }
                 }}
               />

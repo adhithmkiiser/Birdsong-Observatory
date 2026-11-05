@@ -544,6 +544,11 @@ export default function LantanaMap({
                   <div className="text-[11px] text-[#5a635d]">
                     Station Node: <strong className="text-[#1a1f1c]">{site.site_group}</strong>
                   </div>
+                  {site.recorder_id && (
+                    <div className="text-[11px] text-[#5a635d]">
+                      Recorder Unit: <strong className="text-[#1f4d3a] font-mono">{site.recorder_id}</strong>
+                    </div>
+                  )}
                   <div className="text-[11px] text-[#5a635d]">
                     Detections: <strong className="text-[#1f4d3a] font-bold">{site.detectionsCount.toLocaleString()}</strong> calls
                   </div>
