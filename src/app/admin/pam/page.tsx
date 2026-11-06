@@ -96,10 +96,12 @@ export default function PamAdminPage() {
   const [uploadingFileName, setUploadingFileName] = useState('');
 
   // 1. Batch Upload States
-  const [selectedUploadProjectType, setSelectedUploadProjectType] = useState<'Lantana' | 'Common'>('Lantana');
+  const [selectedUploadProjectType, setSelectedUploadProjectType] = useState<'Lantana' | 'Common'>('Common');
   const [selectedUploadProjId, setSelectedUploadProjId] = useState<string>('');
   const [selectedUploadSiteId, setSelectedUploadSiteId] = useState<string>('');
   const [selectedUploadRecorderId, setSelectedUploadRecorderId] = useState<string>('');
+  const [isCustomUploadRecorder, setIsCustomUploadRecorder] = useState(false);
+  const [customUploadRecorderId, setCustomUploadRecorderId] = useState('');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [parsedSiteCode, setParsedSiteCode] = useState<string>('');
   const [csvSiteAction, setCsvSiteAction] = useState<'existing' | 'create'>('existing');
@@ -957,15 +959,18 @@ export default function PamAdminPage() {
   useEffect(() => {
     const uploadSites = getUploadSites();
     if (uploadSites.length > 0) {
-      const stillValid = uploadSites.some(s => s.id === selectedUploadSiteId);
+      const stillValid = uploadSites.some(s => s.id === selectedUploadSiteId || s.name === selectedUploadSiteId);
       if (!stillValid) {
         setSelectedUploadSiteId(uploadSites[0].id);
       }
+    } else {
+      setSelectedUploadSiteId('');
     }
   }, [selectedUploadProjId, selectedUploadProjectType, sitesList, lantanaSitesList]);
 
-  // Synchronize selectedUploadRecorderId when site or project type changes
+  // Synchronize selectedUploadRecorderId when site, project, or type changes
   useEffect(() => {
+    setIsCustomUploadRecorder(false);
     const recorders = getUploadRecorders();
     if (recorders.length > 0) {
       const stillValid = recorders.some(r => r === selectedUploadRecorderId);
@@ -973,9 +978,9 @@ export default function PamAdminPage() {
         setSelectedUploadRecorderId(recorders[0]);
       }
     } else {
-      setSelectedUploadRecorderId('');
+      setSelectedUploadRecorderId('Rec_01');
     }
-  }, [selectedUploadSiteId, selectedUploadProjectType, sitesList, lantanaSitesList]);
+  }, [selectedUploadSiteId, selectedUploadProjId, selectedUploadProjectType, sitesList, lantanaSitesList]);
 
   // Helper function to get filtered sites based on project type and selected project
   const getFilteredSites = () => {
@@ -1028,41 +1033,118 @@ export default function PamAdminPage() {
 
   const getUploadSites = () => {
     if (selectedUploadProjectType === 'Lantana') {
-      return lantanaSitesList
+      const filtered = lantanaSitesList
         .filter((lantanaSite: any) => {
           if (!permittedSiteIds.has(lantanaSite.id)) return false;
           if (!selectedUploadProjId) return true;
           if (lantanaSite.project_id) return lantanaSite.project_id === selectedUploadProjId;
           return String(lantanaSite.id || '').startsWith(`${selectedUploadProjId}_`);
-        })
-        .map((lantanaSite: any) => {
-          const idParts = String(lantanaSite.id || '').split('_');
-          const derivedRecorderId = idParts.length >= 3 ? idParts.slice(2).join('_') : (lantanaSite.recorder_id || lantanaSite.id);
-          return {
-            id: lantanaSite.id,
-            projectId: lantanaSite.project_id || idParts[0] || '',
-            name: lantanaSite.site_name || idParts[1] || lantanaSite.id,
-            elevation: lantanaSite.elevation || '',
-            status: 'Active',
-            latitude: lantanaSite.lat != null ? Number(lantanaSite.lat) : undefined,
-            longitude: lantanaSite.long != null ? Number(lantanaSite.long) : undefined,
-            expectedFiles: lantanaSite.number_of_files || 0,
-            recorderId: lantanaSite.recorder_id || derivedRecorderId,
-            source: 'Lantana' as const
-          };
         });
+
+      const uniqueSites: any[] = [];
+      const seen = new Set<string>();
+      for (const s of filtered) {
+        const idParts = String(s.id || '').split('_');
+        const siteName = s.site_name || idParts[1] || s.id;
+        const norm = siteName.toLowerCase();
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          const derivedRecorderId = idParts.length >= 3 ? idParts.slice(2).join('_') : (s.recorder_id || s.id);
+          const recCount = filtered.filter((f: any) => {
+            const fParts = String(f.id || '').split('_');
+            const fName = (f.site_name || fParts[1] || f.id).toLowerCase();
+            return fName === norm;
+          }).length;
+          uniqueSites.push({
+            id: s.id,
+            projectId: s.project_id || idParts[0] || '',
+            name: siteName,
+            elevation: s.elevation || '',
+            status: 'Active',
+            latitude: s.lat != null ? Number(s.lat) : undefined,
+            longitude: s.long != null ? Number(s.long) : undefined,
+            expectedFiles: s.number_of_files || 0,
+            recorderId: s.recorder_id || derivedRecorderId,
+            recorderCount: recCount,
+            source: 'Lantana' as const
+          });
+        }
+      }
+      return uniqueSites.sort((a, b) => a.name.localeCompare(b.name));
     }
-    return sitesList.filter(s => s.projectId === selectedUploadProjId && permittedSiteIds.has(s.id));
+
+    // Common PAM sites: deduplicated by name with recorder count
+    const filtered = sitesList.filter(s => s.projectId === selectedUploadProjId && permittedSiteIds.has(s.id));
+    const uniqueSites: any[] = [];
+    const seen = new Set<string>();
+    for (const s of filtered) {
+      const siteName = s.name || s.id;
+      const norm = siteName.toLowerCase();
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        const recCount = filtered.filter(f => (f.name || f.id).toLowerCase() === norm).length;
+        uniqueSites.push({
+          id: s.id,
+          projectId: s.projectId,
+          name: siteName,
+          elevation: s.elevation || '',
+          status: s.status || 'Active',
+          latitude: s.latitude,
+          longitude: s.longitude,
+          recorderId: s.recorderId,
+          recorderCount: recCount,
+          source: s.source
+        });
+      }
+    }
+    return uniqueSites.sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const getUploadRecorders = () => {
+    const selectedSite = getUploadSites().find(s => s.id === selectedUploadSiteId || s.name === selectedUploadSiteId);
+    if (!selectedSite) return [];
+
+    const normSiteName = (selectedSite.name || '').toLowerCase();
+    const allRecorders = new Set<string>();
+
     if (selectedUploadProjectType === 'Lantana') {
-      const selectedSite = getUploadSites().find(s => s.id === selectedUploadSiteId);
-      if (selectedSite?.recorderId) return [selectedSite.recorderId];
-      return [];
+      const matching = lantanaSitesList.filter(s => {
+        const idParts = String(s.id || '').split('_');
+        const sName = (s.site_name || idParts[1] || s.id).toLowerCase();
+        const pId = s.project_id || idParts[0];
+        return sName === normSiteName && (!selectedUploadProjId || pId === selectedUploadProjId);
+      });
+      matching.forEach(s => {
+        const idParts = String(s.id || '').split('_');
+        const derived = idParts.length >= 3 ? idParts.slice(2).join('_') : (s.recorder_id || s.id);
+        const rId = s.recorder_id || derived;
+        if (rId) allRecorders.add(String(rId).toUpperCase());
+      });
+    } else {
+      // Common PAM:
+      // 1. All matching entries in sitesList for this project and site name
+      const matching = sitesList.filter(s => 
+        s.projectId === selectedUploadProjId && 
+        (s.name || '').toLowerCase() === normSiteName
+      );
+      matching.forEach(s => {
+        if (s.recorderId) allRecorders.add(String(s.recorderId).toUpperCase());
+      });
+
+      // 2. Direct recorderId on the selectedSite
+      if (selectedSite.recorderId) {
+        allRecorders.add(String(selectedSite.recorderId).toUpperCase());
+      }
+
+      // 3. Fallback default if none registered
+      if (allRecorders.size === 0) {
+        allRecorders.add('Rec_01');
+      }
     }
-    // For Common PAM, no pre-registered recorder; the user must type the recorder ID
-    return [];
+
+    return Array.from(allRecorders).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
   };
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteElev, setNewSiteElev] = useState('');
@@ -1147,9 +1229,13 @@ export default function PamAdminPage() {
     if (uploadFiles.length === 0) return;
 
     // Resolve selected site and project from the upload cascade
-    const uploadSite = getUploadSites().find(s => s.id === selectedUploadSiteId);
+    const uploadSite = getUploadSites().find(s => s.id === selectedUploadSiteId || s.name === selectedUploadSiteId);
     const effectiveSiteName = uploadSite?.name || csvNewSiteName || selectedUploadSiteId || 'unknown';
-    const effectiveRecorderId = selectedUploadRecorderId || uploadSite?.recorderId || 'unknown';
+    const effectiveRecorderId = isCustomUploadRecorder && customUploadRecorderId.trim()
+      ? customUploadRecorderId.trim().toUpperCase()
+      : (selectedUploadRecorderId || uploadSite?.recorderId || 'Rec_01');
+    const uploadProj = projectsList.find(p => p.id === selectedUploadProjId);
+    const effectiveProjectName = uploadProj?.title || (uploadProj as any)?.name || selectedUploadProjId || 'unknown';
     const targetTable = selectedUploadProjectType === 'Lantana' ? 'lantana_detections' : 'pam_detections';
 
     setIsUploading(true);
@@ -1236,7 +1322,7 @@ export default function PamAdminPage() {
             if (selectedUploadProjectType === 'Lantana') {
               detectionsToInsert.push({
                 project_id: selectedUploadProjId,
-                project_name: uploadSite?.name || selectedUploadProjId,
+                project_name: effectiveProjectName,
                 site_name: effectiveSiteName,
                 recorder_id: effectiveRecorderId,
                 recorder_name: effectiveRecorderId,
@@ -1251,7 +1337,7 @@ export default function PamAdminPage() {
               });
             } else {
               detectionsToInsert.push({
-                project_name: uploadSite?.name || selectedUploadProjId,
+                project_name: effectiveProjectName,
                 site_name: effectiveSiteName,
                 recorder_name: effectiveRecorderId,
                 date: dateStr,
@@ -2408,16 +2494,18 @@ export default function PamAdminPage() {
                 <select
                   value={selectedUploadProjectType}
                   onChange={(e) => {
-                    setSelectedUploadProjectType(e.target.value as 'Lantana' | 'Common');
-                    const projects = e.target.value === 'Lantana'
+                    const newType = e.target.value as 'Lantana' | 'Common';
+                    setSelectedUploadProjectType(newType);
+                    const projects = newType === 'Lantana'
                       ? projectsList.filter(p => p.type === 'Lantana')
                       : projectsList.filter(p => p.type === 'PAM');
-                    setSelectedUploadProjId(projects[0]?.id || '');
+                    const validProjects = projects.filter(p => permittedProjectIds.has(p.id));
+                    setSelectedUploadProjId(validProjects[0]?.id || '');
                   }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="Lantana">Lantana Project</option>
                   <option value="Common">Common PAM Project</option>
+                  <option value="Lantana">Lantana Project</option>
                 </select>
               </div>
 
@@ -2442,32 +2530,61 @@ export default function PamAdminPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
                 >
                   {getUploadSites().map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                    <option key={s.id} value={s.id}>
+                      {s.name} {s.recorderCount && s.recorderCount > 1 ? `(${s.recorderCount} Recorders)` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1.5">4. Target Recorder Hardware</label>
-                {selectedUploadProjectType === 'Lantana' ? (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-extrabold text-slate-700">4. Target Recorder Hardware</label>
+                  {isCustomUploadRecorder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomUploadRecorder(false);
+                        const recs = getUploadRecorders();
+                        if (recs.length > 0) setSelectedUploadRecorderId(recs[0]);
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                    >
+                      &larr; Choose from list
+                    </button>
+                  )}
+                </div>
+                {isCustomUploadRecorder ? (
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. REC_01 or LC_01"
+                    value={customUploadRecorderId}
+                    onChange={(e) => {
+                      setCustomUploadRecorderId(e.target.value);
+                      setSelectedUploadRecorderId(e.target.value);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                ) : (
                   <select
                     value={selectedUploadRecorderId}
-                    onChange={(e) => setSelectedUploadRecorderId(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setIsCustomUploadRecorder(true);
+                        setCustomUploadRecorderId('');
+                        setSelectedUploadRecorderId('');
+                      } else {
+                        setSelectedUploadRecorderId(e.target.value);
+                      }
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold focus:outline-none focus:border-indigo-500"
                   >
                     {getUploadRecorders().map(r => (
                       <option key={r} value={r}>{r}</option>
                     ))}
+                    <option value="__custom__">+ Enter Custom Recorder ID...</option>
                   </select>
-                ) : (
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. LC_01 or 1"
-                    value={selectedUploadRecorderId}
-                    onChange={(e) => setSelectedUploadRecorderId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold focus:outline-none focus:border-indigo-500"
-                  />
                 )}
               </div>
             </div>
