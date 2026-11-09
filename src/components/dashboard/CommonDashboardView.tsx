@@ -161,6 +161,7 @@ export default function CommonDashboardView({
           deleteAllForSite: {
             siteName,
             siteId,
+            recorderId: (!isProjectScope && selectedRecorderId && selectedRecorderId !== 'ALL_RECORDERS') ? selectedRecorderId : undefined,
             projectId: selectedProjectId !== 'ALL_PROJECTS' ? selectedProjectId : 'nilgiri',
             projectName: proj ? (proj.name || proj.title) : undefined,
             table: 'all'

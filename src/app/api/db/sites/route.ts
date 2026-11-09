@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authGuard, escapePostgrestValue, canUserManageProject, canUserManageSite } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { resolveSiteEntities, resolveRecorderAliases } from '@/lib/siteResolver';
 
 // Allowed tables to prevent SQL injection or targeting wrong tables
 const ALLOWED_TABLES = ['sites', 'live_sites', 'lantana_sites'];
@@ -138,44 +139,82 @@ export async function DELETE(req: NextRequest) {
       const safeSiteName = siteName ? escapePostgrestValue(siteName) : '';
       const safeSiteId = siteId ? escapePostgrestValue(siteId) : '';
 
+      const { matchedSiteNewIds, candidateSiteNames } = await resolveSiteEntities({
+        siteName,
+        siteId,
+        projectId: siteRecord.project_id || siteRecord.projectId
+      });
+      const candidateRecorderNames = resolveRecorderAliases(recorderId);
+
+      // Clean rollups and detection warehouse tables
+      if (matchedSiteNewIds.length > 0) {
+        await supabaseAdmin.from('detection_hourly_rollup').delete().in('site_id', matchedSiteNewIds);
+        await supabaseAdmin.from('detections').delete().in('site_id', matchedSiteNewIds);
+        await supabaseAdmin.from('sites_new').delete().in('id', matchedSiteNewIds);
+      }
+
       // A. Lantana detections
       let lq = supabaseAdmin.from('lantana_detections').delete();
-      if (siteName && siteId && siteName !== siteId) {
+      if (candidateSiteNames.length > 0) {
+        lq = lq.in('site_name', candidateSiteNames);
+      } else if (siteName && siteId && siteName !== siteId) {
         lq = lq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         lq = lq.eq('site_name', siteName);
       }
-      if (recorderId) lq = lq.eq('recorder_id', recorderId);
+      if (candidateRecorderNames.length > 0) {
+        lq = lq.in('recorder_id', candidateRecorderNames);
+      } else if (recorderId) {
+        lq = lq.eq('recorder_id', recorderId);
+      }
       await lq;
 
       // B. PAM detections
       let pq = supabaseAdmin.from('pam_detections').delete();
-      if (siteName && siteId && siteName !== siteId) {
+      if (candidateSiteNames.length > 0) {
+        pq = pq.in('site_name', candidateSiteNames);
+      } else if (siteName && siteId && siteName !== siteId) {
         pq = pq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         pq = pq.eq('site_name', siteName);
       }
-      if (recorderId) pq = pq.eq('recorder_name', recorderId);
+      if (candidateRecorderNames.length > 0) {
+        pq = pq.in('recorder_name', candidateRecorderNames);
+      } else if (recorderId) {
+        pq = pq.eq('recorder_name', recorderId);
+      }
       await pq;
 
       // C. Live detections
       let livq = supabaseAdmin.from('live_detections').delete();
-      if (siteName && siteId && siteName !== siteId) {
+      if (candidateSiteNames.length > 0) {
+        livq = livq.in('site_name', candidateSiteNames);
+      } else if (siteName && siteId && siteName !== siteId) {
         livq = livq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
       } else if (siteName) {
         livq = livq.or(`site_name.eq."${safeSiteName}",station_name.eq."${safeSiteName}"`);
       }
-      if (recorderId) livq = livq.eq('recorder_id', recorderId);
+      if (candidateRecorderNames.length > 0) {
+        livq = livq.in('recorder_id', candidateRecorderNames);
+      } else if (recorderId) {
+        livq = livq.eq('recorder_id', recorderId);
+      }
       await livq;
 
       // D. Recorders registry
       let rq = supabaseAdmin.from('recorders_registry').delete();
-      if (siteName && siteId && siteName !== siteId) {
+      if (candidateSiteNames.length > 0) {
+        rq = rq.in('site_name', candidateSiteNames);
+      } else if (siteName && siteId && siteName !== siteId) {
         rq = rq.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
       } else if (siteName) {
         rq = rq.eq('site_name', siteName);
       }
-      if (recorderId) rq = rq.eq('recorder_id', recorderId);
+      if (candidateRecorderNames.length > 0) {
+        rq = rq.in('recorder_id', candidateRecorderNames);
+      } else if (recorderId) {
+        rq = rq.eq('recorder_id', recorderId);
+      }
       await rq;
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authGuard, escapePostgrestValue, canUserManageProject, canUserManageSite } from '@/lib/authGuard';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { resolveSiteEntities, resolveRecorderAliases, normalizeStationCode } from '@/lib/siteResolver';
 
 const ALLOWED_TABLES = ['pam_detections', 'lantana_detections', 'live_detections', 'recorders_registry', 'detections', 'detection_hourly_rollup'];
 
@@ -113,7 +114,12 @@ export async function DELETE(req: NextRequest) {
         }
       }
 
-      const resolvedProjectId = projectId || (projectName === 'Studying The Role of Climate in Bird Species Distribution' ? 'nilgiri' : undefined);
+      const resolvedProjectId = projectId || (
+        projectName === 'Studying The Role of Climate in Bird Species Distribution' || projectName === 'nilgiri' ? 'nilgiri' :
+        projectName === 'Gudalur' || projectName === 'nbr' ? 'nbr' :
+        projectName === 'tst_lantana' || (projectName && projectName.toLowerCase().includes('lantana')) ? 'tst_lantana' :
+        undefined
+      );
       const resolvedSiteName = siteName || siteId;
       const targetTable = targetTableParam || tableParam || 'all';
       const tablesToClean = (targetTable === 'all')
@@ -144,14 +150,11 @@ export async function DELETE(req: NextRequest) {
             if (t === 'pam_detections') {
               if (resolvedProjectId === 'nilgiri' || siteNames.length > 0 || targetTable === 'pam_detections') {
                 if (siteNames.length > 0) {
-                  for (const sName of siteNames) {
-                    const safeSName = escapePostgrestValue(sName);
-                    const { error } = await supabaseAdmin
-                      .from('pam_detections')
-                      .delete()
-                      .or(`site_name.eq."${safeSName}",project_name.eq."${safeSName}"`);
-                    if (error) console.error(`Error deleting site "${sName}" from pam_detections:`, error);
-                  }
+                  const { error } = await supabaseAdmin
+                    .from('pam_detections')
+                    .delete()
+                    .in('site_name', siteNames);
+                  if (error) console.error(`Error deleting project sites from pam_detections:`, error);
                 } else {
                   const { error } = await supabaseAdmin.from('pam_detections').delete().gt('id', 0);
                   if (error) throw new Error(`Failed to delete pam_detections: ${error.message}`);
@@ -224,35 +227,36 @@ export async function DELETE(req: NextRequest) {
       const safeResolvedSiteName = resolvedSiteName ? escapePostgrestValue(resolvedSiteName) : '';
       const safeRecorderId = recorderId ? escapePostgrestValue(recorderId) : '';
 
-      // Look up site_id in sites_new for rollups and detections table
-      let matchedSiteNewId: number | null = null;
-      try {
-        const { data: stNew } = await supabaseAdmin
-          .from('sites_new')
-          .select('id, name')
-          .or(`name.eq."${safeResolvedSiteName}",name.ilike."${safeResolvedSiteName}"`)
-          .limit(1);
-        if (stNew && stNew.length > 0) {
-          matchedSiteNewId = stNew[0].id;
-        }
-      } catch (e) {
-        console.warn('Could not query sites_new for site id:', e);
-      }
+      // Robustly resolve all candidate site names, station codes, and sites_new IDs
+      const {
+        matchedSiteNewIds,
+        candidateSiteNames
+      } = await resolveSiteEntities({
+        siteName,
+        siteId,
+        projectId: resolvedProjectId
+      });
+
+      const candidateRecorderNames = resolveRecorderAliases(recorderId);
 
       for (const t of tablesToClean) {
         try {
           if (t === 'pam_detections') {
             let q = supabaseAdmin.from('pam_detections').delete();
-            if (siteName && siteId && siteName !== siteId) {
+            if (candidateSiteNames.length > 0) {
+              q = q.in('site_name', candidateSiteNames);
+            } else if (siteName && siteId && siteName !== siteId) {
               q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",project_name.eq."${safeSiteName}",project_name.eq."${safeSiteId}"`);
             } else {
               q = q.or(`site_name.eq."${safeResolvedSiteName}",project_name.eq."${safeResolvedSiteName}"`);
             }
 
-            if (recorderId && recorderId !== 'All') {
+            if (candidateRecorderNames.length > 0) {
+              q = q.in('recorder_name', candidateRecorderNames);
+            } else if (recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS') {
               q = q.eq('recorder_name', recorderId);
             }
-            // Do NOT filter project_name = projectName since project_name in pam_detections stores the site_name
+
             const { error: pamErr } = await q;
             if (pamErr) {
               console.error('Error deleting from pam_detections:', pamErr);
@@ -260,22 +264,96 @@ export async function DELETE(req: NextRequest) {
             }
             results['pam_detections'] = true;
           } else if (t === 'detection_hourly_rollup') {
-            if (matchedSiteNewId) {
+            if (matchedSiteNewIds.length > 0) {
+              // Check if remaining detections exist for this site (e.g. if only 1 recorder was deleted)
+              let hasRemainingDetections = false;
+              if (candidateRecorderNames.length > 0 || (recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS')) {
+                const { count: remCount } = await supabaseAdmin
+                  .from('pam_detections')
+                  .select('id', { count: 'exact', head: true })
+                  .in('site_name', candidateSiteNames);
+                hasRemainingDetections = (remCount || 0) > 0;
+              }
+
+              // Always delete existing rollup rows for matched site_ids
               const { error } = await supabaseAdmin
                 .from('detection_hourly_rollup')
                 .delete()
-                .eq('site_id', matchedSiteNewId);
+                .in('site_id', matchedSiteNewIds);
               if (error) console.error('Error deleting from detection_hourly_rollup:', error);
+
+              // If remaining detections still exist for other recorders at this site, re-aggregate into rollup
+              if (hasRemainingDetections) {
+                try {
+                  const { data: remDets } = await supabaseAdmin
+                    .from('pam_detections')
+                    .select('date, time, scientific_name, confidence')
+                    .in('site_name', candidateSiteNames)
+                    .not('date', 'is', null);
+
+                  if (remDets && remDets.length > 0) {
+                    const siteIdToUse = matchedSiteNewIds[0];
+                    const projIdToUse = resolvedProjectId || 'nilgiri';
+
+                    const rollupMap = new Map<string, { n_calls: number; max_conf: number; species_name: string; day: string; hour: number }>();
+                    for (const d of remDets) {
+                      const day = d.date;
+                      const hour = d.time ? parseInt(String(d.time).split(':')[0] || '0', 10) : 0;
+                      const key = `${day}_${hour}_${d.scientific_name}`;
+                      const conf = Number(d.confidence) || 0.5;
+                      if (!rollupMap.has(key)) {
+                        rollupMap.set(key, { n_calls: 1, max_conf: conf, species_name: d.scientific_name, day, hour });
+                      } else {
+                        const existing = rollupMap.get(key)!;
+                        existing.n_calls += 1;
+                        if (conf > existing.max_conf) existing.max_conf = conf;
+                      }
+                    }
+
+                    const specNames = Array.from(new Set(Array.from(rollupMap.values()).map(r => r.species_name)));
+                    const { data: dbSpecies } = await supabaseAdmin
+                      .from('species')
+                      .select('id, scientific_name')
+                      .in('scientific_name', specNames);
+                    const spMap = new Map((dbSpecies || []).map((sp: any) => [sp.scientific_name, sp.id]));
+
+                    const newRollupRows: any[] = [];
+                    for (const r of Array.from(rollupMap.values())) {
+                      const spId = spMap.get(r.species_name);
+                      if (spId) {
+                        newRollupRows.push({
+                          project_id: projIdToUse,
+                          site_id: siteIdToUse,
+                          species_id: spId,
+                          day: r.day,
+                          hour: r.hour,
+                          n_calls: r.n_calls,
+                          max_conf: r.max_conf
+                        });
+                      }
+                    }
+
+                    for (let i = 0; i < newRollupRows.length; i += 500) {
+                      await supabaseAdmin
+                        .from('detection_hourly_rollup')
+                        .upsert(newRollupRows.slice(i, i + 500), { onConflict: 'project_id,site_id,species_id,day,hour' });
+                    }
+                  }
+                } catch (rebuildErr) {
+                  console.warn('Could not re-aggregate remaining site detections into rollup:', rebuildErr);
+                }
+              }
+
               results['detection_hourly_rollup'] = !error;
             } else {
               results['detection_hourly_rollup'] = true;
             }
           } else if (t === 'detections') {
-            if (matchedSiteNewId) {
+            if (matchedSiteNewIds.length > 0) {
               const { error } = await supabaseAdmin
                 .from('detections')
                 .delete()
-                .eq('site_id', matchedSiteNewId);
+                .in('site_id', matchedSiteNewIds);
               if (error) console.error('Error deleting from detections:', error);
               results['detections'] = !error;
             } else {
@@ -283,17 +361,21 @@ export async function DELETE(req: NextRequest) {
             }
           } else if (t === 'lantana_detections') {
             let q = supabaseAdmin.from('lantana_detections').delete();
-            if (siteName && siteId && siteName !== siteId) {
+            if (candidateSiteNames.length > 0) {
+              q = q.in('site_name', candidateSiteNames);
+            } else if (siteName && siteId && siteName !== siteId) {
               q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}"`);
             } else {
               q = q.eq('site_name', resolvedSiteName);
             }
 
-            if (recorderId && recorderId !== 'All') {
+            if (candidateRecorderNames.length > 0) {
+              q = q.in('recorder_id', candidateRecorderNames);
+            } else if (recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS') {
               q = q.or(`recorder_id.eq."${safeRecorderId}",recorder_name.eq."${safeRecorderId}"`);
             }
-            if (projectId) {
-              q = q.eq('project_id', projectId);
+            if (resolvedProjectId || projectId) {
+              q = q.eq('project_id', resolvedProjectId || projectId);
             }
             const { error } = await q;
             if (error) console.error('Error deleting from lantana_detections:', error);
@@ -301,12 +383,16 @@ export async function DELETE(req: NextRequest) {
           } else if (t === 'live_detections') {
             // Collect audio URLs if any to clean storage
             let selQ = supabaseAdmin.from('live_detections').select('audio_url');
-            if (siteName && siteId && siteName !== siteId) {
+            if (candidateSiteNames.length > 0) {
+              selQ = selQ.in('site_name', candidateSiteNames);
+            } else if (siteName && siteId && siteName !== siteId) {
               selQ = selQ.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
             } else {
               selQ = selQ.or(`site_name.eq."${safeResolvedSiteName}",station_name.eq."${safeResolvedSiteName}"`);
             }
-            if (recorderId && recorderId !== 'All') {
+            if (candidateRecorderNames.length > 0) {
+              selQ = selQ.in('recorder_id', candidateRecorderNames);
+            } else if (recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS') {
               selQ = selQ.eq('recorder_id', recorderId);
             }
             if (projectName) {
@@ -331,12 +417,16 @@ export async function DELETE(req: NextRequest) {
             }
 
             let q = supabaseAdmin.from('live_detections').delete();
-            if (siteName && siteId && siteName !== siteId) {
+            if (candidateSiteNames.length > 0) {
+              q = q.in('site_name', candidateSiteNames);
+            } else if (siteName && siteId && siteName !== siteId) {
               q = q.or(`site_name.eq."${safeSiteName}",site_name.eq."${safeSiteId}",station_name.eq."${safeSiteName}"`);
             } else {
               q = q.or(`site_name.eq."${safeResolvedSiteName}",station_name.eq."${safeResolvedSiteName}"`);
             }
-            if (recorderId && recorderId !== 'All') {
+            if (candidateRecorderNames.length > 0) {
+              q = q.in('recorder_id', candidateRecorderNames);
+            } else if (recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS') {
               q = q.eq('recorder_id', recorderId);
             }
             if (projectName) {
@@ -352,7 +442,7 @@ export async function DELETE(req: NextRequest) {
         }
       }
 
-      const recLabel = recorderId && recorderId !== 'All' ? ` (recorder ${recorderId})` : '';
+      const recLabel = recorderId && recorderId !== 'All' && recorderId !== 'ALL_RECORDERS' ? ` (recorder ${recorderId})` : '';
       return NextResponse.json({
         success: true,
         message: `All detections for site "${resolvedSiteName}"${recLabel} were permanently deleted from observatory databases.`,

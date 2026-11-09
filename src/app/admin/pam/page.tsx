@@ -318,7 +318,7 @@ export default function PamAdminPage() {
   const availableRecorders = useMemo(() => {
     if (pamSelectedSite === 'Select Site') return [];
     
-    const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+    const siteItem = scopedSites.find(s => s.id === pamSelectedSite || s.name === pamSelectedSite);
     if (!siteItem) return [];
 
     if (detectionsTabScope === 'Lantana') {
@@ -538,9 +538,9 @@ export default function PamAdminPage() {
         siteName = 'ALL_SITES';
         siteId = 'ALL_SITES';
       } else {
-        const siteItem = scopedSites.find(s => s.id === pamSelectedSite);
+        const siteItem = scopedSites.find(s => s.id === pamSelectedSite || s.name === pamSelectedSite);
         siteName = siteItem ? siteItem.name : pamSelectedSite;
-        siteId = siteItem ? siteItem.id : undefined;
+        siteId = siteItem ? siteItem.id : pamSelectedSite;
       }
       recorderId = deleteAllScope === 'recorder' && pamSelectedRecorder !== 'All' ? pamSelectedRecorder : undefined;
       const proj = scopedProjects.find(p => p.id === pamSelectedProject);
