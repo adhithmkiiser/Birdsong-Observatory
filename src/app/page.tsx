@@ -68,79 +68,76 @@ export default function HomePage() {
 
       const statsMap: Record<string, { recorders: number; species: number; detections: number }> = {};
 
-      // Fetch exact real table counts in parallel
-      const [pamCountRes, lantanaCountRes, liveCountRes, lantanaSitesRes, lantanaSpeciesRes, pamStatsRes] = await Promise.all([
-        supabase.from('pam_detections').select('*', { count: 'exact', head: true }),
-        supabase.from('lantana_detections').select('*', { count: 'exact', head: true }),
-        supabase.from('live_detections').select('*', { count: 'exact', head: true }),
-        supabase.from('lantana_sites').select('id'),
-        supabase.from('lantana_species_ecology').select('*', { count: 'exact', head: true }),
-        supabase.rpc('get_dashboard_stats', { p_confidence: 0.1 })
+      const [lantanaSitesRes, lantanaSpeciesRes] = await Promise.all([
+        supabase.from('lantana_sites').select('id, project_id'),
+        supabase.from('lantana_species_ecology').select('*', { count: 'exact', head: true })
       ]);
 
-      setLoadStage('Calculating ecosystem metrics...');
-      setLoadingProgress(90);
+      const lantanaSitesData = lantanaSitesRes.data || [];
 
-      const pamDetections = pamCountRes.count || 0;
-      const lantanaDetections = lantanaCountRes.count || 0;
-      const liveDetections = liveCountRes.count || 0;
-      const pamUniqueSpecies = pamDetections > 0 ? (pamStatsRes.data?.unique_species || 191) : 0;
+      // Query per-project metrics in parallel to ensure accurate individual counts
+      await Promise.all(
+        projData.map(async (p: any) => {
+          if (p.project_type === 'Live') {
+            const activeCount = liveRecorders.filter((r: any) => {
+              const projMatches = (r.project_name && (
+                r.project_name.toLowerCase() === (p.name || '').toLowerCase() ||
+                r.project_name.toLowerCase() === (p.id || '').toLowerCase()
+              )) || (r.project_id && (
+                r.project_id.toLowerCase() === (p.id || '').toLowerCase() ||
+                r.project_id.toLowerCase() === (p.name || '').toLowerCase()
+              ));
+              if (!projMatches) return false;
 
-      let lantanaUniqueSpecies = 0;
-      if (lantanaDetections > 0) {
-        const { data: lantanaSample } = await supabase
-          .from('lantana_detections')
-          .select('common_name')
-          .limit(10000);
-        if (lantanaSample && lantanaSample.length > 0) {
-          lantanaUniqueSpecies = new Set(lantanaSample.map((d: any) => d.common_name).filter(Boolean)).size;
-        } else {
-          lantanaUniqueSpecies = lantanaSpeciesRes.count || 0;
-        }
-      }
+              // Online if marked 'online' in recorders_registry
+              if (r.status === 'online') return true;
+              // Or if pinged recently within 30 minutes
+              if (r.last_ping) {
+                const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
+                return diffMins <= 30;
+              }
+              return false;
+            }).length;
+            p.active_nodes_count = activeCount;
 
-      for (const p of projData) {
-        if (p.project_type === 'Live') {
-          const activeCount = liveRecorders.filter((r: any) => {
-            const projMatches = (r.project_name && (
-              r.project_name.toLowerCase() === (p.name || '').toLowerCase() ||
-              r.project_name.toLowerCase() === (p.id || '').toLowerCase()
-            )) || (r.project_id && (
-              r.project_id.toLowerCase() === (p.id || '').toLowerCase() ||
-              r.project_id.toLowerCase() === (p.name || '').toLowerCase()
-            ));
-            if (!projMatches) return false;
+            const { count: liveDetCount } = await supabase
+              .from('live_detections')
+              .select('*', { count: 'exact', head: true })
+              .or(`project_id.eq."${p.id}",project_name.eq."${p.name || p.id}"`);
 
-            // Online if marked 'online' in recorders_registry
-            if (r.status === 'online') return true;
-            // Or if pinged recently within 30 minutes
-            if (r.last_ping) {
-              const diffMins = (Date.now() - new Date(r.last_ping).getTime()) / 60000;
-              return diffMins <= 30;
-            }
-            return false;
-          }).length;
-          p.active_nodes_count = activeCount;
-          statsMap[p.id] = {
-            recorders: Math.max(activeCount, 1),
-            species: liveDetections > 0 ? 12 : 0,
-            detections: liveDetections
-          };
-        } else if (p.project_type === 'Lantana') {
-          statsMap[p.id] = {
-            recorders: (lantanaSitesRes.data || []).length || 25,
-            species: lantanaUniqueSpecies,
-            detections: lantanaDetections
-          };
-        } else {
-          const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
-          statsMap[p.id] = {
-            recorders: siteCount || 13,
-            species: pamUniqueSpecies,
-            detections: pamDetections
-          };
-        }
-      }
+            statsMap[p.id] = {
+              recorders: Math.max(activeCount, p.stations_count || 1),
+              species: (liveDetCount || 0) > 0 ? 12 : 0,
+              detections: liveDetCount || 0
+            };
+          } else if (p.project_type === 'Lantana') {
+            const projLantanaSites = lantanaSitesData.filter((s: any) => s.project_id === p.id);
+            const [{ count: lantanaDetCount }, { data: lantanaRollup }] = await Promise.all([
+              supabase.from('lantana_detections').select('*', { count: 'exact', head: true }).eq('project_id', p.id),
+              supabase.rpc('get_dashboard_stats', { p_project_names: [p.id], p_confidence: 0.1 })
+            ]);
+
+            statsMap[p.id] = {
+              recorders: projLantanaSites.length || (lantanaSitesData.length > 0 ? lantanaSitesData.length : 25),
+              species: lantanaRollup?.unique_species || (lantanaDetCount ? (lantanaSpeciesRes.count || 222) : 0),
+              detections: lantanaDetCount || 0
+            };
+          } else {
+            // PAM Project: Query per-project rollup stats specifically for this project
+            const siteCount = sitesData.filter((s: any) => s.project_id === p.id).length;
+            const { data: pamStats } = await supabase.rpc('get_dashboard_stats', {
+              p_project_names: [p.id, p.name, p.title].filter(Boolean),
+              p_confidence: 0.1
+            });
+
+            statsMap[p.id] = {
+              recorders: siteCount,
+              species: pamStats?.unique_species || 0,
+              detections: pamStats?.total_detections || 0
+            };
+          }
+        })
+      );
       setProjectStatsMap(statsMap);
 
       setLoadingProgress(100);

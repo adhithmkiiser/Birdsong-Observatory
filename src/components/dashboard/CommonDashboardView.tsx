@@ -490,6 +490,18 @@ export default function CommonDashboardView({
 
   const p_recorder_name = selectedRecorderId;
 
+  // Reset cached chart and view data when project changes so fresh data is loaded
+  useEffect(() => {
+    setStats(null);
+    setMapSitesData([]);
+    setRankedSpecies([]);
+    setSelectedSpecies([]);
+    setAvailableDates([]);
+    setTrendData([]);
+    setDiversityData([]);
+    setDiurnalData([]);
+  }, [selectedProjectId]);
+
   // 1. Fetch Summary Stats (only when on summary tab or not yet loaded)
   useEffect(() => {
     async function fetchStats() {
@@ -509,7 +521,7 @@ export default function CommonDashboardView({
     }
   }, [activeTab, p_project_names, p_site_name, p_recorder_name, confidenceThreshold, loading, projectsList.length]);
 
-  // 2. Fetch Map Sites Data (only when map tab is opened)
+  // 2. Fetch Map Sites Data (when map tab is open)
   useEffect(() => {
     async function fetchMapData() {
       if (projectsList.length === 0 || loading) return;
@@ -523,7 +535,7 @@ export default function CommonDashboardView({
         setMapSitesData(data);
       }
     }
-    if (activeTab === 'map' && mapSitesData.length === 0) {
+    if (activeTab === 'map') {
       fetchMapData();
     }
   }, [activeTab, p_project_names, p_site_name, p_recorder_name, confidenceThreshold, loading, projectsList.length]);
@@ -532,28 +544,14 @@ export default function CommonDashboardView({
   useEffect(() => {
     if (loading || (activeTab !== 'trends' && activeTab !== 'diurnal' && activeTab !== 'diversity')) return;
     async function initOptions() {
-      const promises: PromiseLike<any>[] = [];
-      if (rankedSpecies.length === 0) {
-        promises.push(
-          supabase.rpc('get_top_species', {
-            p_limit: 300, p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null));
-      }
-
-      if (availableDates.length === 0) {
-        promises.push(
-          supabase.rpc('get_available_dates', {
-            p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null));
-      }
-
-      const [topRes, datesRes] = await Promise.all(promises);
+      const [topRes, datesRes] = await Promise.all([
+        supabase.rpc('get_top_species', {
+          p_limit: 300, p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
+        }),
+        supabase.rpc('get_available_dates', {
+          p_project_names, p_site_name, p_recorder_name, p_confidence: confidenceThreshold
+        })
+      ]);
 
       if (topRes && topRes.data) {
         const rawList = topRes.data.map((d: any) => ({
@@ -572,9 +570,14 @@ export default function CommonDashboardView({
         setAvailableDates(dates);
         const latest = dates[0];
         const [y, m] = latest.split('-');
-        if (!diversityYear) setDiversityYear(y);
-        if (!diversityMonth) setDiversityMonth(m);
-        if (!diurnalDate) setDiurnalDate(latest);
+        setDiversityYear(y);
+        setDiversityMonth(m);
+        setDiurnalDate(latest);
+      } else {
+        setAvailableDates([]);
+        setDiversityYear('');
+        setDiversityMonth('');
+        setDiurnalDate('');
       }
     }
     initOptions();
