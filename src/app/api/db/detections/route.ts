@@ -148,19 +148,35 @@ export async function DELETE(req: NextRequest) {
         for (const t of tablesToClean) {
           try {
             if (t === 'pam_detections') {
-              if (resolvedProjectId === 'nilgiri' || siteNames.length > 0 || targetTable === 'pam_detections') {
-                if (siteNames.length > 0) {
-                  const { error } = await supabaseAdmin
-                    .from('pam_detections')
-                    .delete()
-                    .in('site_name', siteNames);
-                  if (error) console.error(`Error deleting project sites from pam_detections:`, error);
-                } else {
-                  const { error } = await supabaseAdmin.from('pam_detections').delete().gt('id', 0);
-                  if (error) throw new Error(`Failed to delete pam_detections: ${error.message}`);
-                }
-                results['pam_detections'] = true;
+              const projectIdentifiers = [projectName, resolvedProjectId].filter(Boolean) as string[];
+              if (siteNames.length > 0 && projectIdentifiers.length > 0) {
+                const { error: err1 } = await supabaseAdmin
+                  .from('pam_detections')
+                  .delete()
+                  .in('site_name', siteNames);
+                if (err1) console.error(`Error deleting project sites from pam_detections:`, err1);
+                const { error: err2 } = await supabaseAdmin
+                  .from('pam_detections')
+                  .delete()
+                  .in('project_name', projectIdentifiers);
+                if (err2) console.error(`Error deleting project_name from pam_detections:`, err2);
+                results['pam_detections'] = !err1 && !err2;
+              } else if (siteNames.length > 0) {
+                const { error } = await supabaseAdmin
+                  .from('pam_detections')
+                  .delete()
+                  .in('site_name', siteNames);
+                if (error) console.error(`Error deleting project sites from pam_detections:`, error);
+                results['pam_detections'] = !error;
+              } else if (projectIdentifiers.length > 0) {
+                const { error } = await supabaseAdmin
+                  .from('pam_detections')
+                  .delete()
+                  .in('project_name', projectIdentifiers);
+                if (error) console.error(`Error deleting project from pam_detections:`, error);
+                results['pam_detections'] = !error;
               } else {
+                console.warn('Skipped pam_detections purge: no project or site identifiers provided');
                 results['pam_detections'] = true;
               }
             } else if (t === 'detection_hourly_rollup') {
@@ -486,17 +502,32 @@ export async function DELETE(req: NextRequest) {
       } else if (body.deleteByProject) {
         // Special case: delete all detections by project_id or project_name
         const { projectId, projectName } = body.deleteByProject;
+        if (!projectId && !projectName) {
+          return NextResponse.json({ error: 'Missing projectId or projectName' }, { status: 400 });
+        }
         let query = supabaseAdmin.from(table).delete();
         if (table === 'pam_detections') {
-          // pam_detections doesn't have project_id column
+          const names: string[] = [];
           if (projectId) {
-            const { data: pSites } = await supabaseAdmin.from('sites_new').select('name').eq('project_id', projectId);
-            const names = (pSites || []).map((s: any) => s.name);
-            if (names.length > 0) query = query.in('site_name', names);
-            else query = query.gt('id', 0);
-          } else {
-            query = query.gt('id', 0);
+            const [snRes, sRes] = await Promise.all([
+              supabaseAdmin.from('sites_new').select('name').eq('project_id', projectId),
+              supabaseAdmin.from('sites').select('name').eq('project_id', projectId)
+            ]);
+            (snRes.data || []).forEach((s: any) => s.name && names.push(s.name));
+            (sRes.data || []).forEach((s: any) => s.name && names.push(s.name));
           }
+          const uniqueNames = Array.from(new Set(names));
+          const projIdentifiers = [projectId, projectName].filter(Boolean) as string[];
+
+          if (uniqueNames.length > 0) {
+            const { error: err1 } = await supabaseAdmin.from('pam_detections').delete().in('site_name', uniqueNames);
+            if (err1) throw err1;
+          }
+          if (projIdentifiers.length > 0) {
+            const { error: err2 } = await supabaseAdmin.from('pam_detections').delete().in('project_name', projIdentifiers);
+            if (err2) throw err2;
+          }
+          return NextResponse.json({ success: true });
         } else {
           if (projectId) query = query.eq('project_id', projectId);
           else if (projectName) query = query.eq('project_name', projectName);
